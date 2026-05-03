@@ -50,7 +50,6 @@ Users
 
 The full step-by-step setup guide is in [`index.html`](index.html).
 
-**View it live:** host on GitHub Pages by enabling Pages in your repo settings (source: root, branch: main). The guide will be available at `https://YOUR_USERNAME.github.io/dgx-spark-ai-stack`.
 
 Or open `index.html` directly in any browser — it's a single self-contained file with no external dependencies beyond Google Fonts.
 

@@ -46,6 +46,17 @@ Users
     Nvidia DGX Spark
 ```
 
+### Why vLLM runs outside Docker Compose
+
+vLLM is started with a standalone `docker run` command rather than being declared as a service in `docker-compose.yml`. This is intentional. Loading a 35B FP8 model takes several minutes and saturates GPU memory for the duration — restarting the vLLM container is expensive. Keeping it outside Compose means:
+
+- `docker compose up/down/restart` on n8n or hermes-webui has zero effect on vLLM
+- Iterating on workflow automation, the agent UI, or compose config doesn't force a model reload
+- vLLM can be updated or restarted independently on its own schedule without any service disruption to the rest of the stack
+- A crash or misconfiguration in a compose service can't cascade into taking down the model server
+
+In practice this means vLLM runs continuously and is only restarted deliberately (e.g. to pick up a new model or change serving flags), while everything above it in the stack is free to cycle as often as needed.
+
 ## Setup guide
 
 The full step-by-step setup guide is in [`index.html`](index.html).
@@ -71,6 +82,7 @@ Or open `index.html` directly in any browser — it's a single self-contained fi
 - LiteLLM has no arm64 Docker image as of May 2026 — installed via pip directly on the host
 - Signal is not supported on arm64 due to Java 25 requirements and server-side IP blocking — use Telegram
 - The SQLite logs accumulated by LiteLLM (`~/sparky-ai-stack/logs/litellm.db`) serve as a fine-tuning corpus over time
+- vLLM is intentionally run via `docker run`, not as a compose service — this keeps it isolated from compose lifecycle operations so model weights stay loaded while the rest of the stack is restarted freely (see Architecture above)
 
 ## Container-to-host connectivity
 

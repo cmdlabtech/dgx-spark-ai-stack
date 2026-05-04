@@ -74,13 +74,12 @@ Or open `index.html` directly in any browser — it's a single self-contained fi
 6. Open WebUI and Cline configuration
 7. Reboot test and service verification
 8. Port reference, file locations, backup targets
-9. Known issues and fixes (CUDA cache, arm64 quirks, Signal limitations)
+9. Known issues and fixes (CUDA cache, arm64 quirks)
 
 ## Notes
 
 - All commands use placeholder values (`YOUR_USERNAME`, `YOUR_SERVER_IP`) — substitute your own before running
 - LiteLLM has no arm64 Docker image as of May 2026 — installed via pip directly on the host
-- Signal is not supported on arm64 due to Java 25 requirements and server-side IP blocking — use Telegram
 - The SQLite logs accumulated by LiteLLM (`~/sparky-ai-stack/logs/litellm.db`) serve as a fine-tuning corpus over time
 - vLLM is intentionally run via `docker run`, not as a compose service — this keeps it isolated from compose lifecycle operations so model weights stay loaded while the rest of the stack is restarted freely (see Architecture above)
 

@@ -72,6 +72,35 @@ Or open `index.html` directly in any browser — it's a single self-contained fi
 - Signal is not supported on arm64 due to Java 25 requirements and server-side IP blocking — use Telegram
 - The SQLite logs accumulated by LiteLLM (`~/sparky-ai-stack/logs/litellm.db`) serve as a fine-tuning corpus over time
 
+## Container-to-host connectivity
+
+Containers running in Docker cannot reach host-bound services via `localhost` — `localhost` inside a container resolves to the container's own loopback interface, not the host's.
+
+The `extra_hosts: - "host.docker.internal:host-gateway"` entry in `docker-compose.yml` maps the `host.docker.internal` hostname to the Docker bridge gateway address at container start time. Without this explicit mapping, `host.docker.internal` may resolve to the machine's LAN IP instead of the bridge gateway — which silently fails because the host's listening socket is bound to `0.0.0.0` or `127.0.0.1`, neither of which is reachable from the bridge subnet via the LAN IP.
+
+### Service endpoints from inside containers
+
+| Service | Host port | URL from inside a container |
+|---|---|---|
+| LiteLLM proxy | 8001 | `http://host.docker.internal:8001` |
+| vLLM | 8000 | `http://host.docker.internal:8000` |
+
+### Hermes config
+
+`~/.hermes/config.yaml` must use the bridge-reachable URL, not `localhost`:
+
+```yaml
+base_url: http://host.docker.internal:8001/v1
+```
+
+### Verification
+
+```bash
+docker exec hermes-webui curl -s http://host.docker.internal:8001/v1/models
+```
+
+A JSON list of available models confirms the container can reach the LiteLLM proxy on the host. A `Connection refused` error means either the `host-gateway` mapping is missing or LiteLLM is not running on the host.
+
 ## License
 
 MIT — see [LICENSE](LICENSE)

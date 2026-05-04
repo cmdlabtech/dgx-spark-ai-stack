@@ -59,10 +59,7 @@ In practice this means vLLM runs continuously and is only restarted deliberately
 
 ## Setup guide
 
-The full step-by-step setup guide is in [`index.html`](index.html).
-
-
-Or open `index.html` directly in any browser — it's a single self-contained file with no external dependencies beyond Google Fonts.
+The full step-by-step setup guide is at [cmdlabtech.github.io/dgx-spark-ai-stack](https://cmdlabtech.github.io/dgx-spark-ai-stack/).
 
 ## What the guide covers
 

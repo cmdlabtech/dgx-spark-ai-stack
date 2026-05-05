@@ -141,6 +141,8 @@ The full step-by-step setup guide is at [cmdlabtech.github.io/dgx-spark-ai-stack
 7. Reboot test and service verification
 8. Port reference, file locations, backup targets
 9. Known issues and fixes (CUDA cache, arm64 quirks)
+10. Obsidian LiveSync integration — CouchDB, livesync-exporter, MCP filesystem server (Proxmox LXC)
+11. LiteLLM centralized MCP debug report — 18 issues across LXC setup, LiteLLM MCP config, Hermes, and Open WebUI
 
 ## Notes
 

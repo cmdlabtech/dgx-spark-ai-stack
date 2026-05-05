@@ -300,6 +300,14 @@
     <a href="#obsidian-issues" class="nav-item"><span class="num">—</span> Roadblocks</a>
   </nav>
   <nav class="nav-section">
+    <div class="nav-label">MCP Debug Report</div>
+    <a href="#mcp-overview" class="nav-item"><span class="num">—</span> Architecture goal</a>
+    <a href="#mcp-lxc" class="nav-item"><span class="num">—</span> LXC issues 1–7</a>
+    <a href="#mcp-litellm" class="nav-item"><span class="num">—</span> LiteLLM issues 8–13</a>
+    <a href="#mcp-clients" class="nav-item"><span class="num">—</span> Client issues 14–18</a>
+    <a href="#mcp-config" class="nav-item"><span class="num">—</span> Final config</a>
+  </nav>
+  <nav class="nav-section">
     <div class="nav-label">Troubleshooting</div>
     <a href="#litellm-ui" class="nav-item"><span class="num">—</span> LiteLLM Admin UI</a>
   </nav>
@@ -458,8 +466,8 @@
 
         <!-- MCP filesystem server -->
         <rect x="720" y="270" width="292" height="56" rx="6" class="db"/>
-        <text class="dth" x="866" y="291" text-anchor="middle" dominant-baseline="central">MCP filesystem server</text>
-        <text class="dts" x="866" y="309" text-anchor="middle" dominant-baseline="central">@mcp/server-filesystem · /vault/</text>
+        <text class="dth" x="866" y="291" text-anchor="middle" dominant-baseline="central">MCP vault server · mcp-vault</text>
+        <text class="dts" x="866" y="309" text-anchor="middle" dominant-baseline="central">supergateway (stateful) · :3000</text>
 
         <!-- MCP server → LiteLLM (routes above Hermes Agent via gap at x≈684) -->
         <path d="M 720 299 L 684 299 L 684 258 L 496 258 L 496 278" class="dl" marker-end="url(#arrow)"/>
@@ -975,6 +983,312 @@ Telegram · Hermes · n8n · Open WebUI</code></pre>
       <div class="issue-title">LiveSync chunked storage format</div>
       <div class="issue-sym"><span>Problem</span><span>Initial <code>livesync-exporter</code> assumed documents stored content in a <code>data</code> field. LiveSync uses a chunked architecture — each file document has a <code>children</code> array of chunk IDs (prefixed <code>h:</code>), with content split across multiple leaf documents.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Rewrote exporter: fetch file docs → collect all chunk IDs from <code>children</code> arrays → bulk-fetch via <code>_bulk_get</code> → reassemble content in order → write to <code>/vault/</code>.</span></div>
+    </div>
+  </div>
+
+  <div class="step" id="mcp-overview">
+    <div class="step-header"><span class="step-num">MCP DEBUG REPORT</span><h2>LiteLLM centralized MCP + Obsidian vault</h2></div>
+    <p>This report documents every bug and fix encountered while integrating LiteLLM's MCP gateway with the Obsidian vault pipeline. The goal: centralize vault access as a single MCP server in LiteLLM so all clients (Telegram via Hermes, Open WebUI, n8n, API) can query vault notes through one gateway with no client-side configuration or laptop dependency.</p>
+    <div class="diagram-wrap" style="margin-top:12px;">
+      <pre style="background:transparent;padding:0;"><code>Mac/Android (Obsidian + LiveSync)
+        ↓ sync
+CouchDB (Proxmox LXC, 10.10.15.10)
+        ↓ poll every 30s
+livesync-exporter (Go binary) → /vault/*.md
+        ↓
+supergateway + mcp-server-filesystem → :3000
+        ↓
+LiteLLM (Spark, port 8001) — MCP gateway
+        ↓
+All clients: Telegram · Hermes · Open WebUI · API</code></pre>
+    </div>
+    <div class="callout warning"><span class="callout-icon">⚠</span><span>18 issues across 4 areas: LXC container setup, LiteLLM MCP integration, Hermes Agent, and Open WebUI. All resolved except the LiteLLM Playground UI rendering bug — the backend works correctly.</span></div>
+  </div>
+
+  <div class="step" id="mcp-lxc">
+    <div class="step-header"><span class="step-num">MCP DEBUG — LXC</span><h2>LXC container issues (1–7)</h2></div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 1 — Ubuntu Oracular (24.10) EOL</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>apt update</code> failed — all package repos returned 404.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Initial LXC provisioned with Ubuntu 24.10 (Oracular), which reached EOL July 2025.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Scrapped container, provisioned fresh Ubuntu 24.04 LTS (Noble) LXC. <strong>Rule going forward:</strong> always use LTS releases for infrastructure containers.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 2 — CouchDB Node Name Mismatch</div>
+      <div class="issue-sym"><span>Symptom</span><span>CORS config commands returned <code>{"error":"nodedown","reason":"nonode@nohost is down"}</code> even after CouchDB was running.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Default CouchDB docs reference <code>nonode@nohost</code> but the actual Erlang node name on Ubuntu is <code>couchdb@127.0.0.1</code>.</span></div>
+      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
+        <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+        <pre><code>curl http://localhost:5984/_membership
+# → {"all_nodes":["couchdb@127.0.0.1"],"cluster_nodes":["couchdb@127.0.0.1"]}</code></pre>
+      </div>
+      <div class="issue-fix"><span>Fix</span><span>Always query <code>/_membership</code> first to confirm the real node name. Use <code>couchdb@127.0.0.1</code> in all config commands.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 3 — CouchDB Account Lockout</div>
+      <div class="issue-sym"><span>Symptom</span><span>All API calls returned <code>{"error":"forbidden","reason":"Account is temporarily locked due to multiple authentication failures"}</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Several curl commands ran with the literal placeholder <code>yourpassword</code> instead of real credentials, triggering the lockout.</span></div>
+      <div class="issue-fix"><span>Fix</span><span><code>systemctl restart couchdb</code> clears the lockout counter immediately.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 4 — livesync-exporter: Wrong CouchDB Document Structure</div>
+      <div class="issue-sym"><span>Symptom</span><span>Exporter logged "Exported 74 files" every 30s but <code>/vault/</code> remained empty.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Initial Go exporter assumed content lived in a <code>data</code> field. LiveSync uses a chunked format — file docs contain only a <code>children</code> array of chunk IDs (<code>h:</code> prefix); content lives in separate chunk documents.</span></div>
+      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
+        <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+        <pre><code>// File document — metadata only
+{ "_id": "00 - daily/2026-04-04.md", "children": ["h:3v14o1...", "h:32d9gh..."], "type": "plain" }
+
+// Chunk document — actual content
+{ "_id": "h:3v14o1...", "data": "...content fragment..." }</code></pre>
+      </div>
+      <div class="issue-fix"><span>Fix</span><span>Rewrote exporter: (1) fetch file docs, skipping <code>h:</code>/<code>ps:</code>/<code>ix:</code>/<code>_</code>-prefixed docs, (2) extract <code>children</code> chunk IDs, (3) bulk-fetch via <code>_bulk_get</code>, (4) concatenate in order, (5) write to <code>/vault/</code>.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 5 — Node.js v18 Segfaults</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>mcp-server-filesystem</code> crashed with SIGABRT (exit code 134) when supergateway tried to spawn it.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Node.js 18.19.1 on the LXC was incompatible with the installed version of <code>mcp-server-filesystem</code>.</span></div>
+      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
+        <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+        <pre><code>curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt install -y nodejs</code></pre>
+      </div>
+      <div class="issue-fix"><span>Fix</span><span>Upgrade to Node.js 20 via NodeSource. Crashes resolved entirely.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 6 — supergateway Stateless Mode Process Explosion</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>mcp-server-filesystem</code> processes accumulated under load, eventually hitting <code>pthread_create: Resource temporarily unavailable</code> and crashing the MCP server.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>supergateway in default stateless mode spawns a new <code>mcp-server-filesystem</code> child process per incoming HTTP request. Under concurrent load these accumulate and exhaust thread limits.</span></div>
+      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
+        <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+        <pre><code>ExecStart=supergateway \
+  --stdio "npx @modelcontextprotocol/server-filesystem /vault" \
+  --port 3000 \
+  --outputTransport streamableHttp \
+  --stateful \
+  --sessionTimeout 300000</code></pre>
+      </div>
+      <div class="issue-fix"><span>Fix</span><span>Add <code>--stateful --sessionTimeout 300000</code>. Maintains a single persistent child process with session management instead of spawning per request.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 7 — LXC Filesystem Corruption After Forced Restart</div>
+      <div class="issue-sym"><span>Symptom</span><span>After attempting to set <code>lxc.pids.max</code> and rebooting, LXC failed to start with <code>run_buffer: Script exited with status 255</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>The forced reboot left the ext4 journal dirty on the raw disk image.</span></div>
+      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
+        <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+        <pre><code># Run from the Proxmox host, not inside the LXC
+e2fsck -f /mnt/pve/J-PROX-CTS/images/100/vm-100-disk-0.raw
+pct start 100</code></pre>
+      </div>
+      <div class="issue-fix"><span>Fix</span><span><code>e2fsck</code> replays the journal and recovers the filesystem. Run from the Proxmox host.</span></div>
+    </div>
+  </div>
+
+  <div class="step" id="mcp-litellm">
+    <div class="step-header"><span class="step-num">MCP DEBUG — LITELLM</span><h2>LiteLLM MCP integration issues (8–13)</h2></div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 8 — <code>tool_choice: auto</code> Sent Without <code>tools</code> Array</div>
+      <div class="issue-sym"><span>Symptom</span><span>Every LiteLLM playground request with MCP servers selected returned <code>400: ValueError: When using tool_choice, tools must be set.</code></span></div>
+      <div class="issue-sym"><span>Cause</span><span>LiteLLM MCP integration sends <code>tool_choice: auto</code> on the initial request before the tools list is attached. vLLM correctly enforces the OpenAI spec — <code>tool_choice</code> without <code>tools</code> is invalid. Confirmed LiteLLM bug.</span></div>
+      <div class="issue-sym"><span>Dead ends</span><span><code>drop_params: true</code> doesn't strip <code>tool_choice</code>. <code>modify_params: true</code> adjusts formatting, not logic. No UI setting exists.</span></div>
+      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
+        <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+        <pre><code>docker exec vllm-qwen-35b sed -i \
+  's/            if "tools" not in data or data\["tools"\] is None:/            if ("tools" not in data or data["tools"] is None) and data["tool_choice"] != "auto":/' \
+  /usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/chat_completion/protocol.py
+docker restart vllm-qwen-35b</code></pre>
+      </div>
+      <div class="issue-fix"><span>Fix</span><span>Patched vLLM inside the container to skip validation when <code>tool_choice</code> is <code>auto</code> and no tools are present. <strong>⚠️ Patch lives inside the container — reapply if the container is recreated.</strong></span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 9 — MCP Servers Disappear from UI After Restart</div>
+      <div class="issue-sym"><span>Symptom</span><span>After every LiteLLM restart, MCP Servers page shows empty. <code>/v1/mcp/server</code> returns <code>[]</code>. Records exist in Postgres.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>LiteLLM UI/API cache bug — server list not refreshed from DB on startup.</span></div>
+      <div class="issue-sym"><span>Workaround</span><span>Add a dummy MCP server in the UI then delete it. Forces a UI refresh and real entries reappear.</span></div>
+      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
+        <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+        <pre><code># litellm-config.yaml — top level, NOT nested under litellm_settings
+mcp_servers:
+  obsidian:
+    url: "http://10.10.15.10:3000/mcp"
+    description: "Read, search, and manage Obsidian vault notes and files"</code></pre>
+      </div>
+      <div class="issue-fix"><span>Fix</span><span>Define MCP servers at the <strong>top level</strong> of <code>litellm-config.yaml</code>. Config-file servers load on startup regardless of DB cache state. Confirmed by grepping <code>proxy_server.py</code>: <code>mcp_servers_config = config.get("mcp_servers", None)</code>.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 10 — Missing <code>litellm-dashboard</code> Team Blocking MCP Tool Listing</div>
+      <div class="issue-sym"><span>Symptom</span><span>Every MCP tool listing attempt: <code>404: Team doesn't exist in db. Team=litellm-dashboard</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>LiteLLM's MCP permission system references a default team <code>litellm-dashboard</code> that should be auto-created on first run but wasn't.</span></div>
+      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
+        <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+        <pre><code>curl -X POST http://localhost:8001/team/new \
+  -H "Authorization: Bearer sk-your-master-key" \
+  -H "Content-Type: application/json" \
+  -d '{"team_id": "litellm-dashboard", "team_alias": "LiteLLM Dashboard"}'</code></pre>
+      </div>
+      <div class="issue-fix"><span>Fix</span><span>Manually create the <code>litellm-dashboard</code> team via the API. Only needs to be done once.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 11 — MCP Timeout Was Actually a Crash, Not a Timeout</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>MCP client list_tools was cancelled</code> and <code>Timeout while listing tools from obsidian</code> in LiteLLM logs.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>The MCP server was crashing mid-request (Issues 5 &amp; 6). The "timeout" was the client giving up after the connection dropped — not a real 60s timeout.</span></div>
+      <div class="issue-sym"><span>Dead end</span><span><code>mcp_settings.timeout</code> under <code>litellm_settings</code> does not map to <code>MCP_CLIENT_TIMEOUT</code>. That constant reads from the <code>LITELLM_MCP_CLIENT_TIMEOUT</code> env var, not the config file. The key was silently ignored.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Resolved by fixing the underlying Node.js/supergateway issues (5 &amp; 6). No timeout tuning was needed.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 12 — <code>system_prompt</code> in <code>litellm_params</code> Not Injected as System Message</div>
+      <div class="issue-sym"><span>Symptom</span><span>Model ignored instructions to use <code>/vault</code> as base path and responded without vault context.</span></div>
+      <div class="issue-sym"><span>Cause</span><span><code>system_prompt</code> under <code>litellm_params</code> is sent as a top-level field in the request body — not inserted into the messages array. vLLM passes it through as an unknown field and the model never sees it.</span></div>
+      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
+        <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+        <pre><code>litellm_settings:
+  default_system_message: "You have access to an Obsidian vault via MCP tools.
+    All vault files are located at /vault. When searching the vault, always use
+    /vault as the base path. Never use '.' as a path. Complete all tool calls
+    and searches fully before responding — never stop mid-task."</code></pre>
+      </div>
+      <div class="issue-fix"><span>Fix</span><span>Use <code>default_system_message</code> under <code>litellm_settings</code> — this correctly injects the instruction into the messages array.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 13 — LiteLLM Playground UI Drops Response After Tool List</div>
+      <div class="issue-sym"><span>Symptom</span><span>Playground lists all 14 obsidian tools, spinner runs, then the entire response box disappears. No errors in LiteLLM logs — all requests return HTTP 200.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>LiteLLM Playground UI rendering bug — the streaming multi-turn MCP response format isn't handled correctly by the frontend.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>No fix available. Use the API or other clients — the backend works correctly. Direct curl calls return full tool results and vault content.</span></div>
+    </div>
+  </div>
+
+  <div class="step" id="mcp-clients">
+    <div class="step-header"><span class="step-num">MCP DEBUG — CLIENTS</span><h2>Hermes &amp; Open WebUI issues (14–18)</h2></div>
+
+    <h3>Hermes Agent</h3>
+
+    <div class="issue">
+      <div class="issue-title">Issue 14 — Hermes Gateway Auth Failure After Master Key Added</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>hermes-gateway.service</code> crashed: <code>AuthenticationError [HTTP 401]: LiteLLM Virtual Key expected. Received=no-key-required, expected to start with 'sk-'.</code></span></div>
+      <div class="issue-sym"><span>Cause</span><span>Hermes config had <code>api_key: "no-key-required"</code> — worked before LiteLLM required authentication via master key.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Update <code>~/.hermes/config.yaml</code> with a valid LiteLLM virtual key.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 15 — Hermes Using Built-in Obsidian Skill Instead of MCP</div>
+      <div class="issue-sym"><span>Symptom</span><span>Hermes ignored the MCP server and tried to read vault files from <code>~/Documents/Obsidian Vault</code> on the Spark (path doesn't exist).</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Hermes has a built-in <code>obsidian</code> skill that uses local filesystem commands. It activates before MCP tools when vault-related queries are made.</span></div>
+      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
+        <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+        <pre><code># ~/.hermes/config.yaml
+mcp_servers:
+  obsidian:
+    url: "http://10.10.15.10:3000/mcp"
+    transport: streamableHttp</code></pre>
+      </div>
+      <div class="issue-fix"><span>Fix</span><span>Add MCP server to Hermes native MCP config. Patch <code>~/.hermes/skills/note-taking/obsidian/SKILL.md</code> to instruct Hermes to always use MCP tools and <code>/vault</code> as base path when an MCP server is configured.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 16 — <code>localhost</code> vs <code>host.docker.internal</code> Shared Config Conflict</div>
+      <div class="issue-sym"><span>Symptom</span><span>Changing <code>base_url</code> to <code>host.docker.internal</code> fixed <code>hermes-webui</code> (Docker container) but broke <code>hermes-gateway</code> (systemd host service). <code>host.docker.internal</code> doesn't resolve on the host itself.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Both services share <code>~/.hermes/config.yaml</code>. The URL that works inside Docker doesn't work on the host, and vice versa.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Keep <code>base_url: http://localhost:8001/v1</code> in config. Docker's <code>extra_hosts: ["host.docker.internal:host-gateway"]</code> in <code>docker-compose.yml</code> makes <code>host.docker.internal</code> resolve correctly inside the container — while <code>localhost</code> works on the host. Same config file, both contexts resolve correctly.</span></div>
+    </div>
+
+    <h3>Open WebUI</h3>
+
+    <div class="issue">
+      <div class="issue-title">Issue 17 — Open WebUI Built-in <code>search_notes</code> Tool Overriding MCP</div>
+      <div class="issue-sym"><span>Symptom</span><span>Vault queries used a <code>search_notes</code> tool that returned empty results instead of the LiteLLM obsidian MCP tools.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Open WebUI has a built-in <code>search_notes</code> tool for Obsidian. It executes at the Open WebUI layer before the request reaches LiteLLM's MCP gateway, looking for a local vault path that doesn't exist on the Spark.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Disable the built-in Open WebUI Obsidian tool and route all vault queries through the LiteLLM MCP tool server instead.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Issue 18 — Wrong Tool Server Type in Open WebUI</div>
+      <div class="issue-sym"><span>Symptom</span><span>LiteLLM tool server configured in Open WebUI but tools were ignored during chat — model had no vault access.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Tool server connection type set incorrectly. Open WebUI fetches tool definitions via <code>/mcp/openapi.json</code> (OpenAPI spec format). The wrong type setting meant tools were fetched but not injected into requests. LiteLLM logs confirmed <code>/mcp/openapi.json</code> was being hit correctly.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Set the correct connection type in Open WebUI <strong>Settings → Integrations → Manage Tool Servers</strong> for the LiteLLM entry. Obsidian MCP tools appeared and worked correctly in chat.</span></div>
+    </div>
+  </div>
+
+  <div class="step" id="mcp-config">
+    <div class="step-header"><span class="step-num">MCP DEBUG — CONFIG</span><h2>Final working configuration</h2></div>
+
+    <h3>LXC — obsidian-livesync (10.10.15.10)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Service</th><th>Details</th></tr></thead>
+        <tbody>
+          <tr><td>CouchDB 3.5.1</td><td>Node: <code>couchdb@127.0.0.1</code> · DB: <code>obsidian_livesync</code></td></tr>
+          <tr><td>livesync-exporter</td><td>systemd service · polls CouchDB every 30s · writes <code>/vault/*.md</code></td></tr>
+          <tr><td>mcp-vault</td><td>systemd service · supergateway (stateful, <code>--sessionTimeout 300000</code>) + mcp-server-filesystem · port 3000</td></tr>
+          <tr><td>Node.js</td><td>v20 via NodeSource (v18 segfaults)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>LiteLLM — <code>litellm-config.yaml</code></h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>model_list:
+  - model_name: qwen3.6-35b
+    litellm_params:
+      model: openai/qwen3.6-35b
+      api_base: http://localhost:8000/v1
+      api_key: "not-needed"
+      max_tokens: 8192
+
+mcp_servers:
+  obsidian:
+    url: "http://10.10.15.10:3000/mcp"
+    description: "Read, search, and manage Obsidian vault notes and files"
+    allow_all_keys: true
+
+litellm_settings:
+  verbose: true
+  default_system_message: "You have access to an Obsidian vault via MCP tools. All vault files are located at /vault. When searching the vault, always use /vault as the base path. Never use '.' as a path. Complete all tool calls and searches fully before responding — never stop mid-task."
+
+router_settings:
+  num_retries: 0
+  timeout: 600
+
+general_settings:
+  master_key: sk-your-master-key
+  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"</code></pre>
+    </div>
+
+    <h3>vLLM patch — reapply if container is recreated</h3>
+    <div class="callout warning"><span class="callout-icon">⚠</span><span>This patch lives inside the Docker container and is lost if <code>vllm-qwen-35b</code> is recreated. Script it or bake it into a custom image.</span></div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>docker exec vllm-qwen-35b sed -i \
+  's/            if "tools" not in data or data\["tools"\] is None:/            if ("tools" not in data or data["tools"] is None) and data["tool_choice"] != "auto":/' \
+  /usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/chat_completion/protocol.py
+docker restart vllm-qwen-35b</code></pre>
+    </div>
+
+    <h3>Client status</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Client</th><th>Status</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>LiteLLM API (curl)</td><td style="color:var(--green);font-weight:600;">✅ Working</td><td>Full tool calls and vault results</td></tr>
+          <tr><td>Telegram (Hermes gateway)</td><td style="color:var(--green);font-weight:600;">✅ Working</td><td>Uses MCP tools directly</td></tr>
+          <tr><td>Open WebUI</td><td style="color:var(--green);font-weight:600;">✅ Working</td><td>Tool server type fix required (Issue 18)</td></tr>
+          <tr><td>Hermes WebUI</td><td style="color:var(--green);font-weight:600;">✅ Working</td><td>Shared config with host service (Issue 16)</td></tr>
+          <tr><td>LiteLLM Playground UI</td><td style="color:var(--amber);font-weight:600;">⚠️ Partial</td><td>Lists tools, response disappears — backend works (Issue 13)</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 

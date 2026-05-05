@@ -300,7 +300,7 @@
     <a href="#obsidian-issues" class="nav-item"><span class="num">—</span> Roadblocks</a>
   </nav>
   <nav class="nav-section">
-    <div class="nav-label">MCP Debug Report</div>
+    <div class="nav-label">LiteLLM + Obsidian MCP</div>
     <a href="#mcp-overview" class="nav-item"><span class="num">—</span> Architecture goal</a>
     <a href="#mcp-lxc" class="nav-item"><span class="num">—</span> LXC issues 1–7</a>
     <a href="#mcp-litellm" class="nav-item"><span class="num">—</span> LiteLLM issues 8–13</a>
@@ -987,7 +987,7 @@ Telegram · Hermes · n8n · Open WebUI</code></pre>
   </div>
 
   <div class="step" id="mcp-overview">
-    <div class="step-header"><span class="step-num">MCP DEBUG REPORT</span><h2>LiteLLM centralized MCP + Obsidian vault</h2></div>
+    <div class="step-header"><span class="step-num">LITELLM + OBSIDIAN MCP</span><h2>LiteLLM centralized MCP + Obsidian vault</h2></div>
     <p>This report documents every bug and fix encountered while integrating LiteLLM's MCP gateway with the Obsidian vault pipeline. The goal: centralize vault access as a single MCP server in LiteLLM so all clients (Telegram via Hermes, Open WebUI, n8n, API) can query vault notes through one gateway with no client-side configuration or laptop dependency.</p>
     <div class="diagram-wrap" style="margin-top:12px;">
       <pre style="background:transparent;padding:0;"><code>Mac/Android (Obsidian + LiveSync)
@@ -1006,7 +1006,7 @@ All clients: Telegram · Hermes · Open WebUI · API</code></pre>
   </div>
 
   <div class="step" id="mcp-lxc">
-    <div class="step-header"><span class="step-num">MCP DEBUG — LXC</span><h2>LXC container issues (1–7)</h2></div>
+    <div class="step-header"><span class="step-num">LITELLM + OBSIDIAN MCP</span><h2>LXC container issues (1–7)</h2></div>
 
     <div class="issue">
       <div class="issue-title">Issue 1 — Ubuntu Oracular (24.10) EOL</div>
@@ -1092,7 +1092,7 @@ pct start 100</code></pre>
   </div>
 
   <div class="step" id="mcp-litellm">
-    <div class="step-header"><span class="step-num">MCP DEBUG — LITELLM</span><h2>LiteLLM MCP integration issues (8–13)</h2></div>
+    <div class="step-header"><span class="step-num">LITELLM + OBSIDIAN MCP</span><h2>LiteLLM MCP integration issues (8–13)</h2></div>
 
     <div class="issue">
       <div class="issue-title">Issue 8 — <code>tool_choice: auto</code> Sent Without <code>tools</code> Array</div>
@@ -1171,7 +1171,7 @@ mcp_servers:
   </div>
 
   <div class="step" id="mcp-clients">
-    <div class="step-header"><span class="step-num">MCP DEBUG — CLIENTS</span><h2>Hermes &amp; Open WebUI issues (14–18)</h2></div>
+    <div class="step-header"><span class="step-num">LITELLM + OBSIDIAN MCP</span><h2>Hermes &amp; Open WebUI issues (14–18)</h2></div>
 
     <h3>Hermes Agent</h3>
 
@@ -1222,7 +1222,7 @@ mcp_servers:
   </div>
 
   <div class="step" id="mcp-config">
-    <div class="step-header"><span class="step-num">MCP DEBUG — CONFIG</span><h2>Final working configuration</h2></div>
+    <div class="step-header"><span class="step-num">LITELLM + OBSIDIAN MCP</span><h2>Final working configuration</h2></div>
 
     <h3>LXC — obsidian-livesync (10.10.15.10)</h3>
     <div class="table-wrap">

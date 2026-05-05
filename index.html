@@ -293,6 +293,10 @@
     <a href="#files" class="nav-item"><span class="num">—</span> File locations</a>
     <a href="#issues" class="nav-item"><span class="num">—</span> Known issues</a>
   </nav>
+  <nav class="nav-section">
+    <div class="nav-label">Troubleshooting</div>
+    <a href="#litellm-ui" class="nav-item"><span class="num">—</span> LiteLLM Admin UI</a>
+  </nav>
 </aside>
 
 <main>
@@ -835,6 +839,101 @@ curl http://localhost:8001/v1/models</code></pre>
       <div class="issue-sym"><span>Symptom</span><span>signal-cli 0.14.x requires Java 25 (not in Ubuntu 24.04 apt repos). Signal servers block datacenter IPs at TLS level.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Use Telegram — no IP restrictions, native arm64 support.</span></div>
     </div>
+  </div>
+
+
+  <div class="step" id="litellm-ui">
+    <div class="step-header"><span class="step-num">TROUBLESHOOTING</span><h2>LiteLLM Admin UI</h2></div>
+    <p>The LiteLLM proxy ships with a built-in web UI at <code>/ui</code>. It requires a master key and a PostgreSQL database — SQLite is not supported for the UI auth layer. The following documents every error encountered during setup, in order.</p>
+
+    <h3>Step 1 — Set a master key</h3>
+    <p>Add to <code>~/sparky-ai-stack/litellm-config.yaml</code>:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>general_settings:
+  master_key: sk-yourkey
+  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"</code></pre>
+    </div>
+    <p>Generate a secure key:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>echo "sk-$(openssl rand -hex 16)"</code></pre>
+    </div>
+
+    <h3>Step 2 — Add PostgreSQL to docker-compose.yml</h3>
+    <p>Rather than a standalone <code>docker run</code> command, declare it as a service in <code>~/sparky-ai-stack/docker-compose.yml</code> so the entire stack is managed as a single unit — one <code>docker compose up</code> starts everything, volumes are declared alongside the services that use them, and restart behavior is consistent.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>  litellm-db:
+    image: postgres:16
+    container_name: litellm-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=litellm
+      - POSTGRES_DB=litellm
+    ports:
+      - "5432:5432"
+    volumes:
+      - litellm_db:/var/lib/postgresql/data
+
+volumes:
+  litellm_db:</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>docker compose up -d litellm-db</code></pre>
+    </div>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span><code>restart: unless-stopped</code> combined with <code>sudo systemctl enable docker</code> ensures the container survives reboots automatically — no additional systemd unit needed.</span></div>
+
+    <h3>Step 3 — Install Prisma</h3>
+    <p>LiteLLM uses Prisma as its database ORM. It is not included in the base <code>pip install litellm</code> package.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>pip install prisma --break-system-packages</code></pre>
+    </div>
+    <p><code>--break-system-packages</code> bypasses a Python 3.12 restriction that prevents pip from installing into the system Python environment. It is safe on a dedicated AI server where system tools do not depend on conflicting packages.</p>
+
+    <h3>Step 4 — Generate Prisma binaries</h3>
+    <p>After installing the package, the binaries must be generated from LiteLLM's bundled schema:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>cd ~/.local/lib/python3.12/site-packages/litellm/proxy
+prisma generate --schema schema.prisma</code></pre>
+    </div>
+
+    <h3>Step 5 — Apply the database schema</h3>
+    <p>The Postgres database exists but has no tables yet. Push the schema. <code>DATABASE_URL</code> must be passed inline — Prisma reads it directly from the environment, not from <code>litellm-config.yaml</code>.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
+prisma db push --schema schema.prisma</code></pre>
+    </div>
+
+    <h3>Step 6 — Restart LiteLLM</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo systemctl daemon-reload
+sudo systemctl restart litellm
+sudo systemctl status litellm</code></pre>
+    </div>
+
+    <h3>Errors encountered in order</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Error</th><th>Cause</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td><code>Authentication Error, Not connected to DB</code></td><td>No PostgreSQL configured</td><td>Add <code>database_url</code> to <code>general_settings</code></td></tr>
+          <tr><td><code>ModuleNotFoundError: No module named 'prisma'</code></td><td>Prisma not installed</td><td><code>pip install prisma --break-system-packages</code></td></tr>
+          <tr><td><code>Unable to find Prisma binaries</code></td><td><code>prisma generate</code> not run</td><td>Run <code>prisma generate --schema schema.prisma</code></td></tr>
+          <tr><td><code>The table 'public.LiteLLM_UserTable' does not exist</code></td><td>Schema not applied to DB</td><td>Run <code>prisma db push --schema schema.prisma</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Accessing the UI</h3>
+    <p>Navigate to <code>http://YOUR_SERVER_IP:8001/ui</code>. Username: <code>admin</code>. Password: your <code>master_key</code> value.</p>
+    <div class="verify">UI loads and accepts login with master key credentials</div>
   </div>
 
 </main>

@@ -80,6 +80,103 @@ The full step-by-step setup guide is at [cmdlabtech.github.io/dgx-spark-ai-stack
 - The SQLite logs accumulated by LiteLLM (`~/sparky-ai-stack/logs/litellm.db`) serve as a fine-tuning corpus over time
 - vLLM is intentionally run via `docker run`, not as a compose service — this keeps it isolated from compose lifecycle operations so model weights stay loaded while the rest of the stack is restarted freely (see Architecture above)
 
+## Troubleshooting
+
+### Enabling the LiteLLM Admin UI
+
+The LiteLLM proxy ships with a built-in web UI at `http://<host>:8001/ui`. It requires a master key and a PostgreSQL database — SQLite is not supported for the UI auth layer.
+
+**Step 1 — Set a master key**
+
+Add to `~/sparky-ai-stack/litellm-config.yaml`:
+
+```yaml
+general_settings:
+  master_key: sk-yourkey
+  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
+```
+
+Generate a key with:
+
+```bash
+echo "sk-$(openssl rand -hex 16)"
+```
+
+**Step 2 — Add PostgreSQL to docker-compose.yml**
+
+Rather than a standalone `docker run`, declare it as a service so the entire stack is managed as a single unit:
+
+```yaml
+  litellm-db:
+    image: postgres:16
+    container_name: litellm-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=litellm
+      - POSTGRES_DB=litellm
+    ports:
+      - "5432:5432"
+    volumes:
+      - litellm_db:/var/lib/postgresql/data
+
+volumes:
+  litellm_db:
+```
+
+```bash
+docker compose up -d litellm-db
+```
+
+`restart: unless-stopped` combined with `sudo systemctl enable docker` ensures the container survives reboots without a separate systemd unit.
+
+**Step 3 — Install Prisma**
+
+LiteLLM uses Prisma as its ORM. It is not included in the base pip package:
+
+```bash
+pip install prisma --break-system-packages
+```
+
+`--break-system-packages` bypasses a Python 3.12 restriction on installing into the system environment. It is safe on a dedicated AI server.
+
+**Step 4 — Generate Prisma binaries**
+
+```bash
+cd ~/.local/lib/python3.12/site-packages/litellm/proxy
+prisma generate --schema schema.prisma
+```
+
+**Step 5 — Apply the database schema**
+
+```bash
+DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
+prisma db push --schema schema.prisma
+```
+
+`DATABASE_URL` must be passed inline — Prisma reads it directly from the environment, not from `litellm-config.yaml`.
+
+**Step 6 — Restart LiteLLM**
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart litellm
+sudo systemctl status litellm
+```
+
+**Errors encountered in order**
+
+| Error | Cause | Fix |
+|---|---|---|
+| `Authentication Error, Not connected to DB` | No PostgreSQL configured | Add `database_url` to `general_settings` |
+| `ModuleNotFoundError: No module named 'prisma'` | Prisma not installed | `pip install prisma --break-system-packages` |
+| `Unable to find Prisma binaries` | `prisma generate` not run | Run `prisma generate --schema schema.prisma` |
+| `The table 'public.LiteLLM_UserTable' does not exist` | Schema not applied to DB | Run `prisma db push --schema schema.prisma` |
+
+**Accessing the UI**
+
+Navigate to `http://<sparky-ip>:8001/ui`. Username: `admin`. Password: your `master_key` value.
+
 ## Container-to-host connectivity
 
 Containers running in Docker cannot reach host-bound services via `localhost` — `localhost` inside a container resolves to the container's own loopback interface, not the host's.

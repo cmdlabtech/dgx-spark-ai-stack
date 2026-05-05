@@ -37,7 +37,7 @@ CouchDB 3.5.1 ─── Proxmox LXC (obsidian-livesync)
 livesync-exporter → /vault/*.md
         ↓
 MCP filesystem server (@modelcontextprotocol/server-filesystem)
-        ↓ via Tailscale VPN
+        ↓
 ┌──────────────────────────────────────────────────┐
 │                  Nvidia DGX Spark                │
 │                                                  │

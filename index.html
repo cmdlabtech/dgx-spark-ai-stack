@@ -335,7 +335,7 @@
     <div class="diagram-wrap">
       <svg width="100%" viewBox="0 0 1060 680" role="img" xmlns="http://www.w3.org/2000/svg">
         <title>DGX Spark AI stack architecture</title>
-        <desc>Layered architecture: users at top, four frontends, LiteLLM proxy middleware, vLLM serving layer, Qwen model at bottom. Hermes Agent alongside connected to Telegram and LiteLLM. Obsidian LiveSync pipeline on right: Mac/Android → CouchDB → livesync-exporter → MCP filesystem server → LiteLLM via Tailscale.</desc>
+        <desc>Layered architecture: users at top, four frontends, LiteLLM proxy middleware, vLLM serving layer, Qwen model at bottom. Hermes Agent alongside connected to Telegram and LiteLLM. Obsidian LiveSync pipeline on right: Mac/Android → CouchDB → livesync-exporter → MCP vault server → LiteLLM.</desc>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -430,7 +430,7 @@
         <!-- Model -->
         <rect x="140" y="496" width="372" height="62" rx="6" class="dcoral"/>
         <text class="dth" x="326" y="518" text-anchor="middle" dominant-baseline="central">Qwen3.6-35B-A3B-FP8</text>
-        <text class="dts" x="326" y="536" text-anchor="middle" dominant-baseline="central">Nvidia DGX Spark · private LAN · Tailscale</text>
+        <text class="dts" x="326" y="536" text-anchor="middle" dominant-baseline="central">Nvidia DGX Spark · private LAN</text>
 
         <!-- ===== Obsidian LiveSync stack (Proxmox LXC) ===== -->
 
@@ -471,7 +471,7 @@
 
         <!-- MCP server → LiteLLM (routes above Hermes Agent via gap at x≈684) -->
         <path d="M 720 299 L 684 299 L 684 258 L 496 258 L 496 278" class="dl" marker-end="url(#arrow)"/>
-        <text x="590" y="252" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">MCP tool · Tailscale VPN</text>
+        <text x="590" y="252" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">MCP tool</text>
       </svg>
     </div>
   </div>
@@ -913,7 +913,7 @@ CouchDB 3.5.1 (Proxmox LXC · obsidian-livesync)
 livesync-exporter → /vault/*.md
         ↓
 MCP filesystem server (@mcp/server-filesystem)
-        ↓ via Tailscale VPN
+        ↓
 LiteLLM (DGX Spark · port 8001)
         ↓
 Telegram · Hermes · n8n · Open WebUI</code></pre>

@@ -294,6 +294,12 @@
     <a href="#issues" class="nav-item"><span class="num">—</span> Known issues</a>
   </nav>
   <nav class="nav-section">
+    <div class="nav-label">Obsidian LiveSync</div>
+    <a href="#obsidian-overview" class="nav-item"><span class="num">—</span> Overview</a>
+    <a href="#obsidian-config" class="nav-item"><span class="num">—</span> Configuration</a>
+    <a href="#obsidian-issues" class="nav-item"><span class="num">—</span> Roadblocks</a>
+  </nav>
+  <nav class="nav-section">
     <div class="nav-label">Troubleshooting</div>
     <a href="#litellm-ui" class="nav-item"><span class="num">—</span> LiteLLM Admin UI</a>
   </nav>
@@ -319,9 +325,9 @@
   <div class="diagram-section" id="diagram">
     <h2>Architecture</h2>
     <div class="diagram-wrap">
-      <svg width="100%" viewBox="0 0 680 640" role="img" xmlns="http://www.w3.org/2000/svg">
+      <svg width="100%" viewBox="0 0 1060 680" role="img" xmlns="http://www.w3.org/2000/svg">
         <title>DGX Spark AI stack architecture</title>
-        <desc>Layered architecture: users at top, four frontends, LiteLLM proxy middleware, vLLM serving layer, Qwen model at bottom. Hermes Agent alongside connected to Telegram and LiteLLM.</desc>
+        <desc>Layered architecture: users at top, four frontends, LiteLLM proxy middleware, vLLM serving layer, Qwen model at bottom. Hermes Agent alongside connected to Telegram and LiteLLM. Obsidian LiveSync pipeline on right: Mac/Android → CouchDB → livesync-exporter → MCP filesystem server → LiteLLM via Tailscale.</desc>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -334,6 +340,8 @@
           .dteal { fill:#f0fdfa; stroke:#99f6e4; stroke-width:1; }
           .damber { fill:#fffbeb; stroke:#fcd34d; stroke-width:1; }
           .dcoral { fill:#fff7ed; stroke:#fdba74; stroke-width:1.5; }
+          .dlxc { fill:#f0fdf4; stroke:#86efac; stroke-width:1.5; stroke-dasharray:6 3; }
+          .dgreen { fill:#dcfce7; stroke:#4ade80; stroke-width:1; }
           .dl { stroke:#9ca3af; stroke-width:1.2; fill:none; }
           .dld { stroke:#9ca3af; stroke-width:1; fill:none; stroke-dasharray:4 3; }
           .dth { font-family:'Inter',sans-serif; font-size:13px; font-weight:600; fill:#111827; }
@@ -415,6 +423,47 @@
         <rect x="140" y="496" width="372" height="62" rx="6" class="dcoral"/>
         <text class="dth" x="326" y="518" text-anchor="middle" dominant-baseline="central">Qwen3.6-35B-A3B-FP8</text>
         <text class="dts" x="326" y="536" text-anchor="middle" dominant-baseline="central">Nvidia DGX Spark · private LAN · Tailscale</text>
+
+        <!-- ===== Obsidian LiveSync stack (Proxmox LXC) ===== -->
+
+        <!-- Mac + Android -->
+        <rect x="722" y="20" width="294" height="50" rx="6" class="dteal"/>
+        <text class="dth" x="869" y="39" text-anchor="middle" dominant-baseline="central">Mac + Android</text>
+        <text class="dts" x="869" y="57" text-anchor="middle" dominant-baseline="central">Obsidian · Self-hosted LiveSync · bidirectional</text>
+
+        <!-- Mac/Android → CouchDB -->
+        <line x1="869" y1="70" x2="869" y2="103" class="dl" marker-end="url(#arrow)"/>
+        <text x="879" y="89" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">sync ↕</text>
+
+        <!-- Proxmox LXC wrapper (dashed green) -->
+        <rect x="706" y="88" width="320" height="258" rx="8" class="dlxc"/>
+        <text x="866" y="102" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#16a34a" font-weight="600">PROXMOX LXC · obsidian-livesync · Ubuntu 24.04 LTS</text>
+
+        <!-- CouchDB -->
+        <rect x="720" y="110" width="292" height="56" rx="6" class="dgreen"/>
+        <text class="dth" x="866" y="131" text-anchor="middle" dominant-baseline="central">CouchDB 3.5.1</text>
+        <text class="dts" x="866" y="149" text-anchor="middle" dominant-baseline="central">obsidian_livesync · couchdb@127.0.0.1</text>
+
+        <!-- CouchDB → livesync-exporter -->
+        <line x1="866" y1="166" x2="866" y2="190" class="dl" marker-end="url(#arrow)"/>
+        <text x="876" y="181" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">poll 30s</text>
+
+        <!-- livesync-exporter -->
+        <rect x="720" y="190" width="292" height="56" rx="6" class="db"/>
+        <text class="dth" x="866" y="211" text-anchor="middle" dominant-baseline="central">livesync-exporter</text>
+        <text class="dts" x="866" y="229" text-anchor="middle" dominant-baseline="central">Go binary · reassembles chunks → /vault/</text>
+
+        <!-- livesync-exporter → MCP filesystem server -->
+        <line x1="866" y1="246" x2="866" y2="270" class="dl" marker-end="url(#arrow)"/>
+
+        <!-- MCP filesystem server -->
+        <rect x="720" y="270" width="292" height="56" rx="6" class="db"/>
+        <text class="dth" x="866" y="291" text-anchor="middle" dominant-baseline="central">MCP filesystem server</text>
+        <text class="dts" x="866" y="309" text-anchor="middle" dominant-baseline="central">@mcp/server-filesystem · /vault/</text>
+
+        <!-- MCP server → LiteLLM (routes above Hermes Agent via gap at x≈684) -->
+        <path d="M 720 299 L 684 299 L 684 258 L 496 258 L 496 278" class="dl" marker-end="url(#arrow)"/>
+        <text x="590" y="252" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">MCP tool · Tailscale VPN</text>
       </svg>
     </div>
   </div>
@@ -841,6 +890,93 @@ curl http://localhost:8001/v1/models</code></pre>
     </div>
   </div>
 
+
+  <div class="step" id="obsidian-overview">
+    <div class="step-header"><span class="step-num">OBSIDIAN LIVESYNC</span><h2>Vault sync + AI query pipeline</h2></div>
+    <p>A self-hosted Obsidian vault sync and AI query pipeline running entirely server-side, with no laptop dependency. Mac and Android devices sync their Obsidian vaults bidirectionally to CouchDB on a dedicated Proxmox LXC. A Go exporter reassembles the chunked documents into flat Markdown files, and an MCP filesystem server exposes the vault to LiteLLM — so any client (Telegram, Hermes, n8n, Open WebUI) can query your notes as a tool call.</p>
+    <h3>Why a separate LXC?</h3>
+    <p>The DGX Spark's 128 GB of RAM is fully committed at idle with vLLM, LiteLLM, Open WebUI, and n8n running (~114 GB in use). Adding CouchDB directly on the Spark would compete with model weights. Running vault services on a lightweight Proxmox LXC keeps inference RAM entirely dedicated to vLLM.</p>
+    <h3>Architecture flow</h3>
+    <div class="diagram-wrap" style="margin-top:12px;">
+      <pre style="background:transparent;padding:0;"><code>Mac/Android (Obsidian + LiveSync)
+        ↓ bidirectional sync
+CouchDB 3.5.1 (Proxmox LXC · obsidian-livesync)
+        ↓ poll every 30s
+livesync-exporter → /vault/*.md
+        ↓
+MCP filesystem server (@mcp/server-filesystem)
+        ↓ via Tailscale VPN
+LiteLLM (DGX Spark · port 8001)
+        ↓
+Telegram · Hermes · n8n · Open WebUI</code></pre>
+    </div>
+    <h3>Components</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Component</th><th>What it does</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>CouchDB 3.5.1</td><td>Receives LiveSync sync from all clients; stores vault in chunked format</td><td>Proxmox LXC</td></tr>
+          <tr><td>livesync-exporter</td><td>Go binary; polls CouchDB every 30 s, reassembles <code>children</code> chunk arrays via <code>_bulk_get</code>, writes flat <code>.md</code> files to <code>/vault/</code></td><td>Proxmox LXC</td></tr>
+          <tr><td>MCP filesystem server</td><td><code>@modelcontextprotocol/server-filesystem</code> pointed at <code>/vault/</code>; exposes vault to LiteLLM as a tool</td><td>Proxmox LXC</td></tr>
+          <tr><td>Tailscale</td><td>Private network between LXC and DGX Spark for MCP connection</td><td>Both nodes</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="step" id="obsidian-config">
+    <div class="step-header"><span class="step-num">OBSIDIAN LIVESYNC</span><h2>Configuration reference</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>CouchDB node name</td><td><code>couchdb@127.0.0.1</code></td></tr>
+          <tr><td>CouchDB database</td><td><code>obsidian_livesync</code></td></tr>
+          <tr><td>Vault output path on LXC</td><td><code>/vault/</code></td></tr>
+          <tr><td>Exporter poll interval</td><td>30 seconds</td></tr>
+          <tr><td>Exporter systemd service</td><td><code>livesync-exporter.service</code></td></tr>
+          <tr><td>Exporter environment file</td><td><code>/etc/livesync-exporter.env</code></td></tr>
+          <tr><td>LXC OS</td><td>Ubuntu 24.04 LTS (Noble)</td></tr>
+          <tr><td>MCP server package</td><td><code>@modelcontextprotocol/server-filesystem</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>Discover the actual CouchDB node name with <code>curl -u admin:pass http://localhost:5984/_membership</code> — do not assume <code>nonode@nohost</code>.</span></div>
+  </div>
+
+  <div class="step" id="obsidian-issues">
+    <div class="step-header"><span class="step-num">OBSIDIAN LIVESYNC</span><h2>Roadblocks &amp; solutions</h2></div>
+
+    <div class="issue">
+      <div class="issue-title">DGX Spark memory pressure</div>
+      <div class="issue-sym"><span>Problem</span><span>Spark had 114 GB of 128 GB RAM in use at idle (vLLM, LiteLLM, Open WebUI, n8n). No headroom for additional resident services.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Deployed CouchDB and all vault-related services on a dedicated Proxmox LXC, keeping the Spark exclusively for inference workloads.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Ubuntu Oracular (24.10) EOL on existing LXC</div>
+      <div class="issue-sym"><span>Problem</span><span>Initial LXC provisioned with Ubuntu 24.10 (Oracular) hit EOL. All apt repos returned 404, making the container unusable.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Provisioned a fresh LXC with Ubuntu 24.04 LTS (Noble). All new LXCs now use 24.04 LTS or Debian 12.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">CouchDB Erlang node name mismatch</div>
+      <div class="issue-sym"><span>Problem</span><span>Standard node path <code>_node/nonode@nohost</code> in CORS configuration commands returned <code>nodedown</code> errors.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Query <code>/_membership</code> to discover the actual node name (<code>couchdb@127.0.0.1</code>) and substitute it in all configuration commands.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">CouchDB account lockout</div>
+      <div class="issue-sym"><span>Problem</span><span>CORS curl commands pasted with placeholder password instead of real credentials triggered CouchDB's brute-force lockout after repeated failures.</span></div>
+      <div class="issue-fix"><span>Fix</span><span><code>systemctl restart couchdb</code> clears the lockout. Re-run all CORS configuration commands with the correct password.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">LiveSync chunked storage format</div>
+      <div class="issue-sym"><span>Problem</span><span>Initial <code>livesync-exporter</code> assumed documents stored content in a <code>data</code> field. LiveSync uses a chunked architecture — each file document has a <code>children</code> array of chunk IDs (prefixed <code>h:</code>), with content split across multiple leaf documents.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Rewrote exporter: fetch file docs → collect all chunk IDs from <code>children</code> arrays → bulk-fetch via <code>_bulk_get</code> → reassemble content in order → write to <code>/vault/</code>.</span></div>
+    </div>
+  </div>
 
   <div class="step" id="litellm-ui">
     <div class="step-header"><span class="step-num">TROUBLESHOOTING</span><h2>LiteLLM Admin UI</h2></div>

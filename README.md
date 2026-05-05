@@ -16,35 +16,104 @@ Covers model serving, proxying, workflow automation, an autonomous agent layer, 
 | [Open WebUI](https://github.com/open-webui/open-webui) | Daily chat interface | Mac/desktop app |
 | Telegram | Mobile/remote access | via Hermes gateway |
 | Cline (VS Code) | Agentic coding | VS Code extension |
+| [CouchDB](https://couchdb.apache.org/) 3.5.1 | Obsidian vault sync backend (Proxmox LXC) | 5984 |
+| livesync-exporter | Chunk reassembly → `/vault/*.md` (Proxmox LXC) | — |
+| MCP filesystem server | Vault tool exposure to LiteLLM (Proxmox LXC) | stdio |
 
 **Model:** `Qwen/Qwen3.6-35B-A3B-FP8`
 
 ## Hardware
 
-- Nvidia DGX Spark (Grace CPU · GB10 GPU · arm64)
-- Ubuntu 24.04
-- GPU memory utilization: 0.8
+- Nvidia DGX Spark (Grace CPU · GB10 GPU · arm64) — Ubuntu 24.04 · GPU util 0.8
+- Proxmox LXC — `obsidian-livesync` container (Ubuntu 24.04 LTS) · Tailscale connected
 
 ## Architecture
 
 ```
-Users
-  ├── Open WebUI (Mac app)
-  ├── Cline (VS Code)
-  ├── n8n (workflows)
-  └── Telegram ──────────────► Hermes Agent ──► Hermes WebUI
-        │                           │
-        ▼                           ▼
-    LiteLLM proxy ◄─────────────────┘
-    (port 8001, logs all requests to SQLite)
-        │
-        ▼
-    vLLM (port 8000)
-        │
-        ▼
-    Qwen3.6-35B-A3B-FP8
-    Nvidia DGX Spark
+Mac/Android (Obsidian + LiveSync plugin)
+        ↓ bidirectional sync
+CouchDB 3.5.1 ─── Proxmox LXC (obsidian-livesync)
+        ↓ poll every 30s
+livesync-exporter → /vault/*.md
+        ↓
+MCP filesystem server (@modelcontextprotocol/server-filesystem)
+        ↓ via Tailscale VPN
+┌──────────────────────────────────────────────────┐
+│                  Nvidia DGX Spark                │
+│                                                  │
+│  Users                                           │
+│    ├── Open WebUI (Mac app)                      │
+│    ├── Cline (VS Code)                           │
+│    ├── n8n (workflows)                           │
+│    └── Telegram ──► Hermes Agent ──► Hermes WebUI│
+│          │               │                       │
+│          ▼               ▼                       │
+│      LiteLLM proxy ◄─────┘ ◄── MCP vault tool   │
+│      (port 8001, SQLite logs)                    │
+│          │                                       │
+│          ▼                                       │
+│      vLLM (port 8000)                            │
+│          │                                       │
+│          ▼                                       │
+│      Qwen3.6-35B-A3B-FP8                         │
+└──────────────────────────────────────────────────┘
 ```
+
+## Obsidian LiveSync Integration
+
+A self-hosted Obsidian vault sync and AI query pipeline, fully server-side with no laptop dependency.
+
+### Components
+
+**Proxmox LXC — `obsidian-livesync` (Ubuntu 24.04 LTS)**
+
+- CouchDB 3.5.1 running as a standalone node (`couchdb@127.0.0.1`), database: `obsidian_livesync`
+- `livesync-exporter` — custom Go binary (systemd service) that polls CouchDB every 30 seconds, reassembles LiveSync chunked documents into flat `.md` files, and writes them to `/vault/`
+- MCP filesystem server (`@modelcontextprotocol/server-filesystem`) pointed at `/vault/` — exposes vault contents to LiteLLM as a callable tool
+- Tailscale for private network access between the LXC and the DGX Spark
+
+**Mac + Android** — Obsidian with the Self-hosted LiveSync plugin installed on both; both sync bidirectionally to CouchDB on the LXC.
+
+**LiteLLM (DGX Spark)** — MCP server config pointing at the LXC MCP server URL. This enables any LiteLLM client (Telegram, Hermes, n8n, Open WebUI) to query vault notes as a tool call.
+
+### Key configuration
+
+| Setting | Value |
+|---|---|
+| CouchDB node name | `couchdb@127.0.0.1` |
+| CouchDB database | `obsidian_livesync` |
+| Vault output path on LXC | `/vault/` |
+| Exporter poll interval | 30 seconds |
+| Exporter systemd service | `livesync-exporter.service` |
+| Exporter env file | `/etc/livesync-exporter.env` |
+
+### Roadblocks encountered
+
+**1. DGX Spark memory pressure**
+- Problem: Spark had 114 GB of 128 GB RAM in use at idle with vLLM (Qwen3.6-35B-FP8 at 0.85 GPU util), LiteLLM, Open WebUI, and n8n running. No headroom for additional services.
+- Solution: Deployed CouchDB and all vault-related services on a dedicated Proxmox LXC, keeping the Spark exclusively for inference workloads.
+
+**2. Ubuntu Oracular (24.10) EOL on existing LXC**
+- Problem: Initial LXC provisioned with Ubuntu 24.10 (Oracular) hit EOL. All apt repos returned 404, making the container unusable.
+- Solution: Provisioned a fresh LXC with Ubuntu 24.04 LTS (Noble). Going forward all new LXCs use 24.04 LTS or Debian 12.
+
+**3. CouchDB Erlang node name mismatch**
+- Problem: The standard node path `_node/nonode@nohost` used in CORS configuration commands returned `nodedown` errors.
+- Solution: Queried `/_membership` to discover the actual node name (`couchdb@127.0.0.1`) and substituted it in all configuration commands.
+
+**4. CouchDB account lockout**
+- Problem: Pasted CORS curl commands with placeholder password instead of the real password, triggering CouchDB's brute-force lockout after multiple failed auth attempts.
+- Solution: `systemctl restart couchdb` clears the lockout. Re-ran all CORS commands with correct credentials.
+
+**5. LiveSync chunked storage format**
+- Problem: Initial `livesync-exporter` assumed documents stored file content directly in a `data` field. LiveSync uses a chunked architecture — each file document contains a `children` array of chunk IDs (prefixed `h:`), with actual content split across multiple leaf documents.
+- Solution: Rewrote exporter to first fetch file docs, collect all chunk IDs from `children` arrays, bulk-fetch all chunks via `_bulk_get`, then reassemble content in order before writing to disk.
+
+### Why the LXC, not the Spark
+
+Deploying CouchDB and the exporter pipeline on a separate Proxmox LXC rather than on the Spark itself keeps inference RAM available for vLLM. The Spark's 128 GB is fully committed at idle — anything that requires a resident daemon competes directly with model weights.
+
+---
 
 ### Why vLLM runs outside Docker Compose
 

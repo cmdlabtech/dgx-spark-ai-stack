@@ -892,6 +892,12 @@ curl http://localhost:8001/v1/models</code></pre>
       <div class="issue-fix"><span>Fix</span><span><code>sudo /home/YOUR_USERNAME/.local/bin/hermes gateway install --system</code></span></div>
     </div>
     <div class="issue">
+      <div class="issue-title">MCP stdio servers fail health check — <code>npx</code> not in LiteLLM's PATH</div>
+      <div class="issue-sym"><span>Symptom</span><span>Adding a stdio-based MCP server (e.g. Brave Search) via the LiteLLM UI succeeds but the health check after saving fails. No error is shown — the check just doesn't pass.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Node.js was installed via <code>nvm</code> or a user-local installer, which places binaries in <code>~/.local/bin</code> and adds that path to the user's shell rc file (<code>.bashrc</code>). LiteLLM — running as a systemd service — never sources <code>.bashrc</code>, so it gets a clean environment with no <code>~/.local/bin</code> in PATH and cannot find <code>npx</code> when it tries to spawn the stdio MCP server process.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Symlink Node and npx into a system-wide PATH location: <code>sudo ln -s /home/YOUR_USERNAME/.local/bin/node /usr/local/bin/node</code> and <code>sudo ln -s /home/YOUR_USERNAME/.local/bin/npx /usr/local/bin/npx</code>. Alternatively, install Node system-wide via NodeSource: <code>curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - &amp;&amp; sudo apt install -y nodejs</code>. After either fix, retry the health check in the LiteLLM UI — it should pass.</span></div>
+    </div>
+    <div class="issue">
       <div class="issue-title">Signal on arm64</div>
       <div class="issue-sym"><span>Symptom</span><span>signal-cli 0.14.x requires Java 25 (not in Ubuntu 24.04 apt repos). Signal servers block datacenter IPs at TLS level.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Use Telegram — no IP restrictions, native arm64 support.</span></div>

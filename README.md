@@ -16,28 +16,27 @@ Covers model serving, proxying, workflow automation, an autonomous agent layer, 
 | [Open WebUI](https://github.com/open-webui/open-webui) | Daily chat interface | Mac/desktop app |
 | Telegram | Mobile/remote access | via Hermes gateway |
 | Cline (VS Code) | Agentic coding | VS Code extension |
-| [CouchDB](https://couchdb.apache.org/) 3.5.1 | Obsidian vault sync backend (Proxmox LXC) | 5984 |
-| livesync-exporter | Chunk reassembly → `/vault/*.md` (Proxmox LXC) | — |
-| MCP filesystem server | Vault tool exposure to LiteLLM (Proxmox LXC) | stdio |
+| Syncthing | Vault sync (desktop, mobile, LXC) | 8384 |
+| obsidian-mcp + supergateway | Vault tool exposure to LiteLLM (Proxmox LXC) | 3000 |
 
 **Model:** `Qwen/Qwen3.6-35B-A3B-FP8`
 
 ## Hardware
 
 - Nvidia DGX Spark (Grace CPU · GB10 GPU · arm64) — Ubuntu 24.04 · GPU util 0.8
-- Proxmox LXC — `obsidian-livesync` container (Ubuntu 24.04 LTS) · Tailscale connected
+- Proxmox LXC — `[YOUR-CONTAINER-HOSTNAME]` container (Ubuntu 24.04 LTS) · Syncthing vault sync
 
 ## Architecture
 
 ```
-Mac/Android (Obsidian + LiveSync plugin)
-        ↓ bidirectional sync
-CouchDB 3.5.1 ─── Proxmox LXC (obsidian-livesync)
-        ↓ poll every 30s
-livesync-exporter → /vault/*.md
-        ↓
-MCP filesystem server (@modelcontextprotocol/server-filesystem)
-        ↓
+Desktop Client (Obsidian + Syncthing) ─┐
+Mobile Client  (Obsidian + Syncthing) ─┼─→ Syncthing ─→ LXC /vault ([YOUR-CONTAINER-HOSTNAME])
+                                       ┘
+                                            ↓
+                                  obsidian-mcp (stdio)
+                                            ↓
+                             supergateway (streamableHttp, port 3000)
+                                            ↓
 ┌──────────────────────────────────────────────────┐
 │                  Nvidia DGX Spark                │
 │                                                  │
@@ -59,59 +58,67 @@ MCP filesystem server (@modelcontextprotocol/server-filesystem)
 └──────────────────────────────────────────────────┘
 ```
 
-## Obsidian LiveSync Integration
+## Obsidian Vault Sync & MCP Integration
 
-A self-hosted Obsidian vault sync and AI query pipeline, fully server-side with no laptop dependency.
+A self-hosted Obsidian vault sync and AI query pipeline using Syncthing for bidirectional vault sync and `obsidian-mcp` for vault tool exposure to LiteLLM.
 
 ### Components
 
-**Proxmox LXC — `obsidian-livesync` (Ubuntu 24.04 LTS)**
+**Proxmox LXC — `[YOUR-CONTAINER-HOSTNAME]` (Ubuntu 24.04 LTS, IP `[YOUR-LXC-IP]`, VLAN `[YOUR-VLAN-ID]`)**
 
-- CouchDB 3.5.1 running as a standalone node (`couchdb@127.0.0.1`), database: `obsidian_livesync`
-- `livesync-exporter` — custom Go binary (systemd service) that polls CouchDB every 30 seconds, reassembles LiveSync chunked documents into flat `.md` files, and writes them to `/vault/`
-- MCP filesystem server (`@modelcontextprotocol/server-filesystem`) pointed at `/vault/` — exposes vault contents to LiteLLM as a callable tool
-- Tailscale for private network access between the LXC and the DGX Spark
+- Syncthing running as a systemd service (`syncthing@root`), vault lives at `/vault/`
+- `/vault/.obsidian/app.json` — required stub (contains `{}`) for `obsidian-mcp` vault validation
+- `obsidian-mcp` (StevenStavrakis, v1.0.6) — exposes vault contents to LiteLLM as a callable tool
+- `supergateway` — wraps `obsidian-mcp` with `streamableHttp` transport on port `3000`; both run under a single `obsidian-mcp` systemd service
+- No Tailscale on the LXC — client devices use Tailscale when traveling to tunnel back to the home network
 
-**Mac + Android** — Obsidian with the Self-hosted LiveSync plugin installed on both; both sync bidirectionally to CouchDB on the LXC.
+**Desktop Client + Mobile Client** — Obsidian with Syncthing installed on both; all devices sync bidirectionally to the Syncthing instance on the LXC.
 
-**LiteLLM (DGX Spark)** — MCP server config pointing at the LXC MCP server URL. This enables any LiteLLM client (Telegram, Hermes, n8n, Open WebUI) to query vault notes as a tool call.
+**LiteLLM (`[YOUR-AI-SERVER-HOSTNAME]`)** — MCP server config pointing at `http://[YOUR-LXC-IP]:3000/mcp` with `http` transport. This enables any LiteLLM client (Telegram, Hermes, n8n, Open WebUI) to query vault notes as a tool call.
 
 ### Key configuration
 
 | Setting | Value |
 |---|---|
-| CouchDB node name | `couchdb@127.0.0.1` |
-| CouchDB database | `obsidian_livesync` |
-| Vault output path on LXC | `/vault/` |
-| Exporter poll interval | 30 seconds |
-| Exporter systemd service | `livesync-exporter.service` |
-| Exporter env file | `/etc/livesync-exporter.env` |
+| Syncthing GUI | `0.0.0.0:8384` (patched from default `127.0.0.1`) |
+| Vault path on LXC | `/vault/` |
+| Vault stub | `/vault/.obsidian/app.json` → `{}` |
+| MCP server | `obsidian-mcp` v1.0.6 (StevenStavrakis) |
+| MCP transport | `streamableHttp` via `supergateway`, port `3000` |
+| MCP endpoint | `http://[YOUR-LXC-IP]:3000/mcp` |
+| Node.js version | 22 (v18 segfaults; v20+ required) |
+| Auth | None — internal VLAN only |
 
-### Roadblocks encountered
+### Services
 
-**1. DGX Spark memory pressure**
-- Problem: Spark had 114 GB of 128 GB RAM in use at idle with vLLM (Qwen3.6-35B-FP8 at 0.85 GPU util), LiteLLM, Open WebUI, and n8n running. No headroom for additional services.
-- Solution: Deployed CouchDB and all vault-related services on a dedicated Proxmox LXC, keeping the Spark exclusively for inference workloads.
+| Service | Command | Port |
+|---|---|---|
+| Syncthing | `systemctl status syncthing@root` | `8384` |
+| Obsidian MCP | `systemctl status obsidian-mcp` | `3000` |
 
-**2. Ubuntu Oracular (24.10) EOL on existing LXC**
-- Problem: Initial LXC provisioned with Ubuntu 24.10 (Oracular) hit EOL. All apt repos returned 404, making the container unusable.
-- Solution: Provisioned a fresh LXC with Ubuntu 24.04 LTS (Noble). Going forward all new LXCs use 24.04 LTS or Debian 12.
+### LiteLLM MCP Configuration
 
-**3. CouchDB Erlang node name mismatch**
-- Problem: The standard node path `_node/nonode@nohost` used in CORS configuration commands returned `nodedown` errors.
-- Solution: Queried `/_membership` to discover the actual node name (`couchdb@127.0.0.1`) and substituted it in all configuration commands.
+| Field | Value |
+|---|---|
+| MCP Server URL | `http://[YOUR-LXC-IP]:3000/mcp` |
+| Transport | `http` |
+| Auth | None |
 
-**4. CouchDB account lockout**
-- Problem: Pasted CORS curl commands with placeholder password instead of the real password, triggering CouchDB's brute-force lockout after multiple failed auth attempts.
-- Solution: `systemctl restart couchdb` clears the lockout. Re-ran all CORS commands with correct credentials.
+### Bugs and fixes encountered
 
-**5. LiveSync chunked storage format**
-- Problem: Initial `livesync-exporter` assumed documents stored file content directly in a `data` field. LiveSync uses a chunked architecture — each file document contains a `children` array of chunk IDs (prefixed `h:`), with actual content split across multiple leaf documents.
-- Solution: Rewrote exporter to first fetch file docs, collect all chunk IDs from `children` arrays, bulk-fetch all chunks via `_bulk_get`, then reassemble content in order before writing to disk.
+**1. Syncthing config path changed** — On Ubuntu 24.04, config is at `/root/.local/state/syncthing/config.xml`, not `/root/.local/share/syncthing/config.xml` as documented elsewhere.
 
-### Why the LXC, not the Spark
+**2. obsidian-mcp vault validation** — `obsidian-mcp` requires a `.obsidian` directory with `app.json` to consider a directory a valid vault. An empty directory fails with `Error: Not a valid Obsidian vault`.
 
-Deploying CouchDB and the exporter pipeline on a separate Proxmox LXC rather than on the Spark itself keeps inference RAM available for vLLM. The Spark's 128 GB is fully committed at idle — anything that requires a resident daemon competes directly with model weights.
+**3. SSE transport incompatible with LiteLLM v1.80.18+** — LiteLLM's MCP client uses protocol version `2025-11-25` which causes `Connection closed` errors with supergateway's SSE transport. Fix: use `--outputTransport streamableHttp` and set transport to `http` in LiteLLM UI.
+
+**4. LXC disk corruption on network-backed storage** — Storing the LXC root disk on a network share (e.g. CIFS/SMB) caused EXT4 I/O errors and disk corruption under write load. Fix: use local storage or a reliable block storage backend for LXC root disks.
+
+**5. Syncthing folder path special characters** — Copying a folder path from a file manager may add escape characters. Set the Syncthing folder path manually in the config UI instead of pasting from the file manager.
+
+### Why the LXC, not the AI server
+
+Deploying Syncthing and the MCP pipeline on a separate Proxmox LXC rather than on the AI server itself keeps inference RAM available for model serving. The AI server's RAM is fully committed at idle — anything that requires a resident daemon competes directly with model weights. The LXC is lightweight, always-on, and isolated from the inference stack.
 
 ---
 
@@ -141,7 +148,7 @@ The full step-by-step setup guide is at [cmdlabtech.github.io/dgx-spark-ai-stack
 7. Reboot test and service verification
 8. Port reference, file locations, backup targets
 9. Known issues and fixes (CUDA cache, arm64 quirks)
-10. Obsidian LiveSync integration — CouchDB, livesync-exporter, MCP filesystem server (Proxmox LXC)
+10. Obsidian vault sync integration — Syncthing, obsidian-mcp, supergateway (Proxmox LXC)
 11. LiteLLM centralized MCP debug report — 18 issues across LXC setup, LiteLLM MCP config, Hermes, and Open WebUI
 
 ## Notes

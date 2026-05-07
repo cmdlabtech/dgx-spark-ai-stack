@@ -247,6 +247,91 @@
 
   footer { border-top: 1px solid var(--border); padding: 24px 64px; display: flex; align-items: center; justify-content: space-between; color: var(--text3); font-size: 11.5px; }
 
+  /* Architecture selector cards */
+  .arch-picker { display: flex; gap: 14px; margin: 0 0 28px; flex-wrap: wrap; }
+
+  details.arch-card {
+    flex: 1;
+    min-width: 220px;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.15s;
+  }
+
+  details.arch-card[open] { border-color: var(--accent); }
+  details.arch-card.dual[open] { border-color: #7c3aed; }
+
+  details.arch-card summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 14px 16px;
+    background: var(--surface);
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  details.arch-card summary::-webkit-details-marker { display: none; }
+
+  details.arch-card summary .arch-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  details.arch-card summary .arch-badge {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 3px;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid #bbf7d0;
+  }
+
+  details.arch-card.dual summary .arch-badge {
+    background: #f5f3ff;
+    color: #6d28d9;
+    border-color: #c4b5fd;
+  }
+
+  details.arch-card summary .arch-desc {
+    font-size: 12px;
+    color: var(--text3);
+  }
+
+  details.arch-card summary .arch-best {
+    font-size: 11.5px;
+    color: var(--text3);
+    margin-top: 2px;
+  }
+
+  details.arch-card summary .arch-best strong { color: var(--text2); }
+  details.arch-card summary .arch-warn { font-size: 11px; color: var(--amber); margin-top: 2px; }
+
+  details.arch-card .arch-body {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .mem-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 12px 0 20px; }
+  .mem-table th { background: var(--surface); padding: 7px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text3); border-bottom: 1px solid var(--border); font-weight: 500; }
+  .mem-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text2); }
+  .mem-table td code { font-family: var(--mono); font-size: 11px; }
+  .mem-table tr:last-child td { border-bottom: none; }
+
+  .validation-checklist { list-style: none; display: flex; flex-direction: column; gap: 10px; margin: 12px 0 20px; }
+  .validation-checklist li { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--text2); line-height: 1.6; }
+  .validation-checklist li::before { content: '☐'; font-size: 15px; color: var(--text3); flex-shrink: 0; line-height: 1.5; }
+
   @media (max-width: 860px) {
     .shell { grid-template-columns: 1fr; }
     aside { display: none; }
@@ -255,6 +340,7 @@
     .port-grid { grid-template-columns: repeat(2, 1fr); }
     .tool-grid { grid-template-columns: 1fr; }
     footer { padding: 20px; flex-direction: column; gap: 6px; }
+    .arch-picker { flex-direction: column; }
   }
 </style>
 </head>
@@ -286,6 +372,7 @@
     <a href="#step10" class="nav-item"><span class="num">10</span> Cline (VS Code)</a>
     <a href="#step11" class="nav-item"><span class="num">11</span> Wire n8n</a>
     <a href="#step12" class="nav-item"><span class="num">12</span> Reboot test</a>
+    <a href="#validation-checklist" class="nav-item"><span class="num">—</span> Validation checklist</a>
   </nav>
   <nav class="nav-section">
     <div class="nav-label">Reference</div>
@@ -492,6 +579,107 @@
 
   <div class="step" id="step1">
     <div class="step-header"><span class="step-num">STEP 01</span><h2>vLLM + Qwen3.6-35B</h2></div>
+    <p>Choose your architecture before following the steps below. The single model path is the default — if you're a first-timer, start there.</p>
+
+    <div class="arch-picker">
+      <details class="arch-card">
+        <summary>
+          <span class="arch-title">Single Model <span class="arch-badge">Recommended</span></span>
+          <span class="arch-desc">One vLLM container on port 8000 · <code>--gpu-memory-utilization 0.85</code></span>
+          <span class="arch-best"><strong>Best for:</strong> getting started, single-user setups, maximum context length (131k tokens)</span>
+        </summary>
+        <div class="arch-body">
+          <p style="margin:0;font-size:12.5px;color:var(--text2);">Proceed with the steps below as written. The single container gets the full GPU allocation and the maximum 131k context window.</p>
+        </div>
+      </details>
+      <details class="arch-card dual">
+        <summary>
+          <span class="arch-title">Dual Model <span class="arch-badge">Advanced</span></span>
+          <span class="arch-desc">Two vLLM containers: main on :8000 (0.55 util) · expert on :8002 (0.30 util)</span>
+          <span class="arch-best"><strong>Best for:</strong> power users who want a reasoning specialist alongside a fast general model</span>
+          <span class="arch-warn">⚠ Requires 128 GB DGX Spark · reduces max context to ~75–85k on main model</span>
+        </summary>
+        <div class="arch-body">
+          <p>Run Step 1a first. Only start Step 1b <strong>after</strong> the main model prints <code>Application startup complete</code> in its logs — never start both simultaneously.</p>
+
+          <h3 style="margin-top:16px;">Step 1a — Main model (start first)</h3>
+          <div class="code-block">
+            <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+            <pre><code>docker run -d \
+  --name vllm-qwen-35b \
+  --gpus all \
+  -p 8000:8000 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  --ipc=host \
+  --ulimit memlock=-1 \
+  --ulimit stack=67108864 \
+  nvcr.io/nvidia/vllm:26.04-py3 \
+  vllm serve Qwen/Qwen3.6-35B-A3B-FP8 \
+    --served-model-name qwen3.6-35b \
+    --dtype auto \
+    --gpu-memory-utilization 0.55 \
+    --max-model-len 131072 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder \
+    --enable-chunked-prefill \
+    --enable-prefix-caching \
+    --max-num-seqs 32 \
+    --port 8000 \
+    --reasoning-parser qwen3 \
+    --default-chat-template-kwargs '{"preserve_thinking": true}'
+docker update --restart unless-stopped vllm-qwen-35b</code></pre>
+          </div>
+          <p>Wait for <code>Application startup complete</code> in <code>docker logs -f vllm-qwen-35b</code> before starting the expert model.</p>
+
+          <h3>Step 1b — Expert model (start after main is fully loaded)</h3>
+          <div class="code-block">
+            <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+            <pre><code>docker run -d \
+  --name vllm-qwen-expert \
+  --gpus all \
+  -p 8002:8002 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  --ipc=host \
+  --ulimit memlock=-1 \
+  --ulimit stack=67108864 \
+  nvcr.io/nvidia/vllm:26.04-py3 \
+  vllm serve Qwen/Qwen3.5-27B-GPTQ-Int4 \
+    --served-model-name qwen3-expert \
+    --dtype float16 \
+    --quantization gptq_marlin \
+    --gpu-memory-utilization 0.30 \
+    --max-model-len 32768 \
+    --enable-chunked-prefill \
+    --enable-prefix-caching \
+    --max-num-seqs 8 \
+    --port 8002 \
+    --reasoning-parser qwen3 \
+    --default-chat-template-kwargs '{"preserve_thinking": true}'
+docker update --restart unless-stopped vllm-qwen-expert</code></pre>
+          </div>
+
+          <h3>Memory allocation breakdown</h3>
+          <div class="table-wrap">
+            <table class="mem-table">
+              <thead><tr><th>Component</th><th>Allocation</th><th>~GB</th></tr></thead>
+              <tbody>
+                <tr><td>Main model (35B-A3B-FP8)</td><td><code>0.55</code></td><td>~70 GB</td></tr>
+                <tr><td>Expert model (27B-GPTQ-Int4)</td><td><code>0.30</code></td><td>~38 GB</td></tr>
+                <tr><td>OS + Docker + stack</td><td>—</td><td>~13 GB</td></tr>
+                <tr><td><strong>Total</strong></td><td></td><td><strong>~121 GB</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout warning" style="margin-top:8px;">
+            <span class="callout-icon">⚠</span>
+            <div>Do not let combined <code>--gpu-memory-utilization</code> values exceed <strong>0.88</strong>. Above this threshold there is insufficient memory for the OS, Docker, and the rest of the stack, causing swap pressure and system instability.</div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <h3>Single model setup (default)</h3>
     <p>vLLM runs as a standalone Docker container on port 8000 with tool calling, chunked prefill, prefix caching, and reasoning parser enabled.</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
@@ -507,7 +695,7 @@
   vllm serve Qwen/Qwen3.6-35B-A3B-FP8 \
     --served-model-name qwen3.6-35b \
     --dtype auto \
-    --gpu-memory-utilization 0.8 \
+    --gpu-memory-utilization 0.85 \
     --max-model-len 131072 \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder \
@@ -550,7 +738,80 @@ cd ~/sparky-ai-stack</code></pre>
 
   <div class="step" id="step3">
     <div class="step-header"><span class="step-num">STEP 03</span><h2>LiteLLM config</h2></div>
-    <p>LiteLLM proxies all client requests to vLLM and logs every request/response to SQLite — the foundation for future fine-tuning.</p>
+    <p>LiteLLM proxies all client requests to vLLM and logs every request/response to SQLite — the foundation for future fine-tuning. Choose the config that matches your architecture from Step 01.</p>
+
+    <div class="arch-picker">
+      <details class="arch-card">
+        <summary>
+          <span class="arch-title">Single Model Config <span class="arch-badge">Default</span></span>
+          <span class="arch-desc">Routes all requests to the single model on :8000</span>
+        </summary>
+        <div class="arch-body">
+          <p style="margin:0 0 10px;font-size:12.5px;color:var(--text2);">Use the config below as-is — it routes everything to your single vLLM instance.</p>
+        </div>
+      </details>
+      <details class="arch-card dual">
+        <summary>
+          <span class="arch-title">Dual Model Config <span class="arch-badge">Advanced</span></span>
+          <span class="arch-desc">Routes to main (:8000) and expert (:8002) with an <code>auto</code> alias</span>
+        </summary>
+        <div class="arch-body">
+          <p>Replace the <code>cat &gt; litellm-config.yaml</code> block below with this dual-model version:</p>
+          <div class="code-block">
+            <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+            <pre><code>cat > litellm-config.yaml &lt;&lt; 'EOF'
+model_list:
+  - model_name: qwen3.6-35b
+    litellm_params:
+      model: openai/qwen3.6-35b
+      api_base: http://localhost:8000/v1
+      api_key: "not-needed"
+      max_tokens: 8192
+  - model_name: qwen3-expert
+    litellm_params:
+      model: openai/qwen3-expert
+      api_base: http://localhost:8002/v1
+      api_key: "not-needed"
+      max_tokens: 8192
+  - model_name: auto
+    litellm_params:
+      model: openai/qwen3.6-35b
+      api_base: http://localhost:8000/v1
+      api_key: "not-needed"
+      max_tokens: 8192
+
+litellm_settings:
+  verbose: true
+  database:
+    type: sqlite
+    path: /app/logs/litellm.db
+  log_config:
+    level: INFO
+    format: json
+    filepath: /app/logs/litellm.log
+
+router_settings:
+  num_retries: 0
+  timeout: 600
+  routing_strategy: "usage-based-routing"
+EOF</code></pre>
+          </div>
+          <p><strong>Client model selection:</strong></p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Model name</th><th>Routes to</th></tr></thead>
+              <tbody>
+                <tr><td><code>qwen3.6-35b</code></td><td>Main model — always hits :8000</td></tr>
+                <tr><td><code>qwen3-expert</code></td><td>Expert model on :8002 — use for deep reasoning, hard math, complex analysis</td></tr>
+                <tr><td><code>auto</code></td><td>Alias for main model — default for all clients</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <h3>Single model config (default)</h3>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>cat > litellm-config.yaml &lt;&lt; 'EOF'
@@ -832,6 +1093,42 @@ curl http://localhost:8001/v1/models</code></pre>
         </tbody>
       </table>
     </div>
+
+    <h3>Dual model reboot note</h3>
+    <p>If you are running the dual-model architecture, the main model container starts automatically via <code>restart: unless-stopped</code>. Allow ~7 minutes for it to fully initialize before the expert container attempts to start.</p>
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <div>If both containers start simultaneously on reboot and the system OOMs, the fix is to stop the expert container, wait for the main model to finish loading (<code>docker logs -f vllm-qwen-35b</code> shows <code>Application startup complete</code>), then start the expert manually:
+      <br><br><code>docker stop vllm-qwen-expert &amp;&amp; docker start vllm-qwen-expert</code>
+      <br><br>If this happens repeatedly, consider adding a systemd drop-in delay for the expert container.</div>
+    </div>
+  </div>
+
+  <div class="step" id="validation-checklist">
+    <div class="step-header"><span class="step-num">CHECKLIST</span><h2>Stack Validation Checklist</h2></div>
+    <p>Run through this list before considering the stack complete. Every item should pass before you use the stack in production or share it with others.</p>
+    <ul class="validation-checklist">
+      <li><code>curl http://localhost:8000/v1/models</code> returns the main model (<code>qwen3.6-35b</code>)</li>
+      <li><code>curl http://localhost:8001/v1/models</code> returns all LiteLLM-proxied models</li>
+      <li><code>sudo systemctl status litellm hermes-gateway</code> — both show <strong>active (running)</strong></li>
+      <li>
+        YAML validation passes — no output means a parse error will silently break Hermes:
+        <div class="code-block" style="margin:8px 0 0;">
+          <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+          <pre><code>python3 -c "import yaml; yaml.safe_load(open('/home/YOUR_USERNAME/.hermes/config.yaml')); print('YAML valid')"</code></pre>
+        </div>
+        Expected output: <code>YAML valid</code>
+      </li>
+      <li>
+        MCP connection test passes — do not proceed if this fails:
+        <div class="code-block" style="margin:8px 0 0;">
+          <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+          <pre><code>hermes mcp test obsidian</code></pre>
+        </div>
+        Expected output: <code>✓ Connected</code> and <code>✓ Tools discovered: 11</code>
+      </li>
+      <li>Send a Telegram message asking to search the vault — confirm vault results are returned (not a filesystem error or empty response)</li>
+    </ul>
   </div>
 
   <div class="step" id="ports">
@@ -904,6 +1201,50 @@ curl http://localhost:8001/v1/models</code></pre>
       <div class="issue-title">Signal on arm64</div>
       <div class="issue-sym"><span>Symptom</span><span>signal-cli 0.14.x requires Java 25 (not in Ubuntu 24.04 apt repos). Signal servers block datacenter IPs at TLS level.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Use Telegram — no IP restrictions, native arm64 support.</span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">config.yaml YAML error causes silent .env fallback</div>
+      <div class="issue-sym"><span>Symptom</span><span>After manually editing <code>~/.hermes/config.yaml</code>, Hermes seems to ignore the changes — MCP is broken and the provider reverts to default. No obvious error in the logs.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>A YAML syntax error causes Hermes to silently fall back to <code>.env</code> values. No error is shown at startup, so the misconfiguration is invisible.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Always validate YAML after editing: <code>python3 -c "import yaml; yaml.safe_load(open('/home/YOUR_USERNAME/.hermes/config.yaml')); print('YAML valid')"</code>. If the command prints anything other than <code>YAML valid</code>, fix the syntax before restarting.</span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">custom_providers indentation error at startup</div>
+      <div class="issue-sym"><span>Symptom</span><span>Hermes fails to start with a YAML parse error after adding a custom provider to <code>~/.hermes/config.yaml</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>List items under <code>custom_providers</code> must be indented exactly 2 spaces. A common mistake is using 4 spaces or no indentation.</span></div>
+      <div class="issue-fix">
+        <span>Fix</span>
+        <span>Use this exact indentation:
+          <div class="code-block" style="margin:8px 0 0;">
+            <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+            <pre><code>custom_providers:
+  - name: MyProvider
+    base_url: http://localhost:8001/v1
+    model: my-model</code></pre>
+          </div>
+        </span>
+      </div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">Dual model — OOM during expert model loading</div>
+      <div class="issue-sym"><span>Symptom</span><span>System slows to a crawl or the expert container hangs for more than 10 minutes during startup. <code>docker logs vllm-qwen-expert</code> stops progressing.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Insufficient available memory — most likely because both containers were started simultaneously before the main model finished loading.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Stop both containers: <code>docker stop vllm-qwen-35b vllm-qwen-expert</code>. Run <code>free -h</code> to confirm available memory. Restart main first and wait for <code>Application startup complete</code> in <code>docker logs -f vllm-qwen-35b</code>, then start the expert: <code>docker start vllm-qwen-expert</code>.</span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">Dual model — gpu-memory-utilization sum too high</div>
+      <div class="issue-sym"><span>Symptom</span><span>System instability, swap pressure, or OOM kills after both models are loaded.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Do not use <code>--gpu-memory-utilization</code> values that sum above <code>0.88</code>. Combined allocations above this threshold leave insufficient memory for the OS, Docker, and the rest of the stack. Recommended split: <code>0.55</code> (main) + <code>0.30</code> (expert) = <code>0.85</code>.</span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">Dual model — must start main model before expert</div>
+      <div class="issue-sym"><span>Symptom</span><span>Starting both containers simultaneously causes memory contention during the weight-loading phase, leading to OOM or very slow loading.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Always start <code>vllm-qwen-35b</code> first and wait for <code>Application startup complete</code> before running <code>docker start vllm-qwen-expert</code>. Weight loading is the most memory-intensive phase.</span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">Dual model — gptq vs gptq_marlin quantization error</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>ValueError: gptq is not supported</code> or a quantization validation error when starting the expert model.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>GPTQ Int4 models must use <code>--quantization gptq_marlin</code>, not <code>--quantization gptq</code>. Using <code>gptq</code> will raise a validation error. Additionally, GPTQ models require <code>--dtype float16</code>, not <code>bfloat16</code>.</span></div>
     </div>
   </div>
 
@@ -1016,6 +1357,43 @@ echo "MCP endpoint: http://$(hostname -I | awk '{print $1}'):3000/mcp"</code></p
       <li>Pair each client device — add LXC device ID in client Syncthing UI, accept the incoming request on the LXC side, share the vault folder</li>
       <li>In LiteLLM UI → MCP Servers → Add: URL <code>http://[YOUR-LXC-IP]:3000/mcp</code>, transport <code>http</code>, auth <code>None</code></li>
       <li>In Hermes <code>~/.hermes/config.yaml</code>, add under <code>mcp_servers</code>: <code>obsidian: url: http://[YOUR-LXC-IP]:3000/mcp</code> and <code>transport: streamableHttp</code></li>
+      <li>
+        <strong>Mandatory verification</strong> — run this before proceeding. If it fails, the MCP server is not reachable and the next steps will not work:
+        <div class="code-block" style="margin:8px 0;">
+          <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+          <pre><code>hermes mcp test obsidian</code></pre>
+        </div>
+        Expected output: <code>✓ Connected</code> and <code>✓ Tools discovered: 11</code>. If this fails, check that the obsidian-mcp systemd service is running on the LXC (<code>systemctl status obsidian-mcp</code>), that port 3000 is reachable from the DGX, and that the URL in config.yaml is correct.
+      </li>
+      <li>
+        Update <code>~/.hermes/skills/note-taking/obsidian/SKILL.md</code> with the correct MCP tool names (create the directory if it doesn't exist). The built-in Hermes obsidian skill will use filesystem commands unless this file explicitly names the MCP tools:
+        <div class="code-block" style="margin:8px 0;">
+          <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+          <pre><code>mkdir -p ~/.hermes/skills/note-taking/obsidian
+cat > ~/.hermes/skills/note-taking/obsidian/SKILL.md &lt;&lt; 'EOF'
+# Obsidian Vault Skill
+
+Always use MCP tools for all vault operations. Never use filesystem commands.
+
+## Required: discover vault name first
+Always call `list-available-vaults` before any other tool to discover the vault name.
+Do not assume a vault name — always look it up.
+
+## Available MCP tools
+- list-available-vaults   — discover vault name (call first, every time)
+- search-vault            — full-text search across all notes
+- read-note               — read a specific note by path
+- create-note             — create a new note
+- edit-note               — edit an existing note
+- move-note               — move or rename a note
+- delete-note             — delete a note
+- create-directory        — create a folder in the vault
+- add-tags                — add tags to a note
+- remove-tags             — remove tags from a note
+- rename-tag              — rename a tag across all notes
+EOF</code></pre>
+        </div>
+      </li>
       <li>Add <code>mcp</code> to the <code>telegram</code> platform toolset in <code>~/.hermes/config.yaml</code> and restart <code>hermes-gateway</code></li>
     </ol>
 
@@ -1099,13 +1477,20 @@ echo "MCP endpoint: http://$(hostname -I | awk '{print $1}'):3000/mcp"</code></p
 
     <div class="issue">
       <div class="issue-title">9 — YAML syntax error after config edit</div>
-      <div class="issue-sym"><span>Symptom</span><span>Hermes fails to start with a YAML parser error after editing <code>~/.hermes/config.yaml</code>.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>Incorrect indentation when editing the config file.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span>Hermes fails to start with a YAML parser error after editing <code>~/.hermes/config.yaml</code>. Or worse — Hermes starts but silently falls back to <code>.env</code> values, breaking MCP and provider config with no obvious error.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Incorrect indentation or a syntax error when editing the config file. A parse failure causes Hermes to silently ignore the config and fall back to defaults.</span></div>
       <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
         <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-        <pre><code>python3 -c "import yaml; yaml.safe_load(open('/home/[YOUR-USERNAME]/.hermes/config.yaml'))"</code></pre>
+        <pre><code>python3 -c "import yaml; yaml.safe_load(open('/home/YOUR_USERNAME/.hermes/config.yaml')); print('YAML valid')"</code></pre>
       </div>
-      <div class="issue-fix"><span>Fix</span><span>Validate YAML with the command above before restarting. Correct indentation and re-run until no error is raised.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Always validate YAML after editing using the command above. Expected output: <code>YAML valid</code>. If an exception is raised instead, fix the indentation and re-run until the validation passes before restarting any service.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">15 — Hermes obsidian skill uses filesystem commands instead of MCP tools</div>
+      <div class="issue-sym"><span>Symptom</span><span>Vault queries sent via Telegram return filesystem errors or empty results, even though the MCP server is running and LiteLLM can reach it successfully.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>The built-in Hermes obsidian skill will attempt to use filesystem commands (e.g. <code>cat</code>, <code>find</code>) to read vault files unless the <code>SKILL.md</code> explicitly references the correct MCP tool names. Adding the MCP server to <code>config.yaml</code> alone is not sufficient — the skill must also be rewritten to use the MCP tools exposed by <code>obsidian-mcp</code>.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Run <code>hermes mcp test obsidian</code> first to confirm connectivity and discover the exact tool names. Then update <code>~/.hermes/skills/note-taking/obsidian/SKILL.md</code> to explicitly list the MCP tool names: <code>list-available-vaults</code>, <code>search-vault</code>, <code>read-note</code>, <code>create-note</code>, <code>edit-note</code>, <code>move-note</code>, <code>delete-note</code>, <code>create-directory</code>, <code>add-tags</code>, <code>remove-tags</code>, <code>rename-tag</code>. The SKILL.md must instruct Hermes to always call <code>list-available-vaults</code> first before any other tool call. See the setup steps above for the full SKILL.md content.</span></div>
     </div>
   </div>
 

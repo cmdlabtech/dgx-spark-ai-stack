@@ -729,12 +729,12 @@ docker update --restart unless-stopped vllm-qwen-expert</code></pre>
 
   <div class="step" id="step2">
     <div class="step-header"><span class="step-num">STEP 02</span><h2>Stack directory</h2></div>
-    <p>All stack config files live in <code>~/sparky-ai-stack/</code>, separate from the vLLM container.</p>
+    <p>All stack config files live in <code>~/dgx-ai-stack/</code>, separate from the vLLM container.</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/sparky-ai-stack/logs
+      <pre><code>mkdir -p ~/dgx-ai-stack/logs
 mkdir -p ~/workspace
-cd ~/sparky-ai-stack</code></pre>
+cd ~/dgx-ai-stack</code></pre>
     </div>
   </div>
 
@@ -865,7 +865,7 @@ After=network.target
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/sparky-ai-stack
+WorkingDirectory=/home/YOUR_USERNAME/dgx-ai-stack
 ExecStart=/home/YOUR_USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001
 Restart=on-failure
 RestartSec=5
@@ -887,7 +887,7 @@ sudo systemctl start litellm</code></pre>
     <div class="callout note"><span class="callout-icon">ℹ</span><span>Start n8n now. Start hermes-webui after Step 7 — it requires <code>~/.hermes</code> to exist first.</span></div>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat > ~/sparky-ai-stack/docker-compose.yml &lt;&lt; 'EOF'
+      <pre><code>cat > ~/dgx-ai-stack/docker-compose.yml &lt;&lt; 'EOF'
 version: '3.8'
 
 services:
@@ -925,7 +925,7 @@ volumes:
   n8n_data:
 EOF
 
-cd ~/sparky-ai-stack
+cd ~/dgx-ai-stack
 docker compose up -d n8n</code></pre>
     </div>
     <div class="verify">Visit <code>http://YOUR_SERVER_IP:5678</code> and create the admin account</div>
@@ -1027,7 +1027,7 @@ sudo systemctl status hermes-gateway</code></pre>
     <p>Browser UI for Hermes sessions, memory, skills, and cron jobs. Native arm64 image on GHCR.</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cd ~/sparky-ai-stack
+      <pre><code>cd ~/dgx-ai-stack
 docker compose up -d hermes-webui</code></pre>
     </div>
     <div class="verify">Visit <code>http://YOUR_SERVER_IP:8787</code></div>
@@ -1147,7 +1147,7 @@ curl http://localhost:8001/v1/models</code></pre>
   <div class="step" id="files">
     <div class="step-header"><span class="step-num">REF</span><h2>File locations</h2></div>
     <div class="file-tree">
-      <span class="dir">~/sparky-ai-stack/</span><br>
+      <span class="dir">~/dgx-ai-stack/</span><br>
       ├── docker-compose.yml       <span class="comment"># n8n + hermes-webui</span><br>
       ├── litellm-config.yaml      <span class="comment"># LiteLLM routes + logging</span><br>
       └── logs/<br>
@@ -1164,9 +1164,9 @@ curl http://localhost:8001/v1/models</code></pre>
       <table>
         <thead><tr><th>Path</th><th>Contents</th></tr></thead>
         <tbody>
-          <tr><td><code>~/sparky-ai-stack/logs/</code></td><td>LiteLLM corpus — valuable for fine-tuning</td></tr>
+          <tr><td><code>~/dgx-ai-stack/logs/</code></td><td>LiteLLM corpus — valuable for fine-tuning</td></tr>
           <tr><td><code>~/.hermes/</code></td><td>Hermes memory, sessions, skills</td></tr>
-          <tr><td><code>~/sparky-ai-stack/</code></td><td>Config files</td></tr>
+          <tr><td><code>~/dgx-ai-stack/</code></td><td>Config files</td></tr>
         </tbody>
       </table>
     </div>
@@ -1648,7 +1648,7 @@ sudo apt install -y nodejs</code></pre>
     <p>The LiteLLM proxy ships with a built-in web UI at <code>/ui</code>. It requires a master key and a PostgreSQL database — SQLite is not supported for the UI auth layer. The following documents every error encountered during setup, in order.</p>
 
     <h3>Step 1 — Set a master key</h3>
-    <p>Add to <code>~/sparky-ai-stack/litellm-config.yaml</code>:</p>
+    <p>Add to <code>~/dgx-ai-stack/litellm-config.yaml</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>general_settings:
@@ -1662,7 +1662,7 @@ sudo apt install -y nodejs</code></pre>
     </div>
 
     <h3>Step 2 — Add PostgreSQL to docker-compose.yml</h3>
-    <p>Rather than a standalone <code>docker run</code> command, declare it as a service in <code>~/sparky-ai-stack/docker-compose.yml</code> so the entire stack is managed as a single unit — one <code>docker compose up</code> starts everything, volumes are declared alongside the services that use them, and restart behavior is consistent.</p>
+    <p>Rather than a standalone <code>docker run</code> command, declare it as a service in <code>~/dgx-ai-stack/docker-compose.yml</code> so the entire stack is managed as a single unit — one <code>docker compose up</code> starts everything, volumes are declared alongside the services that use them, and restart behavior is consistent.</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>  litellm-db:

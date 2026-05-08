@@ -155,7 +155,7 @@ In practice this means vLLM runs continuously and is only restarted deliberately
 
 - All commands use placeholder values (`YOUR_USERNAME`, `YOUR_SERVER_IP`) — substitute your own before running
 - LiteLLM has no arm64 Docker image as of May 2026 — installed via pip directly on the host
-- The SQLite logs accumulated by LiteLLM (`~/sparky-ai-stack/logs/litellm.db`) serve as a fine-tuning corpus over time
+- The SQLite logs accumulated by LiteLLM (`~/dgx-ai-stack/logs/litellm.db`) serve as a fine-tuning corpus over time
 - vLLM is intentionally run via `docker run`, not as a compose service — this keeps it isolated from compose lifecycle operations so model weights stay loaded while the rest of the stack is restarted freely (see Architecture above)
 
 ## Troubleshooting
@@ -166,7 +166,7 @@ The LiteLLM proxy ships with a built-in web UI at `http://<host>:8001/ui`. It re
 
 **Step 1 — Set a master key**
 
-Add to `~/sparky-ai-stack/litellm-config.yaml`:
+Add to `~/dgx-ai-stack/litellm-config.yaml`:
 
 ```yaml
 general_settings:
@@ -253,7 +253,7 @@ sudo systemctl status litellm
 
 **Accessing the UI**
 
-Navigate to `http://<sparky-ip>:8001/ui`. Username: `admin`. Password: your `master_key` value.
+Navigate to `http://YOUR_SERVER_IP:8001/ui`. Username: `admin`. Password: your `master_key` value.
 
 ## Container-to-host connectivity
 

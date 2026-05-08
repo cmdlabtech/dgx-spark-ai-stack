@@ -4,6 +4,10 @@ A complete self-hosted AI server stack running on the **Nvidia DGX Spark** (arm6
 
 Covers model serving, proxying, workflow automation, an autonomous agent layer, and multi-client access — everything needed to replicate the stack from scratch on a fresh machine.
 
+## Setup guide
+
+The full step-by-step setup guide is at [cmdlabtech.github.io/dgx-spark-ai-stack](https://cmdlabtech.github.io/dgx-spark-ai-stack/).
+
 ## Stack
 
 | Component | Role | Port |
@@ -132,10 +136,6 @@ vLLM is started with a standalone `docker run` command rather than being declare
 - A crash or misconfiguration in a compose service can't cascade into taking down the model server
 
 In practice this means vLLM runs continuously and is only restarted deliberately (e.g. to pick up a new model or change serving flags), while everything above it in the stack is free to cycle as often as needed.
-
-## Setup guide
-
-The full step-by-step setup guide is at [cmdlabtech.github.io/dgx-spark-ai-stack](https://cmdlabtech.github.io/dgx-spark-ai-stack/).
 
 ## What the guide covers
 

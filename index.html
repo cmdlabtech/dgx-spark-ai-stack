@@ -381,14 +381,12 @@
     <a href="#issues" class="nav-item"><span class="num">—</span> Known issues</a>
   </nav>
   <nav class="nav-section">
-    <div class="nav-label">Obsidian Vault Sync + MCP</div>
-    <a href="#obsidian-vault-sync" class="nav-item"><span class="num">—</span> Architecture</a>
-    <a href="#obsidian-vault-setup" class="nav-item"><span class="num">—</span> LXC setup &amp; script</a>
-    <a href="#obsidian-vault-bugs" class="nav-item"><span class="num">—</span> Bugs &amp; fixes</a>
-  </nav>
-  <nav class="nav-section">
-    <div class="nav-label">Playwright MCP</div>
-    <a href="#playwright-mcp" class="nav-item"><span class="num">—</span> Browser automation</a>
+    <div class="nav-label">MCP Servers</div>
+    <a href="#obsidian-vault-sync" class="nav-item"><span class="num">—</span> Obsidian — architecture</a>
+    <a href="#obsidian-vault-setup" class="nav-item"><span class="num">—</span> Obsidian — LXC setup</a>
+    <a href="#obsidian-vault-bugs" class="nav-item"><span class="num">—</span> Obsidian — bugs &amp; fixes</a>
+    <a href="#brave-search-mcp" class="nav-item"><span class="num">—</span> Brave Search — setup</a>
+    <a href="#playwright-mcp" class="nav-item"><span class="num">—</span> Playwright — browser automation</a>
   </nav>
   <nav class="nav-section">
     <div class="nav-label">Troubleshooting</div>
@@ -1497,6 +1495,57 @@ EOF</code></pre>
       <div class="issue-sym"><span>Cause</span><span>The built-in Hermes obsidian skill will attempt to use filesystem commands (e.g. <code>cat</code>, <code>find</code>) to read vault files unless the <code>SKILL.md</code> explicitly references the correct MCP tool names. Adding the MCP server to <code>config.yaml</code> alone is not sufficient — the skill must also be rewritten to use the MCP tools exposed by <code>obsidian-mcp</code>.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Run <code>hermes mcp test obsidian</code> first to confirm connectivity and discover the exact tool names. Then update <code>~/.hermes/skills/note-taking/obsidian/SKILL.md</code> to explicitly list the MCP tool names: <code>list-available-vaults</code>, <code>search-vault</code>, <code>read-note</code>, <code>create-note</code>, <code>edit-note</code>, <code>move-note</code>, <code>delete-note</code>, <code>create-directory</code>, <code>add-tags</code>, <code>remove-tags</code>, <code>rename-tag</code>. The SKILL.md must instruct Hermes to always call <code>list-available-vaults</code> first before any other tool call. See the setup steps above for the full SKILL.md content.</span></div>
     </div>
+  </div>
+
+  <div class="step" id="brave-search-mcp">
+    <div class="step-header"><span class="step-num">BRAVE SEARCH MCP</span><h2>Web Search Tool Use</h2></div>
+    <p>Adds live web search as a callable tool — the AI model can run Brave Search queries during a conversation in response to tool calls from Open WebUI and other clients. LiteLLM spawns the server on demand via stdio using an API key you supply.</p>
+
+    <h3>Step 1 — Get a Brave Search API key</h3>
+    <p>Go to <a href="https://api.search.brave.com/" target="_blank" rel="noopener">api.search.brave.com</a>, create a free account, and generate an API key under the Data for AI plan (free tier supports up to 2,000 queries/month).</p>
+
+    <h3>Step 2 — Confirm Node.js is installed system-wide</h3>
+    <p>The MCP server is launched via <code>npx</code>. If you completed the Playwright MCP setup, Node.js is already installed system-wide and this step is done. Otherwise:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs</code></pre>
+    </div>
+    <div class="verify">Verify: <code>which npx</code> — expected output: <code>/usr/bin/npx</code></div>
+
+    <h3>Step 3 — Add Brave Search MCP server in LiteLLM UI</h3>
+    <p>Navigate to <code>http://YOUR_SERVER_IP:8001/ui</code> → MCP Servers → Add New MCP Server.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>Name</td><td><code>brave-search</code></td></tr>
+          <tr><td>Alias</td><td><code>brave-search</code></td></tr>
+          <tr><td>Transport Type</td><td><code>Standard Input/Output (stdio)</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Set Stdio Configuration (JSON) — replace <code>YOUR_BRAVE_API_KEY</code> with your actual key:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>{
+  "command": "npx",
+  "args": [
+    "-y",
+    "@modelcontextprotocol/server-brave-search"
+  ],
+  "env": {
+    "BRAVE_API_KEY": "YOUR_BRAVE_API_KEY"
+  }
+}</code></pre>
+    </div>
+    <p>Save and confirm Health Status shows <strong>Healthy</strong>.</p>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>If the health check fails, verify that <code>npx</code> resolves to <code>/usr/bin/npx</code> (system-wide install) and not a user-local path. See the Known Issues section — MCP stdio servers fail health check — for the full diagnosis.</span></div>
+
+    <h3>Validation</h3>
+    <p>In Open WebUI, send the following prompt:</p>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>Use the brave-search tool to find the latest news about NVIDIA and summarize the top three results.</span></div>
+    <p>Expected: the model calls the <code>brave_web_search</code> tool (shown as "Explored" in Open WebUI) and returns a summary drawn from live search results.</p>
   </div>
 
   <div class="step" id="playwright-mcp">

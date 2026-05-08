@@ -387,6 +387,10 @@
     <a href="#obsidian-vault-bugs" class="nav-item"><span class="num">—</span> Bugs &amp; fixes</a>
   </nav>
   <nav class="nav-section">
+    <div class="nav-label">Playwright MCP</div>
+    <a href="#playwright-mcp" class="nav-item"><span class="num">—</span> Browser automation</a>
+  </nav>
+  <nav class="nav-section">
     <div class="nav-label">Troubleshooting</div>
     <a href="#litellm-ui" class="nav-item"><span class="num">—</span> LiteLLM Admin UI</a>
   </nav>
@@ -1138,6 +1142,7 @@ curl http://localhost:8001/v1/models</code></pre>
       <div class="port-card"><div class="port-num">8001</div><div class="port-name">LiteLLM</div><div class="port-note">All clients point here</div></div>
       <div class="port-card"><div class="port-num">5678</div><div class="port-name">n8n</div><div class="port-note">Workflow UI</div></div>
       <div class="port-card"><div class="port-num">8787</div><div class="port-name">Hermes WebUI</div><div class="port-note">Agent UI</div></div>
+      <div class="port-card"><div class="port-num">—</div><div class="port-name">Playwright MCP</div><div class="port-note">stdio — spawned by LiteLLM on demand</div></div>
     </div>
   </div>
 
@@ -1492,6 +1497,101 @@ EOF</code></pre>
       <div class="issue-sym"><span>Cause</span><span>The built-in Hermes obsidian skill will attempt to use filesystem commands (e.g. <code>cat</code>, <code>find</code>) to read vault files unless the <code>SKILL.md</code> explicitly references the correct MCP tool names. Adding the MCP server to <code>config.yaml</code> alone is not sufficient — the skill must also be rewritten to use the MCP tools exposed by <code>obsidian-mcp</code>.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Run <code>hermes mcp test obsidian</code> first to confirm connectivity and discover the exact tool names. Then update <code>~/.hermes/skills/note-taking/obsidian/SKILL.md</code> to explicitly list the MCP tool names: <code>list-available-vaults</code>, <code>search-vault</code>, <code>read-note</code>, <code>create-note</code>, <code>edit-note</code>, <code>move-note</code>, <code>delete-note</code>, <code>create-directory</code>, <code>add-tags</code>, <code>remove-tags</code>, <code>rename-tag</code>. The SKILL.md must instruct Hermes to always call <code>list-available-vaults</code> first before any other tool call. See the setup steps above for the full SKILL.md content.</span></div>
     </div>
+  </div>
+
+  <div class="step" id="playwright-mcp">
+    <div class="step-header"><span class="step-num">PLAYWRIGHT MCP</span><h2>Browser Automation</h2></div>
+    <p>Adds browser automation tool use to the stack — the AI model can navigate pages, take screenshots, and scrape content via tool calls in Open WebUI and other clients. LiteLLM spawns a headless Chromium process on demand via stdio; no persistent port is required.</p>
+
+    <h3>Step 1 — Install Node.js system-wide</h3>
+    <p>LiteLLM runs as a systemd service and does not source <code>.bashrc</code>. Node.js must be installed system-wide so <code>npx</code> is available in LiteLLM's PATH.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs</code></pre>
+    </div>
+    <div class="verify">Verify: <code>which npx</code> — expected output: <code>/usr/bin/npx</code></div>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>If Node.js was previously installed via <code>nvm</code> or a user-local installer, this step replaces it with a system-wide install. The Known Issues section documents the <code>npx</code> PATH problem in detail.</span></div>
+
+    <h3>Step 2 — Install Playwright MCP Chromium browser</h3>
+    <p>Chrome has no ARM64 build. Use Chromium, installed via the <code>@playwright/mcp</code> package's own browser installer — not via <code>npx playwright install</code>:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>npx @playwright/mcp install-browser chromium</code></pre>
+    </div>
+    <div class="verify">Verify: <code>ls ~/.cache/ms-playwright/</code> — expected: a <code>chromium-XXXX</code> directory is present.</div>
+
+    <h3>Step 3 — Update litellm-config.yaml</h3>
+    <p>Add <code>model_info</code> blocks to all model entries. Without these, LiteLLM does not advertise function calling support and tool calls will not execute.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>model_list:
+  - model_name: qwen3.6-35b
+    litellm_params:
+      model: openai/qwen3.6-35b
+      api_base: http://localhost:8000/v1
+      api_key: "not-needed"
+      max_tokens: 8192
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+  - model_name: qwen3-expert
+    litellm_params:
+      model: openai/qwen3-expert
+      api_base: http://localhost:8002/v1
+      api_key: "not-needed"
+      max_tokens: 8192
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+  - model_name: auto
+    litellm_params:
+      model: openai/qwen3.6-35b
+      api_base: http://localhost:8000/v1
+      api_key: "not-needed"
+      max_tokens: 8192
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true</code></pre>
+    </div>
+    <p>Restart LiteLLM after saving:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo systemctl restart litellm</code></pre>
+    </div>
+
+    <h3>Step 4 — Add Playwright MCP server in LiteLLM UI</h3>
+    <p>Navigate to <code>http://YOUR_SERVER_IP:8001/ui</code> → MCP Servers → Add New MCP Server.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>Name</td><td><code>playwright</code></td></tr>
+          <tr><td>Alias</td><td><code>playwright</code></td></tr>
+          <tr><td>Transport Type</td><td><code>Standard Input/Output (stdio)</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Set Stdio Configuration (JSON):</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>{
+  "command": "npx",
+  "args": [
+    "-y",
+    "@playwright/mcp@latest",
+    "--browser",
+    "chromium",
+    "--headless"
+  ]
+}</code></pre>
+    </div>
+    <p>Save and confirm Health Status shows <strong>Healthy</strong>.</p>
+
+    <h3>Validation</h3>
+    <p>In Open WebUI, send the following prompt:</p>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>Use the playwright tool to browse to cnn.com, take a screenshot, and tell me what you see.</span></div>
+    <p>Expected: the model calls the navigate and screenshot tools (shown as "Explored" in Open WebUI) and returns a summary of the page.</p>
   </div>
 
   <div class="step" id="litellm-ui">

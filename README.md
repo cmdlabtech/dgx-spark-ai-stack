@@ -47,11 +47,11 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
 | Client Tailscale | `spark-02` | Client — their ACLs | — |
 | Telegram gateway (Hermes) | `spark-01` | You | — |
 
-**Production model:** `Qwen/Qwen3.5-122B-A10B-GPTQ-Int4` (GPTQ-Int4 MoE, ~96 GB resident per node at `--gpu-memory-utilization 0.80`; ≈34 GB weights/node + KV cache). Daily driver — meaningfully better quality than the bootstrap 35B and fits comfortably in the clustered 256 GB pool.
+**Production model:** `Intel/Qwen3.5-122B-A10B-int4-AutoRound` (122B / A10B MoE, INT4 via Intel AutoRound; ~37 GB resident per node, leaving ~91 GB per-node for KV cache). Steady-state throughput ~45 tok/s at TP=2 with NCCL over RoCE/RDMA on the DAC. 262K context.
 
-**Bootstrap fallback:** `Qwen/Qwen3.6-35B-A3B-FP8` — the model used to bring the cluster up the first time; useful for fast iteration on Ray/NCCL/DAC wiring before committing to the longer 122B load.
+**Bootstrap fallback:** `Qwen/Qwen3.6-35B-A3B-FP8` — the model used to bring the cluster up the first time; useful for fast iteration on Ray/NCCL/RoCE wiring before committing to the longer 122B load.
 
-**Tested but does not fit:** `Qwen/Qwen3-235B-A22B-FP8` — at ~117.5 GB/node FP8 there is no room for KV cache; Ray OOMs the worker. Use a GPTQ-Int4 quantization or stick with the 122B above.
+**Tested but does not fit / not supported:** `Qwen/Qwen3-235B-A22B-FP8` (at ~117.5 GB/node FP8 there is no room for KV cache; Ray OOMs the worker) and `Sehyo/Qwen3.5-122B-A10B-NVFP4` (NVFP4 is currently single-node only on DGX Spark — multi-node fails at cluster launch).
 
 ## Hardware
 
@@ -89,9 +89,10 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
 │   vLLM head (Ray master) :8000  · TP rank 0 · spark-01             │
 │   vLLM Ray worker               · TP rank 1 · spark-02             │
 │                                                                    │
-│   Qwen/Qwen3.5-122B-A10B-GPTQ-Int4 — 256 GB unified memory         │
+│   Intel/Qwen3.5-122B-A10B-int4-AutoRound — 256 GB unified memory   │
 │                                                                    │
-│   NCCL allreduce on DAC: enp1s0f0np0 · MTU 9216 · 198.51.100.0/30  │
+│   NCCL allreduce on DAC: RoCE/RDMA · rocep1s0f0,roceP2p1s0f0       │
+│   ↑ NCCL_IB_HCA pinned to both RoCE twins · MTU 9216 · /30 ↑       │
 │   ↑ private physical hardware · NOT routed through any tailnet ↑   │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -162,11 +163,11 @@ Deploying Syncthing and the MCP pipeline on a separate Proxmox LXC rather than o
 
 ### Why vLLM runs outside Docker Compose
 
-vLLM is started with standalone `docker run` commands on each node (driven by per-node startup scripts in `~/sparky-ai-stack/scripts/`) rather than being declared as a service in any Compose file. This is intentional. Loading the 122B GPTQ-Int4 model across two nodes takes several minutes (and on a cold cache, the GPTQ-Marlin JIT compile silently adds another 10–20 minutes) and saturates GPU memory on both nodes for the duration — restarting the cluster is expensive. Keeping it outside Compose means:
+vLLM is started by the `eugr/spark-vllm-docker` launcher (`./run-recipe.sh`) — fronted by a `vllm-cluster.service` systemd unit on `spark-01` — rather than as a service in any Compose file. This is intentional. Loading the 122B AutoRound INT4 model across two nodes takes several minutes and pins ~37 GB of weights resident on each node — restarting the cluster is not cheap. Keeping it outside Compose means:
 
 - `docker compose up/down/restart` on n8n or hermes-webui has zero effect on the vLLM cluster
 - Iterating on workflow automation, the agent UI, or compose config doesn't force a model reload on either node
-- vLLM can be updated or restarted independently — the launch order (worker first, then head) is enforced explicitly by the scripts
+- vLLM can be updated or restarted independently — the launcher forms the Ray cluster (head, then worker, with a GPU-count gate before `vllm serve`) and propagates `NCCL_IB_HCA` / `/dev/infiniband` passthrough into both containers
 - A crash or misconfiguration in a compose service can't cascade into taking down the model server
 
 In practice this means the vLLM cluster runs continuously and is only restarted deliberately (e.g. to pick up a new model or change serving flags), while everything above it in the stack is free to cycle as often as needed.
@@ -174,7 +175,7 @@ In practice this means the vLLM cluster runs continuously and is only restarted 
 ## What the guide covers
 
 1. Hardware topology + Trust model + prerequisites — `/etc/hosts`, docker group, passwordless SSH between nodes
-2. **Step 01 — vLLM clustered (TP=2 over Ray on DAC)** — custom `vllm-spark:26.04` image on both nodes, HF cache rsync, startup scripts, launch order, `VLLM_HOST_IP` and NCCL config, GB10 `nvidia-smi` quirk
+2. **Step 01 — vLLM clustered (TP=2 over Ray on RoCE/RDMA)** — `eugr/spark-vllm-docker` (pre-built SM121a Blackwell wheels) on both nodes, RoCE interface verification, `./build-and-copy.sh --tf5`, autodiscovery, HF cache rsync, `./run-recipe.sh qwen3.5-122b-int4-autoround`, `NCCL_IB_HCA` over `/dev/infiniband`, `systemd vllm-cluster.service`, performance results (~45 tok/s vs the old 2–3 tok/s), GB10 `nvidia-smi` quirk
 3. **Step 02 — Your LiteLLM (spark-01)** — your master key, your SQLite log corpus, points at `localhost:8000`
 4. **Step 03 — Client LiteLLM (spark-02)** — separate install, separate master key, separate log corpus, points at `198.51.100.1:8000` over the DAC
 5. **Step 04 — Your Open WebUI (spark-01)** — points at your LiteLLM, your tailnet
@@ -183,7 +184,7 @@ In practice this means the vLLM cluster runs continuously and is only restarted 
 8. **Step 07 — Your Hermes Agent (spark-01)** — Telegram gateway, Hermes WebUI
 9. **Step 08 — Your n8n (spark-01)** — single-instance, owner-side flows. Client deploys their own n8n on `spark-02` independently.
 10. Validation checklist — both-side positive tests + cross-stack negative tests (each side cannot reach the other)
-11. Cluster issues and resolutions: Ray GCS, `VLLM_HOST_IP` mismatch, NCCL on wrong interface, client LiteLLM can't reach vLLM, port-8000 leak through Tailscale ACL, cross-LiteLLM mgmt-LAN collision, log-bleed across owners
+11. Cluster issues and resolutions: NCCL falling back to TCP (slow inference), NVFP4 multi-node stall, Ray version mismatch, Ray GCS, `VLLM_HOST_IP` / `LOCAL_IP` mismatch, NCCL on wrong interface, client LiteLLM can't reach vLLM, port-8000 leak through Tailscale ACL, cross-LiteLLM mgmt-LAN collision, log-bleed across owners
 12. Obsidian vault sync integration — Syncthing, obsidian-mcp, supergateway (Proxmox LXC, owner side)
 13. Brave Search MCP and Playwright MCP setup
 14. Appendix — clustered Open WebUI / n8n HA notes for those who want to pursue it
@@ -196,7 +197,7 @@ In practice this means the vLLM cluster runs continuously and is only restarted 
 - **Port 8000 (vLLM) must never leak onto either tailnet.** It has no auth. The Step 06 ufw rules are the enforcement; the Tailscale ACLs are the policy. Both must agree.
 - **Application-layer data stays per-owner.** Open WebUI knowledge bases, n8n flows, Hermes memory, LiteLLM logs — none of these cross the boundary. Each owner backs up their own node's state.
 - LiteLLM has no arm64 Docker image as of May 2026 — installed via pip directly on each node
-- vLLM is intentionally run via per-node `docker run` scripts, not as Compose services — keeps the cluster isolated from compose lifecycle operations
+- vLLM is intentionally run via the `eugr/spark-vllm-docker` launcher and a dedicated `vllm-cluster.service` systemd unit, not as a Compose service — keeps the cluster isolated from compose lifecycle operations and ensures NCCL gets RDMA/RoCE rather than TCP fallback
 - `nvidia-smi --query-gpu=memory.used,memory.total` returns `[N/A]` on GB10 (Grace Blackwell unified memory). Use plain `nvidia-smi` and read the Processes section instead.
 
 ## Troubleshooting

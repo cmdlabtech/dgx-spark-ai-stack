@@ -15,10 +15,10 @@ The full step-by-step setup guide is at [cmdlabtech.github.io/dgx-spark-ai-stack
 Three logical layers:
 
 1. **Application stacks (separate ownership).** Two independent stacks on two nodes — your apps on `sparky-01`, client's apps on `sparky-02`. Knowledge bases, chat history, RAG pipelines, API keys, and logs are completely separate. Neither party has access to the other's stack.
-2. **LiteLLM proxies (one per side).** Each side runs its own LiteLLM with its own master key and its own SQLite log corpus. Your LiteLLM uses `api_base = http://localhost:8000/v1`; client's LiteLLM uses `api_base = http://10.100.100.1:8000/v1` over the DAC.
+2. **LiteLLM proxies (one per side).** Each side runs its own LiteLLM with its own master key and its own SQLite log corpus. Your LiteLLM uses `api_base = http://localhost:8000/v1`; client's LiteLLM uses `api_base = http://198.51.100.1:8000/v1` over the DAC.
 3. **Shared compute pool.** vLLM head (Ray master, TP rank 0) runs on `sparky-01:8000` backed by the full 256 GB unified memory across both nodes. The Ray worker on `sparky-02` (TP rank 1) processes tensor activations only — no readable text crosses the worker.
 
-Tailscale is a per-owner overlay: each node joins its owner's tailnet independently, with separate ACL policies. The DAC link (`10.100.100.0/30`) is private physical hardware between the two nodes — not routed through either tailnet.
+Tailscale is a per-owner overlay: each node joins its owner's tailnet independently, with separate ACL policies. The DAC link (`198.51.100.0/30`) is private physical hardware between the two nodes — not routed through either tailnet.
 
 ## Trust model
 
@@ -76,7 +76,7 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
 │            │                 │          │            │                 │
 │            ▼                 │          │            ▼                 │
 │  Your LiteLLM       :8001    │          │  Client LiteLLM      :8001   │
-│  api_base=localhost:8000     │          │  api_base=10.100.100.1:8000  │
+│  api_base=localhost:8000     │          │  api_base=198.51.100.1:8000  │
 └──────────┬───────────────────┘          └──────────┬───────────────────┘
            │                                         │
            │ localhost                               │ DAC (200 Gb/s)
@@ -89,7 +89,7 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
 │                                                                    │
 │   Qwen/Qwen3.6-35B-A3B-FP8 — 256 GB unified memory                 │
 │                                                                    │
-│   NCCL allreduce on DAC: enp1s0f0np0 · MTU 9216 · 10.100.100.0/30  │
+│   NCCL allreduce on DAC: enp1s0f0np0 · MTU 9216 · 198.51.100.0/30  │
 │   ↑ private physical hardware · NOT routed through any tailnet ↑   │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -174,7 +174,7 @@ In practice this means the vLLM cluster runs continuously and is only restarted 
 1. Hardware topology + Trust model + prerequisites — `/etc/hosts`, docker group, passwordless SSH between nodes
 2. **Step 01 — vLLM clustered (TP=2 over Ray on DAC)** — custom `vllm-spark:26.04` image on both nodes, HF cache rsync, startup scripts, launch order, `VLLM_HOST_IP` and NCCL config, GB10 `nvidia-smi` quirk
 3. **Step 02 — Your LiteLLM (sparky-01)** — your master key, your SQLite log corpus, points at `localhost:8000`
-4. **Step 03 — Client LiteLLM (sparky-02)** — separate install, separate master key, separate log corpus, points at `10.100.100.1:8000` over the DAC
+4. **Step 03 — Client LiteLLM (sparky-02)** — separate install, separate master key, separate log corpus, points at `198.51.100.1:8000` over the DAC
 5. **Step 04 — Your Open WebUI (sparky-01)** — points at your LiteLLM, your tailnet
 6. **Step 05 — Client Open WebUI (sparky-02)** — points at client's LiteLLM, client's tailnet, client's data stays on `sparky-02`
 7. **Step 06 — Tailscale (both nodes, separate tailnets)** — per-owner ACLs, host firewall rules that prevent the unauthenticated vLLM port leaking onto either tailnet

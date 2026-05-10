@@ -143,8 +143,8 @@
 
   .assumptions h3 { font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; }
   .assumptions ul { list-style: none; display: flex; flex-direction: column; gap: 5px; }
-  .assumptions li { display: flex; align-items: baseline; gap: 10px; font-size: 13px; color: var(--text2); }
-  .assumptions li::before { content: '—'; color: var(--text3); flex-shrink: 0; }
+  .assumptions li { position: relative; padding-left: 18px; font-size: 13px; color: var(--text2); }
+  .assumptions li::before { content: '—'; color: var(--text3); position: absolute; left: 0; top: 0; }
 
   .step { margin-bottom: 56px; padding-bottom: 56px; border-bottom: 1px solid var(--border); }
   .step:last-of-type { border-bottom: none; }
@@ -573,7 +573,7 @@
 
         <!-- Client LiteLLM bottom (y=378) → vLLM head top (y=566), with DAC label pill -->
         <line x1="825" y1="378" x2="825" y2="566" class="arrow-line" marker-end="url(#arrow)"/>
-        <rect x="740" y="468" width="170" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
+        <rect x="715" y="468" width="220" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
         <text x="825" y="483" text-anchor="middle" class="mono-text" dominant-baseline="central">198.51.100.1:8000 (over DAC)</text>
 
         <!-- ============ Shared compute pool ============ -->

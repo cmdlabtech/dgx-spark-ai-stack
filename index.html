@@ -458,172 +458,155 @@
     <h2>Architecture</h2>
     <p style="margin:0 0 16px;font-size:13.5px;color:var(--text2);">Two physically separate DGX Spark nodes share a single tensor-parallel vLLM cluster (TP=2 over Ray on a 200&nbsp;Gb/s DAC link) — but each node runs its own independent application stack owned by a different party. The diagram shows three logical layers: <strong>application stacks</strong> (top, separate per owner), <strong>LiteLLM proxies</strong> (middle, one per side, separate keys and logs), and the <strong>shared compute pool</strong> (bottom, TP=2 across both nodes, served by the vLLM head on <code>spark-01:8000</code>). Tailscale sits as a separate overlay on each node — the DAC link is its own private hardware and does not traverse Tailscale.</p>
     <div class="diagram-wrap">
-      <svg width="100%" viewBox="0 0 1100 920" role="img" xmlns="http://www.w3.org/2000/svg">
-        <title>Split-trust shared-compute DGX Spark architecture</title>
-        <desc>Three-layer architecture. Top layer is two independent application stacks: left side (spark-01, "your" stack) contains Your Open WebUI, Your Hermes Agent, and Your n8n on a tailnet labeled "your tailscale"; right side (spark-02, "client" stack) contains Client Open WebUI and Client n8n on a separate tailnet labeled "client tailscale". Middle layer shows two LiteLLM proxies: Your LiteLLM on spark-01 port 8001 with your master key, and Client LiteLLM on spark-02 port 8001 with the client's master key. Bottom layer is the shared vLLM compute: vLLM head with Ray master on spark-01 port 8000 backed by the Qwen model and tensor-parallel rank 0, plus a vLLM Ray worker on spark-02 holding tensor-parallel rank 1. Both LiteLLM proxies point to the vLLM head endpoint over the DAC link (198.51.100.1:8000). NCCL traffic for tensor-parallel collectives flows on the DAC between the head and the worker. Tailscale overlays on each side are independent; the DAC is not routed through either tailnet.</desc>
+      <svg width="100%" viewBox="0 0 1100 940" role="img" xmlns="http://www.w3.org/2000/svg" aria-labelledby="arch-desc">
+        <desc id="arch-desc">Two-layer split-trust architecture. Top: two independent application stacks. Left = spark-01 (your node) with Your Open WebUI, Your n8n, Your Hermes, and Your LiteLLM, on your Tailscale tailnet. Right = spark-02 (client node) with Client Open WebUI, Client n8n, and Client LiteLLM, on a separate client Tailscale tailnet. Both LiteLLM proxies feed into a single shared compute pool below: vLLM head (Ray master, TP rank 0) on spark-01:8000, vLLM Ray worker (TP rank 1) on spark-02, the Qwen model in 256 GB unified memory, connected via the DAC link (200 Gb/s, enp1s0f0np0, 198.51.100.0/30). Your LiteLLM calls vLLM over localhost:8000; client's LiteLLM calls it over the DAC at 198.51.100.1:8000. NCCL collectives between head and worker flow on the DAC. Tailscale overlays carry application traffic only; the DAC is private physical hardware not routed through either tailnet.</desc>
         <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </marker>
         </defs>
         <style>
-          .db { fill:#f8f9fa; stroke:#e5e7eb; stroke-width:1; }
-          .dblue { fill:#eff6ff; stroke:#bfdbfe; stroke-width:1; }
-          .dpurp { fill:#f5f3ff; stroke:#c4b5fd; stroke-width:1.5; }
-          .dteal { fill:#f0fdfa; stroke:#99f6e4; stroke-width:1; }
-          .dcoral { fill:#fff7ed; stroke:#fdba74; stroke-width:1.5; }
-          .dl { stroke:#9ca3af; stroke-width:1.2; fill:none; }
-          .dld { stroke:#9ca3af; stroke-width:1; fill:none; stroke-dasharray:4 3; }
-          .dth { font-family:'Inter',sans-serif; font-size:13px; font-weight:600; fill:#111827; }
-          .dts { font-family:'Inter',sans-serif; font-size:11px; fill:#6b7280; }
-          .dhw1 { fill:#eff6ff; stroke:#3b82f6; stroke-width:1.5; stroke-dasharray:8 4; }
-          .dhw2 { fill:#f5f3ff; stroke:#7c3aed; stroke-width:1.5; stroke-dasharray:8 4; }
-          .dts2 { fill:#0d9488; stroke:#5eead4; stroke-width:1.2; stroke-dasharray:5 3; }
-          .dts2b { fill:none; stroke:#0d9488; stroke-width:1.2; stroke-dasharray:5 3; }
-          .dac { stroke:#ea580c; stroke-width:5; fill:none; stroke-linecap:round; }
-          .lyr { font-family:'Inter',sans-serif; font-size:10.5px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; fill:#6b7280; }
+          .users-rect { fill:#f8f9fa; stroke:#e5e7eb; stroke-width:1; }
+          .app-blue { fill:#eff6ff; stroke:#bfdbfe; stroke-width:1; }
+          .app-teal { fill:#f0fdfa; stroke:#5eead4; stroke-width:1; }
+          .litellm-rect { fill:#f5f3ff; stroke:#c4b5fd; stroke-width:1.5; }
+          .vllm-rect { fill:#fff7ed; stroke:#fdba74; stroke-width:1.5; }
+          .arrow-line { stroke:#9ca3af; stroke-width:1.3; fill:none; }
+          .title-text { font-family:'Inter',sans-serif; font-size:13px; font-weight:600; fill:#111827; }
+          .sub-text { font-family:'Inter',sans-serif; font-size:11px; fill:#6b7280; }
+          .mono-text { font-family:'JetBrains Mono',monospace; font-size:11px; fill:#374151; }
+          .your-boundary { fill:#ffffff; stroke:#3b82f6; stroke-width:1.5; stroke-dasharray:8 4; }
+          .client-boundary { fill:#ffffff; stroke:#7c3aed; stroke-width:1.5; stroke-dasharray:8 4; }
+          .pool-boundary { fill:#fffbf5; stroke:#fdba74; stroke-width:1.5; stroke-dasharray:8 4; }
+          .ts-badge { fill:#f0fdfa; stroke:#5eead4; stroke-width:1; stroke-dasharray:4 3; }
         </style>
 
-        <!-- ============ Users / clients (top) ============ -->
-        <rect x="60" y="14" width="430" height="46" rx="6" class="db"/>
-        <text class="dth" x="275" y="33" text-anchor="middle" dominant-baseline="central">Your users</text>
-        <text class="dts" x="275" y="49" text-anchor="middle" dominant-baseline="central">browser · Telegram · VS Code · over your tailnet</text>
+        <!-- ============ Top: users / clients ============ -->
+        <rect x="80" y="14" width="380" height="44" rx="6" class="users-rect"/>
+        <text class="title-text" x="270" y="32" text-anchor="middle" dominant-baseline="central">Your users</text>
+        <text class="sub-text" x="270" y="48" text-anchor="middle" dominant-baseline="central">browser · Telegram · VS Code · over your tailnet</text>
 
-        <rect x="610" y="14" width="430" height="46" rx="6" class="db"/>
-        <text class="dth" x="825" y="33" text-anchor="middle" dominant-baseline="central">Client's users</text>
-        <text class="dts" x="825" y="49" text-anchor="middle" dominant-baseline="central">browser · over their tailnet</text>
+        <rect x="640" y="14" width="380" height="44" rx="6" class="users-rect"/>
+        <text class="title-text" x="830" y="32" text-anchor="middle" dominant-baseline="central">Client's users</text>
+        <text class="sub-text" x="830" y="48" text-anchor="middle" dominant-baseline="central">browser · over their tailnet</text>
 
-        <!-- ============ LAYER 1: APPLICATION STACKS ============ -->
-        <text class="lyr" x="20" y="80">Layer 1 · Application stacks (separate ownership)</text>
+        <!-- Users → node (single arrow per side, lands on the boundary header) -->
+        <line x1="270" y1="58" x2="270" y2="90" class="arrow-line" marker-end="url(#arrow)"/>
+        <line x1="830" y1="58" x2="830" y2="90" class="arrow-line" marker-end="url(#arrow)"/>
 
-        <!-- spark-01 (your) hardware boundary -->
-        <rect x="20" y="100" width="520" height="248" rx="10" class="dhw1"/>
-        <rect x="32" y="92" width="280" height="20" rx="4" fill="#eff6ff" stroke="#3b82f6" stroke-width="1"/>
-        <text x="40" y="106" font-family="Inter,sans-serif" font-size="10.5" font-weight="700" fill="#1d4ed8">spark-01 · YOUR NODE (private)</text>
-        <text x="528" y="106" text-anchor="end" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">192.0.2.21 (mgmt) · 198.51.100.1 (DAC)</text>
+        <!-- ============ spark-01 boundary (your node) ============ -->
+        <rect x="20" y="100" width="520" height="358" rx="10" class="your-boundary"/>
+        <!-- Header rect overlapping top edge -->
+        <rect x="32" y="92" width="216" height="22" rx="4" fill="#eff6ff" stroke="#3b82f6" stroke-width="1"/>
+        <text x="40" y="107" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#1d4ed8">spark-01 · YOUR NODE</text>
+        <text x="528" y="107" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="10" fill="#6b7280">192.0.2.21 (mgmt) · 198.51.100.1 (DAC)</text>
 
-        <!-- Tailscale overlay badge (your) -->
-        <rect x="32" y="120" width="496" height="30" rx="6" class="dts2"/>
-        <text class="dth" x="280" y="135" text-anchor="middle" dominant-baseline="central" fill="#0f766e">Your Tailscale tailnet</text>
-        <text class="dts" x="280" y="148" text-anchor="middle" dominant-baseline="central" fill="#0f766e">private overlay · ACLs you control</text>
+        <!-- Tailscale label (light fill, doesn't cover anything) -->
+        <rect x="32" y="124" width="496" height="26" rx="5" class="ts-badge"/>
+        <text x="280" y="141" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="600" fill="#0f766e" dominant-baseline="central">Your Tailscale tailnet · private overlay · ACLs you control</text>
 
-        <!-- Your apps -->
-        <rect x="32" y="160" width="160" height="52" rx="6" class="dblue"/>
-        <text class="dth" x="112" y="180" text-anchor="middle" dominant-baseline="central">Your Open WebUI</text>
-        <text class="dts" x="112" y="196" text-anchor="middle" dominant-baseline="central">:8080 · your data</text>
+        <!-- Your apps row -->
+        <rect x="40" y="166" width="156" height="58" rx="6" class="app-blue"/>
+        <text class="title-text" x="118" y="188" text-anchor="middle" dominant-baseline="central">Your Open WebUI</text>
+        <text class="sub-text" x="118" y="208" text-anchor="middle" dominant-baseline="central">:8080 · your data</text>
 
-        <rect x="200" y="160" width="160" height="52" rx="6" class="dblue"/>
-        <text class="dth" x="280" y="180" text-anchor="middle" dominant-baseline="central">Your n8n</text>
-        <text class="dts" x="280" y="196" text-anchor="middle" dominant-baseline="central">:5678 · your flows</text>
+        <rect x="206" y="166" width="156" height="58" rx="6" class="app-blue"/>
+        <text class="title-text" x="284" y="188" text-anchor="middle" dominant-baseline="central">Your n8n</text>
+        <text class="sub-text" x="284" y="208" text-anchor="middle" dominant-baseline="central">:5678 · your flows</text>
 
-        <rect x="368" y="160" width="160" height="52" rx="6" class="dteal"/>
-        <text class="dth" x="448" y="180" text-anchor="middle" dominant-baseline="central">Your Hermes</text>
-        <text class="dts" x="448" y="196" text-anchor="middle" dominant-baseline="central">Telegram · skills · memory</text>
+        <rect x="372" y="166" width="156" height="58" rx="6" class="app-teal"/>
+        <text class="title-text" x="450" y="188" text-anchor="middle" dominant-baseline="central">Your Hermes</text>
+        <text class="sub-text" x="450" y="208" text-anchor="middle" dominant-baseline="central">Telegram · skills · memory</text>
 
-        <!-- Your LiteLLM (middle layer) -->
-        <rect x="80" y="244" width="400" height="80" rx="6" class="dpurp"/>
-        <text class="dth" x="280" y="268" text-anchor="middle" dominant-baseline="central">Your LiteLLM · :8001</text>
-        <text class="dts" x="280" y="284" text-anchor="middle" dominant-baseline="central">your master_key · your SQLite log corpus</text>
-        <text class="dts" x="280" y="300" text-anchor="middle" dominant-baseline="central">api_base = http://localhost:8000/v1</text>
-        <text class="dts" x="280" y="316" text-anchor="middle" dominant-baseline="central" fill="#16a34a">↑ from your apps · ↓ to shared vLLM</text>
+        <!-- App → LiteLLM arrows (straight down) -->
+        <line x1="118" y1="224" x2="118" y2="254" class="arrow-line" marker-end="url(#arrow)"/>
+        <line x1="284" y1="224" x2="284" y2="254" class="arrow-line" marker-end="url(#arrow)"/>
+        <line x1="450" y1="224" x2="450" y2="254" class="arrow-line" marker-end="url(#arrow)"/>
 
-        <!-- Arrows: your apps → your LiteLLM (straight-down) -->
-        <line x1="112" y1="212" x2="112" y2="244" class="dl" marker-end="url(#arrow)"/>
-        <line x1="280" y1="212" x2="280" y2="244" class="dl" marker-end="url(#arrow)"/>
-        <line x1="448" y1="212" x2="448" y2="244" class="dl" marker-end="url(#arrow)"/>
+        <!-- Your LiteLLM -->
+        <rect x="40" y="254" width="488" height="124" rx="6" class="litellm-rect"/>
+        <text class="title-text" x="284" y="280" text-anchor="middle" dominant-baseline="central">Your LiteLLM · :8001</text>
+        <text class="sub-text" x="284" y="304" text-anchor="middle" dominant-baseline="central">your master_key · your SQLite log corpus</text>
+        <text class="mono-text" x="284" y="324" text-anchor="middle" dominant-baseline="central">api_base = http://localhost:8000/v1</text>
+        <text class="sub-text" x="284" y="354" text-anchor="middle" dominant-baseline="central" fill="#16a34a">↑ from your apps   ↓ to shared vLLM</text>
 
-        <!-- spark-02 (client) hardware boundary -->
-        <rect x="560" y="100" width="520" height="248" rx="10" class="dhw2"/>
-        <rect x="572" y="92" width="300" height="20" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1"/>
-        <text x="580" y="106" font-family="Inter,sans-serif" font-size="10.5" font-weight="700" fill="#5b21b6">spark-02 · CLIENT NODE (separate ownership)</text>
-        <text x="1068" y="106" text-anchor="end" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">192.0.2.22 (mgmt) · 198.51.100.2 (DAC)</text>
+        <!-- ============ spark-02 boundary (client node) ============ -->
+        <rect x="560" y="100" width="520" height="358" rx="10" class="client-boundary"/>
+        <!-- Header rect -->
+        <rect x="572" y="92" width="232" height="22" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1"/>
+        <text x="580" y="107" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#5b21b6">spark-02 · CLIENT NODE</text>
+        <text x="1068" y="107" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="10" fill="#6b7280">192.0.2.22 (mgmt) · 198.51.100.2 (DAC)</text>
 
-        <!-- Tailscale overlay badge (client) -->
-        <rect x="572" y="120" width="496" height="30" rx="6" class="dts2"/>
-        <text class="dth" x="820" y="135" text-anchor="middle" dominant-baseline="central" fill="#0f766e">Client's Tailscale tailnet</text>
-        <text class="dts" x="820" y="148" text-anchor="middle" dominant-baseline="central" fill="#0f766e">separate overlay · ACLs client controls</text>
+        <!-- Tailscale label -->
+        <rect x="572" y="124" width="496" height="26" rx="5" class="ts-badge"/>
+        <text x="820" y="141" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="600" fill="#0f766e" dominant-baseline="central">Client's Tailscale tailnet · separate overlay · ACLs client controls</text>
 
         <!-- Client apps -->
-        <rect x="610" y="160" width="220" height="52" rx="6" class="dblue"/>
-        <text class="dth" x="720" y="180" text-anchor="middle" dominant-baseline="central">Client Open WebUI</text>
-        <text class="dts" x="720" y="196" text-anchor="middle" dominant-baseline="central">:8080 · client's data</text>
+        <rect x="580" y="166" width="240" height="58" rx="6" class="app-blue"/>
+        <text class="title-text" x="700" y="188" text-anchor="middle" dominant-baseline="central">Client Open WebUI</text>
+        <text class="sub-text" x="700" y="208" text-anchor="middle" dominant-baseline="central">:8080 · client's data</text>
 
-        <rect x="838" y="160" width="220" height="52" rx="6" class="dblue"/>
-        <text class="dth" x="948" y="180" text-anchor="middle" dominant-baseline="central">Client n8n</text>
-        <text class="dts" x="948" y="196" text-anchor="middle" dominant-baseline="central">:5678 · client's flows</text>
+        <rect x="830" y="166" width="240" height="58" rx="6" class="app-blue"/>
+        <text class="title-text" x="950" y="188" text-anchor="middle" dominant-baseline="central">Client n8n</text>
+        <text class="sub-text" x="950" y="208" text-anchor="middle" dominant-baseline="central">:5678 · client's flows</text>
+
+        <!-- Client app → LiteLLM arrows -->
+        <line x1="700" y1="224" x2="700" y2="254" class="arrow-line" marker-end="url(#arrow)"/>
+        <line x1="950" y1="224" x2="950" y2="254" class="arrow-line" marker-end="url(#arrow)"/>
 
         <!-- Client LiteLLM -->
-        <rect x="620" y="244" width="400" height="80" rx="6" class="dpurp"/>
-        <text class="dth" x="820" y="268" text-anchor="middle" dominant-baseline="central">Client LiteLLM · :8001</text>
-        <text class="dts" x="820" y="284" text-anchor="middle" dominant-baseline="central">client's master_key · client's SQLite log corpus</text>
-        <text class="dts" x="820" y="300" text-anchor="middle" dominant-baseline="central">api_base = http://198.51.100.1:8000/v1 (over DAC)</text>
-        <text class="dts" x="820" y="316" text-anchor="middle" dominant-baseline="central" fill="#16a34a">↑ from client apps · ↓ to shared vLLM</text>
+        <rect x="580" y="254" width="490" height="124" rx="6" class="litellm-rect"/>
+        <text class="title-text" x="825" y="280" text-anchor="middle" dominant-baseline="central">Client LiteLLM · :8001</text>
+        <text class="sub-text" x="825" y="304" text-anchor="middle" dominant-baseline="central">client's master_key · client's SQLite log corpus</text>
+        <text class="mono-text" x="825" y="324" text-anchor="middle" dominant-baseline="central">api_base = http://198.51.100.1:8000/v1 (over DAC)</text>
+        <text class="sub-text" x="825" y="354" text-anchor="middle" dominant-baseline="central" fill="#16a34a">↑ from client apps   ↓ to shared vLLM</text>
 
-        <!-- Arrows: client apps → client LiteLLM (straight-down) -->
-        <line x1="720" y1="212" x2="720" y2="244" class="dl" marker-end="url(#arrow)"/>
-        <line x1="948" y1="212" x2="948" y2="244" class="dl" marker-end="url(#arrow)"/>
+        <!-- ============ Arrows from each LiteLLM down to the shared pool ============ -->
+        <!-- Your LiteLLM bottom (y=378) → vLLM head top (y=566), with a label pill in the gap -->
+        <line x1="284" y1="378" x2="284" y2="566" class="arrow-line" marker-end="url(#arrow)"/>
+        <rect x="220" y="468" width="128" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
+        <text x="284" y="483" text-anchor="middle" class="mono-text" dominant-baseline="central">localhost:8000</text>
 
-        <!-- Users → apps (your) — land on actual app centers -->
-        <line x1="112" y1="60" x2="112" y2="158" class="dl" marker-end="url(#arrow)"/>
-        <line x1="280" y1="60" x2="280" y2="158" class="dl" marker-end="url(#arrow)"/>
-        <line x1="448" y1="60" x2="448" y2="158" class="dl" marker-end="url(#arrow)"/>
-        <!-- Users → apps (client) — land on actual app centers -->
-        <line x1="720" y1="60" x2="720" y2="158" class="dl" marker-end="url(#arrow)"/>
-        <line x1="948" y1="60" x2="948" y2="158" class="dl" marker-end="url(#arrow)"/>
+        <!-- Client LiteLLM bottom (y=378) → vLLM head top (y=566), with DAC label pill -->
+        <line x1="825" y1="378" x2="825" y2="566" class="arrow-line" marker-end="url(#arrow)"/>
+        <rect x="740" y="468" width="170" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
+        <text x="825" y="483" text-anchor="middle" class="mono-text" dominant-baseline="central">198.51.100.1:8000 (over DAC)</text>
 
-        <!-- Vertical isolation barrier between the two stacks (visual cue) -->
-        <line x1="550" y1="100" x2="550" y2="348" stroke="#d1d5db" stroke-width="1" stroke-dasharray="2 4"/>
-        <text x="550" y="232" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#6b7280" transform="rotate(-90 550 232)">— application-layer isolation —</text>
+        <!-- ============ Shared compute pool ============ -->
+        <rect x="20" y="510" width="1060" height="420" rx="10" class="pool-boundary"/>
+        <rect x="32" y="502" width="270" height="22" rx="4" fill="#fff7ed" stroke="#fdba74" stroke-width="1"/>
+        <text x="40" y="517" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">SHARED COMPUTE POOL · TP=2 over Ray</text>
 
-        <!-- ============ LAYER 2: SHARED COMPUTE POOL ============ -->
-        <text class="lyr" x="20" y="386">Layer 2 · Shared compute pool (TP=2 over Ray on DAC)</text>
-
-        <rect x="20" y="396" width="1060" height="488" rx="10" fill="#fffaf0" stroke="#fdba74" stroke-width="1.5" stroke-dasharray="8 4"/>
-
-        <!-- Both LiteLLM proxies converge into a single vLLM endpoint -->
-        <text x="550" y="420" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412" font-weight="600">Both LiteLLM proxies → http://198.51.100.1:8000/v1 (vLLM head on spark-01)</text>
+        <!-- Pool intro text -->
+        <text x="550" y="548" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412" font-weight="500">single vLLM endpoint at 198.51.100.1:8000 — both LiteLLM proxies talk to it</text>
 
         <!-- vLLM head -->
-        <rect x="80" y="440" width="940" height="80" rx="6" class="dcoral"/>
-        <text class="dth" x="550" y="464" text-anchor="middle" dominant-baseline="central">vLLM head (Ray master) · TP rank 0 · spark-01:8000 · :6379 (Ray GCS)</text>
-        <text class="dts" x="550" y="482" text-anchor="middle" dominant-baseline="central">--tensor-parallel-size 2 · --distributed-executor-backend ray</text>
-        <text class="dts" x="550" y="498" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.1 · NCCL_SOCKET_IFNAME=enp1s0f0np0 · GPU 0</text>
+        <rect x="60" y="566" width="980" height="76" rx="6" class="vllm-rect"/>
+        <text class="title-text" x="550" y="588" text-anchor="middle" dominant-baseline="central">vLLM head (Ray master) · TP rank 0 · spark-01:8000 · :6379 (Ray GCS)</text>
+        <text class="sub-text" x="550" y="608" text-anchor="middle" dominant-baseline="central">--tensor-parallel-size 2 · --distributed-executor-backend ray</text>
+        <text class="mono-text" x="550" y="626" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.1 · NCCL_SOCKET_IFNAME=enp1s0f0np0 · GPU 0</text>
 
         <!-- vLLM worker -->
-        <rect x="80" y="540" width="940" height="80" rx="6" class="dcoral"/>
-        <text class="dth" x="550" y="564" text-anchor="middle" dominant-baseline="central">vLLM Ray worker · TP rank 1 · spark-02 (no API listener)</text>
-        <text class="dts" x="550" y="582" text-anchor="middle" dominant-baseline="central">processes tensor activations only — no readable text</text>
-        <text class="dts" x="550" y="598" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.2 · NCCL_SOCKET_IFNAME=enp1s0f0np0 · GPU 1</text>
+        <rect x="60" y="664" width="980" height="76" rx="6" class="vllm-rect"/>
+        <text class="title-text" x="550" y="686" text-anchor="middle" dominant-baseline="central">vLLM Ray worker · TP rank 1 · spark-02 (no API listener)</text>
+        <text class="sub-text" x="550" y="706" text-anchor="middle" dominant-baseline="central">processes tensor activations only — no readable text</text>
+        <text class="mono-text" x="550" y="724" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.2 · NCCL_SOCKET_IFNAME=enp1s0f0np0 · GPU 1</text>
+
+        <!-- NCCL connector between head and worker (drawn outside boxes, on right) -->
+        <path d="M 1050 604 C 1080 604, 1080 702, 1050 702" stroke="#ea580c" stroke-width="3" fill="none"/>
+        <text x="1075" y="649" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#9a3412">NCCL</text>
+        <text x="1075" y="662" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">↕</text>
 
         <!-- Model -->
-        <rect x="80" y="640" width="940" height="60" rx="6" class="dcoral"/>
-        <text class="dth" x="550" y="662" text-anchor="middle" dominant-baseline="central">Qwen/Qwen3.6-35B-A3B-FP8 — 256 GB unified memory pool</text>
-        <text class="dts" x="550" y="680" text-anchor="middle" dominant-baseline="central">alt: Qwen/Qwen3.5-122B-A10B-GPTQ-Int4</text>
+        <rect x="60" y="762" width="980" height="56" rx="6" class="vllm-rect" fill="#fffaf0"/>
+        <text class="title-text" x="550" y="782" text-anchor="middle" dominant-baseline="central">Qwen/Qwen3.6-35B-A3B-FP8 — 256 GB unified memory pool</text>
+        <text class="sub-text" x="550" y="800" text-anchor="middle" dominant-baseline="central">alt: Qwen/Qwen3.5-122B-A10B-GPTQ-Int4</text>
 
-        <!-- DAC link badge -->
-        <rect x="80" y="724" width="940" height="60" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
-        <text x="550" y="745" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#9a3412">DAC · 200 Gb/s direct-attach copper · enp1s0f0np0 · MTU 9216 · 198.51.100.0/30</text>
-        <text x="550" y="763" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#9a3412">NCCL allreduce (tensor activations) · Ray control · NOT routed through either tailnet</text>
-        <text x="550" y="777" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#9a3412">private physical hardware · separate from mgmt LAN and Tailscale overlays</text>
-
-        <!-- Arrows from each LiteLLM down to the layer 2 boundary, then continue inside the pool to the head -->
-        <line x1="280" y1="324" x2="280" y2="394" class="dl"/>
-        <line x1="280" y1="402" x2="280" y2="438" class="dl" marker-end="url(#arrow)"/>
-        <rect x="240" y="358" width="120" height="18" rx="3" fill="#ffffff" stroke="#e5e7eb"/>
-        <text x="300" y="370" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#374151">localhost:8000</text>
-
-        <line x1="820" y1="324" x2="820" y2="394" class="dl"/>
-        <line x1="820" y1="402" x2="820" y2="438" class="dl" marker-end="url(#arrow)"/>
-        <rect x="744" y="358" width="170" height="18" rx="3" fill="#ffffff" stroke="#e5e7eb"/>
-        <text x="829" y="370" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#374151">198.51.100.1:8000 (over DAC)</text>
-
-        <!-- NCCL collective arrow between head and worker (drawn OUTSIDE the boxes, head/worker right edge is x=1020) -->
-        <path d="M 1030 480 C 1060 480, 1060 580, 1030 580" stroke="#ea580c" stroke-width="3" fill="none"/>
-        <text x="1056" y="534" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#9a3412">NCCL</text>
-        <text x="1056" y="546" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#9a3412">↕</text>
-
-        <!-- ============ LAYER LEGEND ============ -->
-        <text class="lyr" x="20" y="912">Boundary key · ─ ─ ─ blue = spark-01 hardware · purple = spark-02 hardware · teal = Tailscale overlay · orange = DAC physical link</text>
+        <!-- DAC link bar -->
+        <rect x="60" y="838" width="980" height="74" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+        <text x="550" y="860" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#9a3412">DAC · 200 Gb/s direct-attach copper</text>
+        <text x="550" y="880" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#9a3412">enp1s0f0np0 · MTU 9216 · 198.51.100.0/30</text>
+        <text x="550" y="898" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#9a3412">NCCL allreduce · Ray control · NOT routed through either tailnet · separate from mgmt LAN</text>
 
       </svg>
     </div>

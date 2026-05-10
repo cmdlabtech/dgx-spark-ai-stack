@@ -332,7 +332,47 @@
   .validation-checklist li { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--text2); line-height: 1.6; }
   .validation-checklist li::before { content: '☐'; font-size: 15px; color: var(--text3); flex-shrink: 0; line-height: 1.5; }
 
+  /* Network worksheet */
+  .worksheet { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin: 0 0 24px; }
+  .worksheet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 16px 0 8px; }
+  .worksheet-col { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+  .worksheet-col.you { border-left: 3px solid #3b82f6; }
+  .worksheet-col.client { border-left: 3px solid #7c3aed; }
+  .worksheet-col h4 { font-size: 11px; font-weight: 600; color: var(--text3); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 10px; }
+  .worksheet-col.you h4 { color: #1d4ed8; }
+  .worksheet-col.client h4 { color: #5b21b6; }
+  .worksheet-row { display: grid; grid-template-columns: 130px 1fr; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .worksheet-row label { font-size: 11.5px; color: var(--text3); font-family: var(--mono); }
+  .worksheet-row input {
+    font-family: var(--mono); font-size: 12.5px; padding: 5px 8px;
+    border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);
+    width: 100%; outline: none; transition: border-color 0.12s;
+  }
+  .worksheet-row input:focus { border-color: var(--accent); }
+  .worksheet-row input::placeholder { color: var(--text3); opacity: 0.7; font-size: 11.5px; }
+  .worksheet-shared { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin-top: 14px; }
+  .worksheet-shared .worksheet-row { grid-template-columns: 180px 1fr; }
+  .worksheet-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .ws-btn {
+    font-family: var(--mono); font-size: 11.5px; padding: 6px 12px; border-radius: 4px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text2);
+    cursor: pointer; transition: all 0.12s;
+  }
+  .ws-btn:hover { color: var(--accent); border-color: #bfdbfe; }
+  .ws-btn.reset:hover { color: var(--red); border-color: #fecaca; }
+  .ws-status { font-size: 11px; color: var(--text3); margin-left: auto; align-self: center; }
+  .ws-status.saved { color: var(--green); }
+
+  /* Highlight live-substituted placeholders so users can see what's been filled in */
+  pre code .placeholder-filled {
+    background: #fef3c7; color: #92400e; padding: 0 2px; border-radius: 2px; font-weight: 500;
+  }
+  pre code .placeholder-unfilled {
+    background: #fee2e2; color: #991b1b; padding: 0 2px; border-radius: 2px;
+  }
+
   @media (max-width: 860px) {
+    .worksheet-grid { grid-template-columns: 1fr; }
     .shell { grid-template-columns: 1fr; }
     aside { display: none; }
     main { padding: 32px 20px 80px; }
@@ -358,6 +398,7 @@
     <a href="#diagram" class="nav-item"><span class="num">—</span> Architecture</a>
     <a href="#trust-model" class="nav-item"><span class="num">—</span> Trust model</a>
     <a href="#topology" class="nav-item"><span class="num">—</span> Hardware topology</a>
+    <a href="#worksheet" class="nav-item"><span class="num">—</span> Network worksheet</a>
     <a href="#assumptions" class="nav-item"><span class="num">—</span> Prerequisites</a>
   </nav>
   <nav class="nav-section">
@@ -659,6 +700,129 @@
       <li><strong>Tailscale is per-owner.</strong> Two separate tailnets, two separate ACL policies. Cross-tailnet traffic only happens if both owners explicitly configure it (which by default they do not).</li>
       <li><strong>Single-instance per side.</strong> No clustered Open WebUI / clustered n8n on either node. HA modes are documented in the <a href="#appendix-ha">appendix</a> only.</li>
     </ol>
+  </div>
+
+  <!-- ============ Network worksheet ============ -->
+  <div class="diagram-section" id="worksheet">
+    <h2>Network worksheet</h2>
+    <p style="margin:0 0 12px;font-size:13.5px;color:var(--text2);">Fill these in once. Every code block on this page that contains a matching placeholder (<code>YOUR_NODE1_MGMT_IP</code>, <code>YOUR_USERNAME</code>, etc.) will be live-substituted with the value you type — and a yellow highlight shows you what was filled in. Values are saved to your browser's <code>localStorage</code> so reloads keep them. Master keys, API keys, and other secrets are deliberately <em>not</em> in this worksheet — fill those into the relevant code blocks manually so they never touch <code>localStorage</code>.</p>
+
+    <div class="diagram-wrap" style="margin-bottom:14px;">
+      <svg width="100%" viewBox="0 0 1080 280" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>Network worksheet — your IP slots</title>
+        <desc>Two boxes representing sparky-01 (your node) and sparky-02 (client node) with three IP slots each: mgmt, DAC, and Tailscale. The DAC link is shown between the two nodes. The mgmt LAN and the two tailnets are shown as separate networks each node attaches to.</desc>
+        <defs>
+          <marker id="ws-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+
+        <!-- sparky-01 box -->
+        <rect x="40" y="50" width="420" height="180" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="8 4"/>
+        <text x="60" y="76" font-family="Inter,sans-serif" font-size="12.5" font-weight="700" fill="#1d4ed8">sparky-01 — YOUR NODE</text>
+
+        <rect x="60" y="92" width="380" height="34" rx="5" fill="#fff" stroke="#bfdbfe"/>
+        <text x="74" y="106" font-family="Inter,sans-serif" font-size="10.5" fill="#6b7280">mgmt IP</text>
+        <text x="74" y="120" font-family="JetBrains Mono,monospace" font-size="12" fill="#1d4ed8" id="ws-svg-n1-mgmt">YOUR_NODE1_MGMT_IP</text>
+
+        <rect x="60" y="132" width="380" height="34" rx="5" fill="#fff" stroke="#bfdbfe"/>
+        <text x="74" y="146" font-family="Inter,sans-serif" font-size="10.5" fill="#6b7280">DAC IP</text>
+        <text x="74" y="160" font-family="JetBrains Mono,monospace" font-size="12" fill="#1d4ed8" id="ws-svg-n1-dac">YOUR_NODE1_DAC_IP</text>
+
+        <rect x="60" y="172" width="380" height="34" rx="5" fill="#fff" stroke="#bfdbfe"/>
+        <text x="74" y="186" font-family="Inter,sans-serif" font-size="10.5" fill="#6b7280">Tailscale IP</text>
+        <text x="74" y="200" font-family="JetBrains Mono,monospace" font-size="12" fill="#1d4ed8" id="ws-svg-n1-ts">YOUR_NODE1_TAILSCALE_IP</text>
+
+        <!-- DAC link badge -->
+        <line x1="460" y1="140" x2="620" y2="140" stroke="#ea580c" stroke-width="4" stroke-linecap="round"/>
+        <rect x="475" y="116" width="130" height="22" rx="5" fill="#fff7ed" stroke="#ea580c" stroke-width="1.2"/>
+        <text x="540" y="131" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#9a3412">DAC · 200 Gb/s</text>
+
+        <!-- sparky-02 box -->
+        <rect x="620" y="50" width="420" height="180" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="8 4"/>
+        <text x="640" y="76" font-family="Inter,sans-serif" font-size="12.5" font-weight="700" fill="#5b21b6">sparky-02 — CLIENT NODE</text>
+
+        <rect x="640" y="92" width="380" height="34" rx="5" fill="#fff" stroke="#c4b5fd"/>
+        <text x="654" y="106" font-family="Inter,sans-serif" font-size="10.5" fill="#6b7280">mgmt IP</text>
+        <text x="654" y="120" font-family="JetBrains Mono,monospace" font-size="12" fill="#5b21b6" id="ws-svg-n2-mgmt">YOUR_NODE2_MGMT_IP</text>
+
+        <rect x="640" y="132" width="380" height="34" rx="5" fill="#fff" stroke="#c4b5fd"/>
+        <text x="654" y="146" font-family="Inter,sans-serif" font-size="10.5" fill="#6b7280">DAC IP</text>
+        <text x="654" y="160" font-family="JetBrains Mono,monospace" font-size="12" fill="#5b21b6" id="ws-svg-n2-dac">YOUR_NODE2_DAC_IP</text>
+
+        <rect x="640" y="172" width="380" height="34" rx="5" fill="#fff" stroke="#c4b5fd"/>
+        <text x="654" y="186" font-family="Inter,sans-serif" font-size="10.5" fill="#6b7280">Tailscale IP</text>
+        <text x="654" y="200" font-family="JetBrains Mono,monospace" font-size="12" fill="#5b21b6" id="ws-svg-n2-ts">YOUR_NODE2_TAILSCALE_IP</text>
+
+        <!-- Network labels -->
+        <text x="250" y="28" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">Mgmt LAN · Your tailnet</text>
+        <line x1="250" y1="34" x2="250" y2="48" stroke="#9ca3af" stroke-width="1.2" marker-end="url(#ws-arrow)"/>
+        <text x="830" y="28" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">Mgmt LAN · Client's tailnet</text>
+        <line x1="830" y1="34" x2="830" y2="48" stroke="#9ca3af" stroke-width="1.2" marker-end="url(#ws-arrow)"/>
+
+        <!-- Tailnet hostname row -->
+        <text x="540" y="262" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#0f766e" font-weight="600">Your tailnet hostname (used in n8n WEBHOOK_URL)</text>
+        <text x="540" y="276" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11.5" fill="#0d9488" id="ws-svg-tailnet">YOUR_TAILNET_HOSTNAME</text>
+      </svg>
+    </div>
+
+    <div class="worksheet">
+      <div class="worksheet-grid">
+        <div class="worksheet-col you">
+          <h4>sparky-01 — your node</h4>
+          <div class="worksheet-row">
+            <label for="ws-n1-mgmt">mgmt IP</label>
+            <input type="text" id="ws-n1-mgmt" data-key="YOUR_NODE1_MGMT_IP" placeholder="e.g. 192.0.2.21" autocomplete="off"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-n1-dac">DAC IP</label>
+            <input type="text" id="ws-n1-dac" data-key="YOUR_NODE1_DAC_IP" placeholder="e.g. 198.51.100.1" autocomplete="off"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-n1-ts">Tailscale IP</label>
+            <input type="text" id="ws-n1-ts" data-key="YOUR_NODE1_TAILSCALE_IP" placeholder="e.g. 100.64.0.5" autocomplete="off"/>
+          </div>
+        </div>
+        <div class="worksheet-col client">
+          <h4>sparky-02 — client node</h4>
+          <div class="worksheet-row">
+            <label for="ws-n2-mgmt">mgmt IP</label>
+            <input type="text" id="ws-n2-mgmt" data-key="YOUR_NODE2_MGMT_IP" placeholder="e.g. 192.0.2.22" autocomplete="off"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-n2-dac">DAC IP</label>
+            <input type="text" id="ws-n2-dac" data-key="YOUR_NODE2_DAC_IP" placeholder="e.g. 198.51.100.2" autocomplete="off"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-n2-ts">Tailscale IP</label>
+            <input type="text" id="ws-n2-ts" data-key="YOUR_NODE2_TAILSCALE_IP" placeholder="e.g. 100.64.0.6" autocomplete="off"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="worksheet-shared">
+        <h4 style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.06em;text-transform:uppercase;margin:0 0 10px;">Shared / per-host</h4>
+        <div class="worksheet-row">
+          <label for="ws-username">Linux username</label>
+          <input type="text" id="ws-username" data-key="YOUR_USERNAME" placeholder="e.g. ubuntu" autocomplete="off"/>
+        </div>
+        <div class="worksheet-row">
+          <label for="ws-tailnet">Tailnet hostname</label>
+          <input type="text" id="ws-tailnet" data-key="YOUR_TAILNET_HOSTNAME" placeholder="e.g. sparky-01.tailnet-1234.ts.net" autocomplete="off"/>
+        </div>
+      </div>
+
+      <div class="worksheet-actions">
+        <button class="ws-btn" type="button" onclick="wsCopyAll()">copy summary</button>
+        <button class="ws-btn reset" type="button" onclick="wsReset()">reset</button>
+        <span class="ws-status" id="ws-status">Not saved</span>
+      </div>
+
+      <div class="callout note" style="margin-top:14px;">
+        <span class="callout-icon">ℹ</span>
+        <div><strong>Secrets stay manual.</strong> <code>YOUR_MASTER_KEY</code>, <code>YOUR_CLIENT_MASTER_KEY</code>, and <code>YOUR_BRAVE_API_KEY</code> are intentionally not in this worksheet — fill those into the relevant code blocks by hand, and don't paste them into a browser-stored field. The worksheet only handles network identifiers and your username.</div>
+      </div>
+    </div>
   </div>
 
   <div class="assumptions" id="assumptions">
@@ -2253,6 +2417,168 @@ const observer = new IntersectionObserver((entries) => {
 }, { threshold: 0.25 });
 
 document.querySelectorAll('[id]').forEach(el => observer.observe(el));
+
+// ============ Network worksheet: live placeholder substitution ============
+(function() {
+  var STORAGE_KEY = 'dgx-ai-stack-worksheet';
+  var KEYS = [
+    'YOUR_NODE1_MGMT_IP', 'YOUR_NODE1_DAC_IP', 'YOUR_NODE1_TAILSCALE_IP',
+    'YOUR_NODE2_MGMT_IP', 'YOUR_NODE2_DAC_IP', 'YOUR_NODE2_TAILSCALE_IP',
+    'YOUR_USERNAME', 'YOUR_TAILNET_HOSTNAME'
+  ];
+  // Map of keys to the SVG <text> element ids that should mirror them
+  var SVG_MIRROR = {
+    'YOUR_NODE1_MGMT_IP':       'ws-svg-n1-mgmt',
+    'YOUR_NODE1_DAC_IP':        'ws-svg-n1-dac',
+    'YOUR_NODE1_TAILSCALE_IP':  'ws-svg-n1-ts',
+    'YOUR_NODE2_MGMT_IP':       'ws-svg-n2-mgmt',
+    'YOUR_NODE2_DAC_IP':        'ws-svg-n2-dac',
+    'YOUR_NODE2_TAILSCALE_IP':  'ws-svg-n2-ts',
+    'YOUR_TAILNET_HOSTNAME':    'ws-svg-tailnet'
+  };
+
+  // Snapshot the original text of every <pre><code> on first load so reset works.
+  var codeBlocks = Array.prototype.slice.call(document.querySelectorAll('pre code'));
+  var originals = codeBlocks.map(function(el) { return el.textContent; });
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function load() {
+    try {
+      var raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return {};
+      return JSON.parse(raw) || {};
+    } catch (e) { return {}; }
+  }
+
+  function save(values) {
+    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(values)); } catch (e) {}
+  }
+
+  function applyAll(values) {
+    // Build regex that matches any of the placeholder keys (longest first to avoid partials)
+    var sortedKeys = KEYS.slice().sort(function(a,b){ return b.length - a.length; });
+    var pattern = new RegExp('\\b(' + sortedKeys.join('|') + ')\\b', 'g');
+
+    codeBlocks.forEach(function(el, i) {
+      var orig = originals[i];
+      // Replace placeholders with HTML-wrapped substitutions
+      var html = escapeHtml(orig).replace(pattern, function(match) {
+        var v = values[match];
+        if (v && v.trim()) {
+          return '<span class="placeholder-filled" title="from your worksheet (was ' + match + ')">' + escapeHtml(v) + '</span>';
+        }
+        return '<span class="placeholder-unfilled" title="not yet set in worksheet">' + match + '</span>';
+      });
+      el.innerHTML = html;
+    });
+
+    // Update SVG mirrors
+    Object.keys(SVG_MIRROR).forEach(function(k) {
+      var el = document.getElementById(SVG_MIRROR[k]);
+      if (!el) return;
+      el.textContent = (values[k] && values[k].trim()) ? values[k] : k;
+      el.style.opacity = (values[k] && values[k].trim()) ? '1' : '0.55';
+    });
+
+    // Status
+    var status = document.getElementById('ws-status');
+    if (status) {
+      var filled = KEYS.filter(function(k) { return values[k] && values[k].trim(); }).length;
+      if (filled === 0) {
+        status.textContent = 'Not saved'; status.classList.remove('saved');
+      } else {
+        status.textContent = 'Saved · ' + filled + '/' + KEYS.length + ' filled';
+        status.classList.add('saved');
+      }
+    }
+
+    // Override copy-button behavior so copied text uses the substituted values, not the highlighted spans
+    document.querySelectorAll('.copy-btn').forEach(function(btn) {
+      var pre = btn.closest('.code-block').querySelector('pre code');
+      var idx = codeBlocks.indexOf(pre);
+      if (idx === -1) return;
+      pre.dataset.substituted = (function() {
+        var orig = originals[idx];
+        return orig.replace(pattern, function(match) {
+          var v = values[match];
+          return (v && v.trim()) ? v : match;
+        });
+      })();
+    });
+  }
+
+  function readForm() {
+    var values = {};
+    document.querySelectorAll('.worksheet input[data-key]').forEach(function(input) {
+      values[input.dataset.key] = input.value;
+    });
+    return values;
+  }
+
+  function writeForm(values) {
+    document.querySelectorAll('.worksheet input[data-key]').forEach(function(input) {
+      var v = values[input.dataset.key];
+      if (typeof v === 'string') input.value = v;
+    });
+  }
+
+  // Wire up the inputs
+  document.addEventListener('DOMContentLoaded', function() {
+    var initial = load();
+    writeForm(initial);
+    applyAll(initial);
+
+    document.querySelectorAll('.worksheet input[data-key]').forEach(function(input) {
+      input.addEventListener('input', function() {
+        var values = readForm();
+        save(values);
+        applyAll(values);
+      });
+    });
+  });
+
+  // Expose reset + copy-summary to inline onclick handlers
+  window.wsReset = function() {
+    if (!confirm('Clear the network worksheet? This removes the saved values from your browser.')) return;
+    try { window.localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+    document.querySelectorAll('.worksheet input[data-key]').forEach(function(input) { input.value = ''; });
+    applyAll({});
+  };
+
+  window.wsCopyAll = function() {
+    var v = readForm();
+    var lines = ['# DGX AI Stack — network worksheet'];
+    KEYS.forEach(function(k) { lines.push(k + '=' + (v[k] || '')); });
+    var text = lines.join('\n') + '\n';
+    navigator.clipboard.writeText(text).then(function() {
+      var status = document.getElementById('ws-status');
+      if (status) {
+        var prev = status.textContent;
+        var prevClass = status.className;
+        status.textContent = 'Copied to clipboard';
+        status.classList.add('saved');
+        setTimeout(function() { status.textContent = prev; status.className = prevClass; }, 1500);
+      }
+    });
+  };
+})();
+
+// Override copyCode to use substituted values when worksheet is filled
+(function() {
+  var originalCopyCode = window.copyCode;
+  window.copyCode = function(btn) {
+    var pre = btn.closest('.code-block').querySelector('pre code');
+    var text = pre.dataset.substituted || pre.textContent.trim();
+    navigator.clipboard.writeText(text.trim()).then(function() {
+      btn.textContent = 'copied!';
+      btn.classList.add('copied');
+      setTimeout(function() { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  };
+})();
 </script>
 </body>
 </html>

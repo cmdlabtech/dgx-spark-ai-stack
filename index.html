@@ -404,13 +404,13 @@
   <nav class="nav-section">
     <div class="nav-label">Steps</div>
     <a href="#step1" class="nav-item"><span class="num">01</span> vLLM clustered (TP=2)</a>
-    <a href="#step2" class="nav-item"><span class="num">02</span> Your LiteLLM (sparky-01)</a>
-    <a href="#step3" class="nav-item"><span class="num">03</span> Client LiteLLM (sparky-02)</a>
-    <a href="#step4" class="nav-item"><span class="num">04</span> Your Open WebUI (sparky-01)</a>
-    <a href="#step5" class="nav-item"><span class="num">05</span> Client Open WebUI (sparky-02)</a>
+    <a href="#step2" class="nav-item"><span class="num">02</span> Your LiteLLM (spark-01)</a>
+    <a href="#step3" class="nav-item"><span class="num">03</span> Client LiteLLM (spark-02)</a>
+    <a href="#step4" class="nav-item"><span class="num">04</span> Your Open WebUI (spark-01)</a>
+    <a href="#step5" class="nav-item"><span class="num">05</span> Client Open WebUI (spark-02)</a>
     <a href="#step6" class="nav-item"><span class="num">06</span> Tailscale (both nodes)</a>
-    <a href="#step7" class="nav-item"><span class="num">07</span> Your Hermes (sparky-01)</a>
-    <a href="#step8" class="nav-item"><span class="num">08</span> Your n8n (sparky-01)</a>
+    <a href="#step7" class="nav-item"><span class="num">07</span> Your Hermes (spark-01)</a>
+    <a href="#step8" class="nav-item"><span class="num">08</span> Your n8n (spark-01)</a>
     <a href="#validation-checklist" class="nav-item"><span class="num">—</span> Validation checklist</a>
   </nav>
   <nav class="nav-section">
@@ -439,7 +439,7 @@
 
   <div class="hero">
     <h1>NVIDIA DGX<br>At-Home AI Stack <span style="font-size:18px;color:var(--text3);font-weight:500;letter-spacing:0;">— split-trust shared compute</span></h1>
-    <p class="hero-desc">Two clustered Nvidia DGX Spark nodes (arm64, Ubuntu 24.04) sharing a 256&nbsp;GB unified memory pool through tensor parallelism (TP=2) over Ray on a 200&nbsp;Gb/s direct-attach copper interconnect — but with <strong>split ownership</strong>. <code>sparky-01</code> is <strong>your</strong> node (your LiteLLM, your Open WebUI, your Hermes Agent, your n8n, your Tailscale). <code>sparky-02</code> is the <strong>client's</strong> node (their LiteLLM, their Open WebUI, their n8n, their Tailscale). Both LiteLLM proxies talk to the shared vLLM endpoint at <code>sparky-01:8000</code> over the DAC; neither application stack sees the other. Read the <a href="#trust-model">Trust model</a> section before deploying — this architecture has specific properties at the API layer that you should understand explicitly.</p>
+    <p class="hero-desc">Two clustered Nvidia DGX Spark nodes (arm64, Ubuntu 24.04) sharing a 256&nbsp;GB unified memory pool through tensor parallelism (TP=2) over Ray on a 200&nbsp;Gb/s direct-attach copper interconnect — but with <strong>split ownership</strong>. <code>spark-01</code> is <strong>your</strong> node (your LiteLLM, your Open WebUI, your Hermes Agent, your n8n, your Tailscale). <code>spark-02</code> is the <strong>client's</strong> node (their LiteLLM, their Open WebUI, their n8n, their Tailscale). Both LiteLLM proxies talk to the shared vLLM endpoint at <code>spark-01:8000</code> over the DAC; neither application stack sees the other. Read the <a href="#trust-model">Trust model</a> section before deploying — this architecture has specific properties at the API layer that you should understand explicitly.</p>
     <div class="stack-pills">
       <span class="pill blue">2× DGX Spark</span>
       <span class="pill blue">vLLM TP=2 · Ray</span>
@@ -456,11 +456,11 @@
 
   <div class="diagram-section" id="diagram">
     <h2>Architecture</h2>
-    <p style="margin:0 0 16px;font-size:13.5px;color:var(--text2);">Two physically separate DGX Spark nodes share a single tensor-parallel vLLM cluster (TP=2 over Ray on a 200&nbsp;Gb/s DAC link) — but each node runs its own independent application stack owned by a different party. The diagram shows three logical layers: <strong>application stacks</strong> (top, separate per owner), <strong>LiteLLM proxies</strong> (middle, one per side, separate keys and logs), and the <strong>shared compute pool</strong> (bottom, TP=2 across both nodes, served by the vLLM head on <code>sparky-01:8000</code>). Tailscale sits as a separate overlay on each node — the DAC link is its own private hardware and does not traverse Tailscale.</p>
+    <p style="margin:0 0 16px;font-size:13.5px;color:var(--text2);">Two physically separate DGX Spark nodes share a single tensor-parallel vLLM cluster (TP=2 over Ray on a 200&nbsp;Gb/s DAC link) — but each node runs its own independent application stack owned by a different party. The diagram shows three logical layers: <strong>application stacks</strong> (top, separate per owner), <strong>LiteLLM proxies</strong> (middle, one per side, separate keys and logs), and the <strong>shared compute pool</strong> (bottom, TP=2 across both nodes, served by the vLLM head on <code>spark-01:8000</code>). Tailscale sits as a separate overlay on each node — the DAC link is its own private hardware and does not traverse Tailscale.</p>
     <div class="diagram-wrap">
       <svg width="100%" viewBox="0 0 1100 920" role="img" xmlns="http://www.w3.org/2000/svg">
         <title>Split-trust shared-compute DGX Spark architecture</title>
-        <desc>Three-layer architecture. Top layer is two independent application stacks: left side (sparky-01, "your" stack) contains Your Open WebUI, Your Hermes Agent, and Your n8n on a tailnet labeled "your tailscale"; right side (sparky-02, "client" stack) contains Client Open WebUI and Client n8n on a separate tailnet labeled "client tailscale". Middle layer shows two LiteLLM proxies: Your LiteLLM on sparky-01 port 8001 with your master key, and Client LiteLLM on sparky-02 port 8001 with the client's master key. Bottom layer is the shared vLLM compute: vLLM head with Ray master on sparky-01 port 8000 backed by the Qwen model and tensor-parallel rank 0, plus a vLLM Ray worker on sparky-02 holding tensor-parallel rank 1. Both LiteLLM proxies point to the vLLM head endpoint over the DAC link (198.51.100.1:8000). NCCL traffic for tensor-parallel collectives flows on the DAC between the head and the worker. Tailscale overlays on each side are independent; the DAC is not routed through either tailnet.</desc>
+        <desc>Three-layer architecture. Top layer is two independent application stacks: left side (spark-01, "your" stack) contains Your Open WebUI, Your Hermes Agent, and Your n8n on a tailnet labeled "your tailscale"; right side (spark-02, "client" stack) contains Client Open WebUI and Client n8n on a separate tailnet labeled "client tailscale". Middle layer shows two LiteLLM proxies: Your LiteLLM on spark-01 port 8001 with your master key, and Client LiteLLM on spark-02 port 8001 with the client's master key. Bottom layer is the shared vLLM compute: vLLM head with Ray master on spark-01 port 8000 backed by the Qwen model and tensor-parallel rank 0, plus a vLLM Ray worker on spark-02 holding tensor-parallel rank 1. Both LiteLLM proxies point to the vLLM head endpoint over the DAC link (198.51.100.1:8000). NCCL traffic for tensor-parallel collectives flows on the DAC between the head and the worker. Tailscale overlays on each side are independent; the DAC is not routed through either tailnet.</desc>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -496,10 +496,10 @@
         <!-- ============ LAYER 1: APPLICATION STACKS ============ -->
         <text class="lyr" x="20" y="80">Layer 1 · Application stacks (separate ownership)</text>
 
-        <!-- sparky-01 (your) hardware boundary -->
+        <!-- spark-01 (your) hardware boundary -->
         <rect x="20" y="100" width="520" height="248" rx="10" class="dhw1"/>
         <rect x="32" y="92" width="280" height="20" rx="4" fill="#eff6ff" stroke="#3b82f6" stroke-width="1"/>
-        <text x="40" y="106" font-family="Inter,sans-serif" font-size="10.5" font-weight="700" fill="#1d4ed8">sparky-01 · YOUR NODE (private)</text>
+        <text x="40" y="106" font-family="Inter,sans-serif" font-size="10.5" font-weight="700" fill="#1d4ed8">spark-01 · YOUR NODE (private)</text>
         <text x="528" y="106" text-anchor="end" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">192.0.2.21 (mgmt) · 198.51.100.1 (DAC)</text>
 
         <!-- Tailscale overlay badge (your) -->
@@ -532,10 +532,10 @@
         <line x1="280" y1="212" x2="280" y2="244" class="dl" marker-end="url(#arrow)"/>
         <line x1="448" y1="212" x2="448" y2="244" class="dl" marker-end="url(#arrow)"/>
 
-        <!-- sparky-02 (client) hardware boundary -->
+        <!-- spark-02 (client) hardware boundary -->
         <rect x="560" y="100" width="520" height="248" rx="10" class="dhw2"/>
         <rect x="572" y="92" width="300" height="20" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1"/>
-        <text x="580" y="106" font-family="Inter,sans-serif" font-size="10.5" font-weight="700" fill="#5b21b6">sparky-02 · CLIENT NODE (separate ownership)</text>
+        <text x="580" y="106" font-family="Inter,sans-serif" font-size="10.5" font-weight="700" fill="#5b21b6">spark-02 · CLIENT NODE (separate ownership)</text>
         <text x="1068" y="106" text-anchor="end" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">192.0.2.22 (mgmt) · 198.51.100.2 (DAC)</text>
 
         <!-- Tailscale overlay badge (client) -->
@@ -581,17 +581,17 @@
         <rect x="20" y="396" width="1060" height="488" rx="10" fill="#fffaf0" stroke="#fdba74" stroke-width="1.5" stroke-dasharray="8 4"/>
 
         <!-- Both LiteLLM proxies converge into a single vLLM endpoint -->
-        <text x="550" y="420" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412" font-weight="600">Both LiteLLM proxies → http://198.51.100.1:8000/v1 (vLLM head on sparky-01)</text>
+        <text x="550" y="420" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412" font-weight="600">Both LiteLLM proxies → http://198.51.100.1:8000/v1 (vLLM head on spark-01)</text>
 
         <!-- vLLM head -->
         <rect x="80" y="440" width="940" height="80" rx="6" class="dcoral"/>
-        <text class="dth" x="550" y="464" text-anchor="middle" dominant-baseline="central">vLLM head (Ray master) · TP rank 0 · sparky-01:8000 · :6379 (Ray GCS)</text>
+        <text class="dth" x="550" y="464" text-anchor="middle" dominant-baseline="central">vLLM head (Ray master) · TP rank 0 · spark-01:8000 · :6379 (Ray GCS)</text>
         <text class="dts" x="550" y="482" text-anchor="middle" dominant-baseline="central">--tensor-parallel-size 2 · --distributed-executor-backend ray</text>
         <text class="dts" x="550" y="498" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.1 · NCCL_SOCKET_IFNAME=enp1s0f0np0 · GPU 0</text>
 
         <!-- vLLM worker -->
         <rect x="80" y="540" width="940" height="80" rx="6" class="dcoral"/>
-        <text class="dth" x="550" y="564" text-anchor="middle" dominant-baseline="central">vLLM Ray worker · TP rank 1 · sparky-02 (no API listener)</text>
+        <text class="dth" x="550" y="564" text-anchor="middle" dominant-baseline="central">vLLM Ray worker · TP rank 1 · spark-02 (no API listener)</text>
         <text class="dts" x="550" y="582" text-anchor="middle" dominant-baseline="central">processes tensor activations only — no readable text</text>
         <text class="dts" x="550" y="598" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.2 · NCCL_SOCKET_IFNAME=enp1s0f0np0 · GPU 1</text>
 
@@ -623,7 +623,7 @@
         <text x="1056" y="546" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#9a3412">↕</text>
 
         <!-- ============ LAYER LEGEND ============ -->
-        <text class="lyr" x="20" y="912">Boundary key · ─ ─ ─ blue = sparky-01 hardware · purple = sparky-02 hardware · teal = Tailscale overlay · orange = DAC physical link</text>
+        <text class="lyr" x="20" y="912">Boundary key · ─ ─ ─ blue = spark-01 hardware · purple = spark-02 hardware · teal = Tailscale overlay · orange = DAC physical link</text>
 
       </svg>
     </div>
@@ -634,14 +634,14 @@
     <h2>Trust model</h2>
     <p style="margin:0 0 14px;font-size:13.5px;color:var(--text2);">Read this before deploying. The split-trust architecture has specific properties at the API layer that you should understand explicitly. None of this is a new risk introduced by the cluster — it is just the same trust profile you accept any time you use a hosted inference API, made visible.</p>
 
-    <h3>API-layer visibility — sparky-01 sees all prompts</h3>
-    <p>The vLLM head process runs on <code>sparky-01</code> and serves the OpenAI-compatible API on port 8000. <strong>Both</strong> LiteLLM proxies — yours and the client's — call this endpoint. That means the owner of <code>sparky-01</code> can, in principle, observe every raw prompt and every model output that crosses the API surface. This is structurally identical to the trust profile of any commercial hosted-inference provider (OpenAI, Anthropic, Together, etc.): the entity running the API server can see traffic at the API layer.</p>
+    <h3>API-layer visibility — spark-01 sees all prompts</h3>
+    <p>The vLLM head process runs on <code>spark-01</code> and serves the OpenAI-compatible API on port 8000. <strong>Both</strong> LiteLLM proxies — yours and the client's — call this endpoint. That means the owner of <code>spark-01</code> can, in principle, observe every raw prompt and every model output that crosses the API surface. This is structurally identical to the trust profile of any commercial hosted-inference provider (OpenAI, Anthropic, Together, etc.): the entity running the API server can see traffic at the API layer.</p>
 
-    <h3>Tensor-layer isolation — sparky-02 sees only floats</h3>
-    <p>The Ray worker on <code>sparky-02</code> processes <em>tensor activations</em>, not text. It receives intermediate floating-point tensors over NCCL allreduce on the DAC link and contributes its share of the matrix multiplications. The client's node never sees readable prompts or completions; it only sees the mathematical operations its TP rank is responsible for. NCCL traffic on the DAC carries floats, not strings.</p>
+    <h3>Tensor-layer isolation — spark-02 sees only floats</h3>
+    <p>The Ray worker on <code>spark-02</code> processes <em>tensor activations</em>, not text. It receives intermediate floating-point tensors over NCCL allreduce on the DAC link and contributes its share of the matrix multiplications. The client's node never sees readable prompts or completions; it only sees the mathematical operations its TP rank is responsible for. NCCL traffic on the DAC carries floats, not strings.</p>
 
     <h3>Application-layer isolation — fully separate stacks</h3>
-    <p>Knowledge bases, chat history, RAG pipelines, vector indexes, API keys, request logs, and OAuth tokens are completely separate on each node. Your Open WebUI's database is on <code>sparky-01</code>; the client's is on <code>sparky-02</code>. Your LiteLLM master key is yours; the client's is the client's. Neither party has access to the other's application stack — there is no cross-mounted volume, no shared Postgres, no shared file system. The only thing that crosses the boundary is the inference call from the client's LiteLLM into <code>sparky-01:8000</code>.</p>
+    <p>Knowledge bases, chat history, RAG pipelines, vector indexes, API keys, request logs, and OAuth tokens are completely separate on each node. Your Open WebUI's database is on <code>spark-01</code>; the client's is on <code>spark-02</code>. Your LiteLLM master key is yours; the client's is the client's. Neither party has access to the other's application stack — there is no cross-mounted volume, no shared Postgres, no shared file system. The only thing that crosses the boundary is the inference call from the client's LiteLLM into <code>spark-01:8000</code>.</p>
 
     <h3>Network isolation — separate tailnets, private DAC</h3>
     <p>Each node joins its owner's Tailscale tailnet independently. ACLs on each tailnet are controlled by that owner. The DAC link (<code>198.51.100.0/30</code>) is private physical hardware between the two nodes — it is not routed through either Tailscale network and is not advertised on either tailnet. Tailscale carries application traffic only (clients reaching their own UIs); compute traffic stays on the DAC.</p>
@@ -662,7 +662,7 @@
 
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div>vLLM on <code>sparky-01:8000</code> has no authentication. Tailscale ACLs and host firewall rules are what prevent the client from bypassing their LiteLLM and hitting the unauthenticated endpoint directly. See Step 06 (Tailscale) for the ACL configuration that enforces this.</div>
+      <div>vLLM on <code>spark-01:8000</code> has no authentication. Tailscale ACLs and host firewall rules are what prevent the client from bypassing their LiteLLM and hitting the unauthenticated endpoint directly. See Step 06 (Tailscale) for the ACL configuration that enforces this.</div>
     </div>
   </div>
 
@@ -674,14 +674,14 @@
         <thead><tr><th>Node</th><th>Owner</th><th>Mgmt IP</th><th>DAC IP</th><th>Services</th></tr></thead>
         <tbody>
           <tr>
-            <td><code>sparky-01</code></td>
+            <td><code>spark-01</code></td>
             <td>You (private)</td>
             <td><code>192.0.2.21</code></td>
             <td><code>198.51.100.1</code></td>
             <td>vLLM head (Ray master, TP rank 0), Your LiteLLM, Your Open WebUI, Your Hermes Agent, Your n8n, Your Tailscale</td>
           </tr>
           <tr>
-            <td><code>sparky-02</code></td>
+            <td><code>spark-02</code></td>
             <td>Client (separate ownership)</td>
             <td><code>192.0.2.22</code></td>
             <td><code>198.51.100.2</code></td>
@@ -692,10 +692,10 @@
     </div>
     <h3>Interconnects</h3>
     <ul style="font-size:13.5px;color:var(--text2);line-height:1.75;padding-left:20px;display:flex;flex-direction:column;gap:4px;">
-      <li><strong>DAC interconnect</strong> — <code>enp1s0f0np0</code>, MTU 9216, point-to-point <code>198.51.100.0/30</code>. Carries NCCL for tensor-parallel collectives, Ray control, and the client LiteLLM's inference calls into <code>sparky-01:8000</code>. Not routed through either Tailscale network.</li>
+      <li><strong>DAC interconnect</strong> — <code>enp1s0f0np0</code>, MTU 9216, point-to-point <code>198.51.100.0/30</code>. Carries NCCL for tensor-parallel collectives, Ray control, and the client LiteLLM's inference calls into <code>spark-01:8000</code>. Not routed through either Tailscale network.</li>
       <li><strong>Mgmt interconnect</strong> — <code>192.0.2.0/24</code> over RJ45, default routes. Used for SSH and node-bootstrap traffic during setup.</li>
       <li><strong>Tailscale (each owner)</strong> — each node independently joins its owner's tailnet. Application traffic (browser → Open WebUI, Telegram → Hermes, etc.) traverses Tailscale. The DAC link is never advertised onto either tailnet.</li>
-      <li><strong>SSH</strong> — passwordless both directions between <code>sparky-01</code> and <code>sparky-02</code> at the mgmt IPs (required for the rsync step in Step 01). After setup, this can be locked down or removed.</li>
+      <li><strong>SSH</strong> — passwordless both directions between <code>spark-01</code> and <code>spark-02</code> at the mgmt IPs (required for the rsync step in Step 01). After setup, this can be locked down or removed.</li>
     </ul>
     <h3>Architecture principles</h3>
     <ol style="font-size:13.5px;color:var(--text2);line-height:1.75;padding-left:20px;display:flex;flex-direction:column;gap:8px;">
@@ -715,16 +715,16 @@
     <div class="diagram-wrap" style="margin-bottom:14px;">
       <svg width="100%" viewBox="0 0 1080 280" role="img" xmlns="http://www.w3.org/2000/svg">
         <title>Network worksheet — your IP slots</title>
-        <desc>Two boxes representing sparky-01 (your node) and sparky-02 (client node) with three IP slots each: mgmt, DAC, and Tailscale. The DAC link is shown between the two nodes. The mgmt LAN and the two tailnets are shown as separate networks each node attaches to.</desc>
+        <desc>Two boxes representing spark-01 (your node) and spark-02 (client node) with three IP slots each: mgmt, DAC, and Tailscale. The DAC link is shown between the two nodes. The mgmt LAN and the two tailnets are shown as separate networks each node attaches to.</desc>
         <defs>
           <marker id="ws-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </marker>
         </defs>
 
-        <!-- sparky-01 box -->
+        <!-- spark-01 box -->
         <rect x="40" y="50" width="420" height="180" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="8 4"/>
-        <text x="60" y="76" font-family="Inter,sans-serif" font-size="12.5" font-weight="700" fill="#1d4ed8">sparky-01 — YOUR NODE</text>
+        <text x="60" y="76" font-family="Inter,sans-serif" font-size="12.5" font-weight="700" fill="#1d4ed8">spark-01 — YOUR NODE</text>
 
         <rect x="60" y="92" width="380" height="34" rx="5" fill="#fff" stroke="#bfdbfe"/>
         <text x="74" y="106" font-family="Inter,sans-serif" font-size="10.5" fill="#6b7280">mgmt IP</text>
@@ -743,9 +743,9 @@
         <rect x="475" y="116" width="130" height="22" rx="5" fill="#fff7ed" stroke="#ea580c" stroke-width="1.2"/>
         <text x="540" y="131" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#9a3412">DAC · 200 Gb/s</text>
 
-        <!-- sparky-02 box -->
+        <!-- spark-02 box -->
         <rect x="620" y="50" width="420" height="180" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="8 4"/>
-        <text x="640" y="76" font-family="Inter,sans-serif" font-size="12.5" font-weight="700" fill="#5b21b6">sparky-02 — CLIENT NODE</text>
+        <text x="640" y="76" font-family="Inter,sans-serif" font-size="12.5" font-weight="700" fill="#5b21b6">spark-02 — CLIENT NODE</text>
 
         <rect x="640" y="92" width="380" height="34" rx="5" fill="#fff" stroke="#c4b5fd"/>
         <text x="654" y="106" font-family="Inter,sans-serif" font-size="10.5" fill="#6b7280">mgmt IP</text>
@@ -774,7 +774,7 @@
     <div class="worksheet">
       <div class="worksheet-grid">
         <div class="worksheet-col you">
-          <h4>sparky-01 — your node</h4>
+          <h4>spark-01 — your node</h4>
           <div class="worksheet-row">
             <label for="ws-n1-mgmt">mgmt IP</label>
             <input type="text" id="ws-n1-mgmt" data-key="YOUR_NODE1_MGMT_IP" placeholder="e.g. 192.0.2.21" autocomplete="off"/>
@@ -789,7 +789,7 @@
           </div>
         </div>
         <div class="worksheet-col client">
-          <h4>sparky-02 — client node</h4>
+          <h4>spark-02 — client node</h4>
           <div class="worksheet-row">
             <label for="ws-n2-mgmt">mgmt IP</label>
             <input type="text" id="ws-n2-mgmt" data-key="YOUR_NODE2_MGMT_IP" placeholder="e.g. 192.0.2.22" autocomplete="off"/>
@@ -813,7 +813,7 @@
         </div>
         <div class="worksheet-row">
           <label for="ws-tailnet">Tailnet hostname</label>
-          <input type="text" id="ws-tailnet" data-key="YOUR_TAILNET_HOSTNAME" placeholder="e.g. sparky-01.tailnet-1234.ts.net" autocomplete="off"/>
+          <input type="text" id="ws-tailnet" data-key="YOUR_TAILNET_HOSTNAME" placeholder="e.g. spark-01.tailnet-1234.ts.net" autocomplete="off"/>
         </div>
       </div>
 
@@ -834,43 +834,43 @@
     <h3>Prerequisites</h3>
     <ul>
       <li>Two Nvidia DGX Spark nodes — Grace CPU, GB10 GPU, arm64/aarch64, each running Ubuntu 24.04</li>
-      <li>Each node referred to as <code>sparky-01</code> (your node) and <code>sparky-02</code> (client node) — substitute your own hostnames</li>
+      <li>Each node referred to as <code>spark-01</code> (your node) and <code>spark-02</code> (client node) — substitute your own hostnames</li>
       <li>Both parties have read and accepted the <a href="#trust-model">Trust model</a> section above</li>
       <li>Docker installed and enabled on both nodes: <code>sudo systemctl enable docker</code></li>
       <li>Your Linux user added to the <code>docker</code> group on both nodes: <code>sudo usermod -aG docker YOUR_USERNAME &amp;&amp; newgrp docker</code></li>
       <li>200&nbsp;Gb/s DAC link between the two nodes (interface <code>enp1s0f0np0</code> on both, MTU 9216, point-to-point /30)</li>
       <li>Mgmt LAN reachability between both nodes (1&nbsp;GbE RJ45 with default routes)</li>
-      <li>Passwordless SSH both directions (<code>sparky-01 ↔ sparky-02</code>) — required for the HF cache rsync in Step 01</li>
+      <li>Passwordless SSH both directions (<code>spark-01 ↔ spark-02</code>) — required for the HF cache rsync in Step 01</li>
       <li>Mgmt-IP entries in <code>/etc/hosts</code> on both nodes so hostnames resolve to mgmt addresses, not the DAC IP (commands below)</li>
       <li>Replace <code>YOUR_USERNAME</code> with your Linux username throughout</li>
       <li>Replace <code>YOUR_NODE1_MGMT_IP</code> / <code>YOUR_NODE2_MGMT_IP</code> with each node's mgmt IP, and <code>YOUR_NODE1_DAC_IP</code> / <code>YOUR_NODE2_DAC_IP</code> with each node's DAC IP</li>
     </ul>
     <h3 style="margin-top:18px;">Bootstrap on both nodes — /etc/hosts and docker group</h3>
     <p style="font-size:13px;color:var(--text2);margin:0 0 6px;">By default, the hostname of each node resolves to its DAC IP (<code>198.51.100.x</code>), not the mgmt IP. SSH from one node to the other by hostname will fail until you anchor the hostnames to mgmt IPs explicitly.</p>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:10px 0 4px;">#### Run on both sparky-01 AND sparky-02</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:10px 0 4px;">#### Run on both spark-01 AND spark-02</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code># Add mgmt-IP entries for both nodes
-echo "YOUR_NODE1_MGMT_IP  sparky-01" | sudo tee -a /etc/hosts
-echo "YOUR_NODE2_MGMT_IP  sparky-02" | sudo tee -a /etc/hosts
+echo "YOUR_NODE1_MGMT_IP  spark-01" | sudo tee -a /etc/hosts
+echo "YOUR_NODE2_MGMT_IP  spark-02" | sudo tee -a /etc/hosts
 
 # Add your user to the docker group (then re-login or use newgrp)
 sudo usermod -aG docker YOUR_USERNAME
 newgrp docker
 
 # Verify SSH by hostname both directions
-ssh sparky-01 hostname    # from sparky-02
-ssh sparky-02 hostname    # from sparky-01</code></pre>
+ssh spark-01 hostname    # from spark-02
+ssh spark-02 hostname    # from spark-01</code></pre>
     </div>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div>If you skip the <code>/etc/hosts</code> step, the rsync of the Hugging Face cache between nodes (Step 01) and any later <code>ssh sparky-0X</code> command will silently target the DAC interface — which won't have <code>sshd</code> bound to it unless you've changed defaults. The symptom is a "connection refused" or hang.</div>
+      <div>If you skip the <code>/etc/hosts</code> step, the rsync of the Hugging Face cache between nodes (Step 01) and any later <code>ssh spark-0X</code> command will silently target the DAC interface — which won't have <code>sshd</code> bound to it unless you've changed defaults. The symptom is a "connection refused" or hang.</div>
     </div>
   </div>
 
   <div class="step" id="step1">
     <div class="step-header"><span class="step-num">STEP 01</span><h2>vLLM clustered — TP=2 over Ray on the DAC link</h2></div>
-    <p>vLLM is the only clustered service. The model runs with tensor-parallel size 2: <code>sparky-01</code> hosts the Ray master and the vLLM head process; <code>sparky-02</code> hosts a Ray worker. NCCL traffic for tensor-parallel collectives flows over the DAC link (<code>enp1s0f0np0</code>, MTU 9216).</p>
+    <p>vLLM is the only clustered service. The model runs with tensor-parallel size 2: <code>spark-01</code> hosts the Ray master and the vLLM head process; <code>spark-02</code> hosts a Ray worker. NCCL traffic for tensor-parallel collectives flows over the DAC link (<code>enp1s0f0np0</code>, MTU 9216).</p>
 
     <h3>Default model and upgrade path</h3>
     <div class="table-wrap">
@@ -894,7 +894,7 @@ ssh sparky-02 hostname    # from sparky-01</code></pre>
     <h3>Step 1a — Build the custom vLLM image on both nodes</h3>
     <p>The NGC image <code>nvcr.io/nvidia/vllm:26.04-py3</code> ships without Ray. vLLM <code>0.19.0+nv26.04</code> hard-requires Ray for any multi-node inference — <code>torch.distributed.run</code> is <em>not</em> a substitute, because vLLM validates Ray at engine init regardless of launch method. You must build a custom image that adds Ray, on both nodes, before any cluster launch attempt. This is step zero, not optional.</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### Run on both sparky-01 AND sparky-02</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### Run on both spark-01 AND spark-02</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mkdir -p ~/sparky-ai-stack
@@ -908,17 +908,17 @@ docker build -f Dockerfile.vllm-spark -t vllm-spark:26.04 .</code></pre>
     </div>
     <div class="verify">Verify on each node: <code>docker run --rm vllm-spark:26.04 ray --version</code> — expected <code>ray, version 2.x.x</code></div>
 
-    <h3>Step 1b — Sync the Hugging Face cache to sparky-02 over DAC</h3>
-    <p>Both nodes need the model weights resident locally. Pull on <code>sparky-01</code> first (or use an existing <code>~/.cache/huggingface</code>), then rsync to <code>sparky-02</code> across the DAC link.</p>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01</h4>
+    <h3>Step 1b — Sync the Hugging Face cache to spark-02 over DAC</h3>
+    <p>Both nodes need the model weights resident locally. Pull on <code>spark-01</code> first (or use an existing <code>~/.cache/huggingface</code>), then rsync to <code>spark-02</code> across the DAC link.</p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code># Optional: pre-fetch the model on sparky-01 (or just let vLLM pull it later)
+      <pre><code># Optional: pre-fetch the model on spark-01 (or just let vLLM pull it later)
 huggingface-cli download Qwen/Qwen3.6-35B-A3B-FP8 \
   --local-dir-use-symlinks False \
   --resume-download
 
-# Rsync the cache to sparky-02 over the DAC link
+# Rsync the cache to spark-02 over the DAC link
 rsync -avh --progress \
   -e "ssh -o StrictHostKeyChecking=accept-new" \
   ~/.cache/huggingface/ \
@@ -926,13 +926,13 @@ rsync -avh --progress \
     </div>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
-      <div>Sending the cache over the DAC keeps it off your mgmt LAN — a 35B FP8 model is &gt;30&nbsp;GB. Verify the rsync ran across <code>enp1s0f0np0</code> on <code>sparky-02</code> with <code>nload enp1s0f0np0</code> in another shell during the transfer.</div>
+      <div>Sending the cache over the DAC keeps it off your mgmt LAN — a 35B FP8 model is &gt;30&nbsp;GB. Verify the rsync ran across <code>enp1s0f0np0</code> on <code>spark-02</code> with <code>nload enp1s0f0np0</code> in another shell during the transfer.</div>
     </div>
 
     <h3>Step 1c — Startup scripts on each node</h3>
     <p>Place a startup script on each node so the cluster can be brought up reproducibly.</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — ~/sparky-ai-stack/scripts/vllm-head.sh</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — ~/sparky-ai-stack/scripts/vllm-head.sh</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mkdir -p ~/sparky-ai-stack/scripts
@@ -940,7 +940,7 @@ cat > ~/sparky-ai-stack/scripts/vllm-head.sh &lt;&lt; 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-# DAC IP of THIS node (sparky-01)
+# DAC IP of THIS node (spark-01)
 HOST_IP="YOUR_NODE1_DAC_IP"
 DAC_IFACE="enp1s0f0np0"
 
@@ -995,7 +995,7 @@ EOF
 chmod +x ~/sparky-ai-stack/scripts/vllm-head.sh</code></pre>
     </div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — ~/sparky-ai-stack/scripts/vllm-worker.sh</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — ~/sparky-ai-stack/scripts/vllm-worker.sh</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mkdir -p ~/sparky-ai-stack/scripts
@@ -1004,8 +1004,8 @@ cat > ~/sparky-ai-stack/scripts/vllm-worker.sh &lt;&lt; 'EOF'
 set -euo pipefail
 
 # DAC IPs
-WORKER_IP="YOUR_NODE2_DAC_IP"   # this node (sparky-02)
-HEAD_IP="YOUR_NODE1_DAC_IP"     # ray head on sparky-01
+WORKER_IP="YOUR_NODE2_DAC_IP"   # this node (spark-02)
+HEAD_IP="YOUR_NODE1_DAC_IP"     # ray head on spark-01
 DAC_IFACE="enp1s0f0np0"
 
 docker rm -f vllm-ray-worker 2&gt;/dev/null || true
@@ -1051,7 +1051,7 @@ chmod +x ~/sparky-ai-stack/scripts/vllm-worker.sh</code></pre>
       <li>The head script above blocks <code>vllm serve</code> behind a Ray-status check that waits for two GPUs to be registered, which makes the launch idempotent.</li>
     </ul>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — start the worker</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — start the worker</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>~/sparky-ai-stack/scripts/vllm-worker.sh
@@ -1059,7 +1059,7 @@ docker logs -f vllm-ray-worker   # leave open in another shell</code></pre>
     </div>
     <p>Wait until the worker logs print <code>Ray runtime started</code> and stop spamming "head not yet reachable" retries (the head isn't up yet, but the container will keep trying).</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — start the head</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — start the head</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>~/sparky-ai-stack/scripts/vllm-head.sh
@@ -1068,14 +1068,14 @@ docker logs -f vllm-qwen-35b</code></pre>
     <p>The head will: (1) start Ray as the master, (2) wait for the worker to register a second GPU into the cluster, then (3) start <code>vllm serve</code>. Allow ~5–8 minutes for the FP8 weights to load on both nodes before the engine is ready.</p>
 
     <h3>Step 1e — Verification</h3>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — Ray cluster status</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — Ray cluster status</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>docker exec vllm-qwen-35b ray status</code></pre>
     </div>
     <div class="verify">Expected: 2 nodes total, <code>2.0/2.0 GPU</code>, both DAC IPs listed (<code>YOUR_NODE1_DAC_IP</code> and <code>YOUR_NODE2_DAC_IP</code>)</div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — model endpoint</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — model endpoint</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>curl http://localhost:8000/v1/models
@@ -1093,7 +1093,7 @@ curl http://localhost:8000/v1/chat/completions \
     </div>
     <p>You should see a <code>RayWorkerWrapper</code> (or <code>vllm</code>) process on each node with roughly <strong>~97&nbsp;GB</strong> resident at <code>--gpu-memory-utilization 0.80</code> with the 35B FP8 model loaded.</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — NCCL traffic on the DAC during inference</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — NCCL traffic on the DAC during inference</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>nload enp1s0f0np0   # watch this while the curl chat-completion above runs</code></pre>
@@ -1122,13 +1122,13 @@ curl http://localhost:8000/v1/chat/completions \
   </div>
 
   <div class="step" id="step2">
-    <div class="step-header"><span class="step-num">STEP 02</span><h2>Your LiteLLM proxy on sparky-01</h2></div>
-    <p>This is <strong>your</strong> LiteLLM proxy — your master key, your SQLite log corpus, your routing rules. It serves only your application stack on <code>sparky-01</code> (your Open WebUI, your Hermes, your n8n). The client gets their own separate LiteLLM in Step 03.</p>
+    <div class="step-header"><span class="step-num">STEP 02</span><h2>Your LiteLLM proxy on spark-01</h2></div>
+    <p>This is <strong>your</strong> LiteLLM proxy — your master key, your SQLite log corpus, your routing rules. It serves only your application stack on <code>spark-01</code> (your Open WebUI, your Hermes, your n8n). The client gets their own separate LiteLLM in Step 03.</p>
     <p>Your LiteLLM lives on the same node as the vLLM head and points at <code>localhost:8000</code>. The clustered vLLM presents one logical OpenAI-compatible endpoint — LiteLLM doesn't need to know there are two physical nodes behind it.</p>
 
     <div class="callout note"><span class="callout-icon">ℹ</span><span>LiteLLM has no arm64 Docker image — install via pip directly on the host. This is unchanged from a single-node setup.</span></div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — directories and install</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — directories and install</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mkdir -p ~/sparky-ai-stack/logs
@@ -1139,7 +1139,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source
     </div>
     <div class="verify">Verify: <code>~/.local/bin/litellm --version</code></div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — config (single backend pointing at the local clustered vLLM)</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — config (single backend pointing at the local clustered vLLM)</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>cat &gt; ~/sparky-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
@@ -1170,7 +1170,7 @@ EOF</code></pre>
       <div><strong>Remove old dual-model entries.</strong> If this LiteLLM was previously configured with a second backend (e.g. <code>localhost:8002</code> for an "expert" model), delete every model and fallback entry that points at a port no longer running. LiteLLM will throw <code>httpx.ConnectError</code> on startup if any configured backend is unreachable.</div>
     </div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — systemd service</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — systemd service</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>sudo tee /etc/systemd/system/litellm.service &lt;&lt; 'EOF'
@@ -1196,7 +1196,7 @@ sudo systemctl enable litellm
 sudo systemctl start litellm</code></pre>
     </div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — clean stale override.conf (only if upgrading from a previous setup)</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — clean stale override.conf (only if upgrading from a previous setup)</h4>
     <p>If LiteLLM was previously run with <code>STORE_MODEL_IN_DB=True</code> and a <code>DATABASE_URL</code> in a systemd drop-in, those env vars persist even after you remove them from <code>litellm-config.yaml</code>. LiteLLM will fail to start with <code>httpx.ConnectError</code> against a Postgres that may no longer exist. Reset the drop-in:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
@@ -1210,17 +1210,17 @@ sudo systemctl daemon-reload
 sudo systemctl restart litellm
 sudo systemctl status litellm --no-pager</code></pre>
     </div>
-    <div class="verify">Verify from sparky-01: <code>curl http://localhost:8001/v1/models</code> (no key needed if you didn't set <code>master_key</code> yet, otherwise use <code>-H "Authorization: Bearer YOUR_MASTER_KEY"</code>)</div>
-    <div class="callout note"><span class="callout-icon">ℹ</span><span>Your LiteLLM should NOT be reachable from <code>sparky-02</code>. If you are using Tailscale ACLs (Step 06), only your tailnet should reach <code>sparky-01:8001</code>. The client uses their own LiteLLM (Step 03) — they never call yours.</span></div>
+    <div class="verify">Verify from spark-01: <code>curl http://localhost:8001/v1/models</code> (no key needed if you didn't set <code>master_key</code> yet, otherwise use <code>-H "Authorization: Bearer YOUR_MASTER_KEY"</code>)</div>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>Your LiteLLM should NOT be reachable from <code>spark-02</code>. If you are using Tailscale ACLs (Step 06), only your tailnet should reach <code>spark-01:8001</code>. The client uses their own LiteLLM (Step 03) — they never call yours.</span></div>
   </div>
 
   <div class="step" id="step3">
-    <div class="step-header"><span class="step-num">STEP 03</span><h2>Client LiteLLM proxy on sparky-02</h2></div>
-    <p>The client gets their own LiteLLM proxy on <code>sparky-02</code>, with their own master key, their own log corpus, and their own routing rules. It points at the shared vLLM endpoint over the DAC link. <strong>This is not a copy of sparky-01's LiteLLM</strong> — it has no shared config, no shared key, no shared logs. The client controls their own master key and never shares it with you.</p>
+    <div class="step-header"><span class="step-num">STEP 03</span><h2>Client LiteLLM proxy on spark-02</h2></div>
+    <p>The client gets their own LiteLLM proxy on <code>spark-02</code>, with their own master key, their own log corpus, and their own routing rules. It points at the shared vLLM endpoint over the DAC link. <strong>This is not a copy of spark-01's LiteLLM</strong> — it has no shared config, no shared key, no shared logs. The client controls their own master key and never shares it with you.</p>
 
-    <div class="callout note"><span class="callout-icon">ℹ</span><span>If you are setting up <code>sparky-02</code> on behalf of the client, hand off the master-key generation step (or have them rotate the key the moment they take over). The point of split trust is that you do not hold the client's API credentials.</span></div>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>If you are setting up <code>spark-02</code> on behalf of the client, hand off the master-key generation step (or have them rotate the key the moment they take over). The point of split trust is that you do not hold the client's API credentials.</span></div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — install</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — install</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mkdir -p ~/sparky-ai-stack/logs
@@ -1230,14 +1230,14 @@ pip3 install litellm[proxy] --break-system-packages
 echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc</code></pre>
     </div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — generate the client master key</h4>
-    <p>Run on the client's terminal — store this key only on <code>sparky-02</code>:</p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — generate the client master key</h4>
+    <p>Run on the client's terminal — store this key only on <code>spark-02</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>echo "sk-client-$(openssl rand -hex 16)"</code></pre>
     </div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — config (points at vLLM over the DAC)</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — config (points at vLLM over the DAC)</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>cat &gt; ~/sparky-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
@@ -1271,7 +1271,7 @@ EOF</code></pre>
       <div>The DAC is the fastest path between the two nodes — substantially lower latency than going over the mgmt LAN. Do not point the client LiteLLM at <code>YOUR_NODE1_MGMT_IP:8000</code> unless the DAC is down.</div>
     </div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — systemd service (independent of sparky-01)</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — systemd service (independent of spark-01)</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>sudo tee /etc/systemd/system/litellm.service &lt;&lt; 'EOF'
@@ -1298,15 +1298,15 @@ sudo systemctl start litellm
 sudo systemctl status litellm --no-pager</code></pre>
     </div>
 
-    <h3>Verification — confirm the request hits sparky-01:8000</h3>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — local LiteLLM responds with the client key</h4>
+    <h3>Verification — confirm the request hits spark-01:8000</h3>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — local LiteLLM responds with the client key</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>curl http://localhost:8001/v1/models \
   -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY"</code></pre>
     </div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — inference round-trip through the shared backend</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — inference round-trip through the shared backend</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>curl http://localhost:8001/v1/chat/completions \
@@ -1314,14 +1314,14 @@ sudo systemctl status litellm --no-pager</code></pre>
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3.6-35b","messages":[{"role":"user","content":"hi from client"}],"max_tokens":16}'</code></pre>
     </div>
-    <div class="verify">On sparky-01, <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm-qwen-35b</code> on sparky-01 — you should see the new request reach the vLLM head.</div>
+    <div class="verify">On spark-01, <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm-qwen-35b</code> on spark-01 — you should see the new request reach the vLLM head.</div>
   </div>
 
   <div class="step" id="step4">
-    <div class="step-header"><span class="step-num">STEP 04</span><h2>Your Open WebUI on sparky-01</h2></div>
-    <p>Your daily-driver chat interface, owned by you, on your node. It points at <strong>your</strong> LiteLLM at <code>http://localhost:8001/v1</code>. The client gets their own Open WebUI on <code>sparky-02</code> in Step 05 — neither side can see the other's chat history, knowledge bases, RAG documents, or API keys.</p>
+    <div class="step-header"><span class="step-num">STEP 04</span><h2>Your Open WebUI on spark-01</h2></div>
+    <p>Your daily-driver chat interface, owned by you, on your node. It points at <strong>your</strong> LiteLLM at <code>http://localhost:8001/v1</code>. The client gets their own Open WebUI on <code>spark-02</code> in Step 05 — neither side can see the other's chat history, knowledge bases, RAG documents, or API keys.</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — directory and run</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — directory and run</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mkdir -p ~/sparky-ai-stack
@@ -1339,7 +1339,7 @@ docker run -d \
   --add-host=host.docker.internal:host-gateway \
   ghcr.io/open-webui/open-webui:main</code></pre>
     </div>
-    <p>Visit <code>http://localhost:8080</code> from <code>sparky-01</code> (or via your tailnet — see Step 06), create your admin account, and confirm in <strong>Settings → Connections → OpenAI API</strong>:</p>
+    <p>Visit <code>http://localhost:8080</code> from <code>spark-01</code> (or via your tailnet — see Step 06), create your admin account, and confirm in <strong>Settings → Connections → OpenAI API</strong>:</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Setting</th><th>Value</th></tr></thead>
@@ -1355,11 +1355,11 @@ docker run -d \
   </div>
 
   <div class="step" id="step5">
-    <div class="step-header"><span class="step-num">STEP 05</span><h2>Client Open WebUI on sparky-02</h2></div>
-    <p>The client's daily-driver chat interface, owned by the client, on the client's node. It points at the <strong>client's</strong> LiteLLM at <code>http://localhost:8001/v1</code> — which in turn calls the shared vLLM head on <code>sparky-01:8000</code> over the DAC.</p>
-    <p><strong>The client's data lives on the client's node.</strong> Their Open WebUI database, knowledge bases, RAG document store, embedding indexes, conversation history, attached files, and account list — all of it is in the <code>open-webui</code> Docker volume on <code>sparky-02</code>. None of it is replicated to <code>sparky-01</code>. If you spin <code>sparky-02</code> down, the client's UI state goes with it; if you image <code>sparky-01</code>, the client's state is not in your image.</p>
+    <div class="step-header"><span class="step-num">STEP 05</span><h2>Client Open WebUI on spark-02</h2></div>
+    <p>The client's daily-driver chat interface, owned by the client, on the client's node. It points at the <strong>client's</strong> LiteLLM at <code>http://localhost:8001/v1</code> — which in turn calls the shared vLLM head on <code>spark-01:8000</code> over the DAC.</p>
+    <p><strong>The client's data lives on the client's node.</strong> Their Open WebUI database, knowledge bases, RAG document store, embedding indexes, conversation history, attached files, and account list — all of it is in the <code>open-webui</code> Docker volume on <code>spark-02</code>. None of it is replicated to <code>spark-01</code>. If you spin <code>spark-02</code> down, the client's UI state goes with it; if you image <code>spark-01</code>, the client's state is not in your image.</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — directory and run</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — directory and run</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mkdir -p ~/sparky-ai-stack
@@ -1377,7 +1377,7 @@ docker run -d \
   --add-host=host.docker.internal:host-gateway \
   ghcr.io/open-webui/open-webui:main</code></pre>
     </div>
-    <p>Visit <code>http://localhost:8080</code> from <code>sparky-02</code> (or via the client's tailnet — see Step 06), create the client's admin account, and confirm:</p>
+    <p>Visit <code>http://localhost:8080</code> from <code>spark-02</code> (or via the client's tailnet — see Step 06), create the client's admin account, and confirm:</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Setting</th><th>Value</th></tr></thead>
@@ -1388,7 +1388,7 @@ docker run -d \
         </tbody>
       </table>
     </div>
-    <div class="verify">Send a chat message — completions stream back through the client's LiteLLM (Step 03) and the shared vLLM head on sparky-01 (Step 01). On sparky-01, your LiteLLM logs show nothing — the client's traffic does not enter your stack.</div>
+    <div class="verify">Send a chat message — completions stream back through the client's LiteLLM (Step 03) and the shared vLLM head on spark-01 (Step 01). On spark-01, your LiteLLM logs show nothing — the client's traffic does not enter your stack.</div>
   </div>
 
   <div class="step" id="step6">
@@ -1397,15 +1397,15 @@ docker run -d \
 
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div><strong>Security-critical:</strong> vLLM on <code>sparky-01:8000</code> has no authentication. Once Tailscale is configured, ensure your Tailscale ACLs do <em>not</em> expose port <code>8000</code> to the client's tailnet (and the client's ACLs do not expose your node's <code>8000</code> port to anyone either). The client must only reach <code>sparky-02:8001</code> (their own LiteLLM). If they can reach <code>sparky-01:8000</code> directly, they bypass their LiteLLM entirely and have unauthenticated inference access — which also means no key-scoped logging, no rate limit, and no audit trail.</div>
+      <div><strong>Security-critical:</strong> vLLM on <code>spark-01:8000</code> has no authentication. Once Tailscale is configured, ensure your Tailscale ACLs do <em>not</em> expose port <code>8000</code> to the client's tailnet (and the client's ACLs do not expose your node's <code>8000</code> port to anyone either). The client must only reach <code>spark-02:8001</code> (their own LiteLLM). If they can reach <code>spark-01:8000</code> directly, they bypass their LiteLLM entirely and have unauthenticated inference access — which also means no key-scoped logging, no rate limit, and no audit trail.</div>
     </div>
 
-    <h3>sparky-01 — your tailnet</h3>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — install + join</h4>
+    <h3>spark-01 — your tailnet</h3>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — install + join</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up --hostname=sparky-01 --advertise-tags=tag:owner
+sudo tailscale up --hostname=spark-01 --advertise-tags=tag:owner
 tailscale ip -4   # note this address — your apps will be reachable here</code></pre>
     </div>
     <p>In your tailnet's ACL policy (Tailscale admin console), expose your Open WebUI, your LiteLLM, and your other apps only to your own users. Example ACL fragment:</p>
@@ -1432,13 +1432,13 @@ tailscale ip -4   # note this address — your apps will be reachable here</code
     </div>
     <p><strong>Do NOT</strong> add <code>tag:owner:8000</code> to any allow rule. Port 8000 (vLLM) is unauthenticated and must remain reachable only from <code>localhost</code> (your LiteLLM in Step 02) and the DAC IP <code>198.51.100.1</code> (the client's LiteLLM in Step 03).</p>
 
-    <h3>sparky-02 — client's tailnet</h3>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — install + join (client's auth key)</h4>
+    <h3>spark-02 — client's tailnet</h3>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — install + join (client's auth key)</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up \
-  --hostname=sparky-02 \
+  --hostname=spark-02 \
   --advertise-tags=tag:client \
   --login-server=https://login.tailscale.com   # or the client's chosen control plane
 
@@ -1448,7 +1448,7 @@ tailscale ip -4   # client's apps will be reachable here, only on their tailnet<
 
     <h3>Lock down host firewalls</h3>
     <p>Tailscale ACLs are policy; the host firewall is enforcement. Apply ufw rules on <strong>both</strong> nodes so that even if Tailscale is misconfigured, ports 8000 and 8001 cannot leak to the wrong network.</p>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — host firewall</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — host firewall</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code># Allow from your tailnet (interface tailscale0) and DAC peer only
@@ -1463,7 +1463,7 @@ sudo ufw allow in on enp1s0f0np0 from YOUR_NODE2_DAC_IP to any port 6379 proto t
 sudo ufw allow ssh                                                   # mgmt LAN ssh
 sudo ufw enable</code></pre>
     </div>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — host firewall</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — host firewall</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>sudo ufw default deny incoming
@@ -1475,14 +1475,14 @@ sudo ufw allow in on enp1s0f0np0 from YOUR_NODE1_DAC_IP                  # NCCL/
 sudo ufw allow ssh
 sudo ufw enable</code></pre>
     </div>
-    <div class="verify">From the client's tailnet, <code>nc -zv sparky-01-tailscale-ip 8000</code> should fail with "connection refused" or "filtered". From the client's tailnet, <code>curl http://sparky-02-tailscale-ip:8001/v1/models -H "Authorization: Bearer CLIENT_KEY"</code> should succeed.</div>
+    <div class="verify">From the client's tailnet, <code>nc -zv spark-01-tailscale-ip 8000</code> should fail with "connection refused" or "filtered". From the client's tailnet, <code>curl http://spark-02-tailscale-ip:8001/v1/models -H "Authorization: Bearer CLIENT_KEY"</code> should succeed.</div>
   </div>
 
   <div class="step" id="step7">
-    <div class="step-header"><span class="step-num">STEP 07</span><h2>Your Hermes Agent on sparky-01</h2></div>
-    <p>Hermes is your autonomous agent layer (skills, memory, cron, gateways). It runs on <strong>your</strong> node and talks to <strong>your</strong> LiteLLM. The client does not get a Hermes — they have their own Open WebUI and n8n on <code>sparky-02</code>; if they want an agent they install their own.</p>
+    <div class="step-header"><span class="step-num">STEP 07</span><h2>Your Hermes Agent on spark-01</h2></div>
+    <p>Hermes is your autonomous agent layer (skills, memory, cron, gateways). It runs on <strong>your</strong> node and talks to <strong>your</strong> LiteLLM. The client does not get a Hermes — they have their own Open WebUI and n8n on <code>spark-02</code>; if they want an agent they install their own.</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — install</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — install</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
@@ -1490,7 +1490,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source
 hermes --version</code></pre>
     </div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — setup wizard</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — setup wizard</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>hermes setup</code></pre>
@@ -1511,7 +1511,7 @@ hermes --version</code></pre>
         </tbody>
       </table>
     </div>
-    <p>The wizard writes <code>~/.hermes/config.yaml</code>. <code>base_url</code> is local — Hermes and your LiteLLM both live on <code>sparky-01</code>.</p>
+    <p>The wizard writes <code>~/.hermes/config.yaml</code>. <code>base_url</code> is local — Hermes and your LiteLLM both live on <code>spark-01</code>.</p>
 
     <h3>Telegram gateway</h3>
     <p>Create a bot via <code>@BotFather</code> (<code>/newbot</code>, copy the token) and get your user ID from <code>@userinfobot</code>. Then:</p>
@@ -1524,8 +1524,8 @@ sudo systemctl start hermes-gateway
 sudo systemctl status hermes-gateway --no-pager</code></pre>
     </div>
 
-    <h3>Hermes WebUI (Docker, sparky-01)</h3>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — docker-compose for hermes-webui</h4>
+    <h3>Hermes WebUI (Docker, spark-01)</h3>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — docker-compose for hermes-webui</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>cat &gt; ~/sparky-ai-stack/hermes-webui.yml &lt;&lt; 'EOF'
@@ -1550,14 +1550,14 @@ EOF
 mkdir -p ~/workspace
 docker compose -f ~/sparky-ai-stack/hermes-webui.yml up -d</code></pre>
     </div>
-    <div class="verify">Visit <code>http://localhost:8787</code> on sparky-01 (or your tailnet hostname).</div>
+    <div class="verify">Visit <code>http://localhost:8787</code> on spark-01 (or your tailnet hostname).</div>
   </div>
 
   <div class="step" id="step8">
-    <div class="step-header"><span class="step-num">STEP 08</span><h2>Your n8n on sparky-01</h2></div>
-    <p>Your single-instance n8n on <code>sparky-01</code>. The client runs their own n8n on <code>sparky-02</code> independently — different workflows, different credentials, different Postgres-vs-SQLite state. Neither side can read the other's flows.</p>
+    <div class="step-header"><span class="step-num">STEP 08</span><h2>Your n8n on spark-01</h2></div>
+    <p>Your single-instance n8n on <code>spark-01</code>. The client runs their own n8n on <code>spark-02</code> independently — different workflows, different credentials, different Postgres-vs-SQLite state. Neither side can read the other's flows.</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-01 — docker-compose for n8n</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — docker-compose for n8n</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>cat &gt; ~/sparky-ai-stack/n8n.yml &lt;&lt; 'EOF'
@@ -1587,10 +1587,10 @@ EOF
 
 docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     </div>
-    <div class="verify">Visit <code>http://localhost:5678</code> on sparky-01 (or your tailnet hostname) and create the owner account.</div>
+    <div class="verify">Visit <code>http://localhost:5678</code> on spark-01 (or your tailnet hostname) and create the owner account.</div>
 
     <h3>Wire your n8n to your LiteLLM</h3>
-    <p>In n8n, add an OpenAI credential pointing at <em>your</em> LiteLLM (local on sparky-01):</p>
+    <p>In n8n, add an OpenAI credential pointing at <em>your</em> LiteLLM (local on spark-01):</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Field</th><th>Value</th></tr></thead>
@@ -1601,7 +1601,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
         </tbody>
       </table>
     </div>
-    <div class="callout note"><span class="callout-icon">ℹ</span><span>The client's n8n on <code>sparky-02</code> follows the same pattern but points at <em>their</em> LiteLLM (<code>http://host.docker.internal:8001/v1</code> from inside their n8n container) with the client's master key. Step 03 covers the client's LiteLLM; the client deploys their n8n the same way you deploy yours.</span></div>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>The client's n8n on <code>spark-02</code> follows the same pattern but points at <em>their</em> LiteLLM (<code>http://host.docker.internal:8001/v1</code> from inside their n8n container) with the client's master key. Step 03 covers the client's LiteLLM; the client deploys their n8n the same way you deploy yours.</span></div>
   </div>
   <div class="step" id="validation-checklist">
     <div class="step-header"><span class="step-num">CHECKLIST</span><h2>Stack Validation Checklist</h2></div>
@@ -1609,28 +1609,28 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
     <h3>Shared compute pool</h3>
     <ul class="validation-checklist">
-      <li><strong>sparky-01:</strong> <code>docker exec vllm-qwen-35b ray status</code> shows <strong>2 nodes</strong> and <strong>2.0/2.0 GPU</strong>, with both DAC IPs (<code>YOUR_NODE1_DAC_IP</code> and <code>YOUR_NODE2_DAC_IP</code>) listed.</li>
-      <li><strong>sparky-01:</strong> <code>nvidia-smi</code> Processes section shows a <code>RayWorkerWrapper</code> at ~97&nbsp;GB. (<code>--query-gpu=memory.used</code> returns <code>[N/A]</code> on GB10 — expected.)</li>
-      <li><strong>sparky-02:</strong> <code>nvidia-smi</code> Processes section shows a <code>RayWorkerWrapper</code> at ~97&nbsp;GB.</li>
-      <li><strong>sparky-01:</strong> <code>curl http://localhost:8000/v1/models</code> returns <code>qwen3.6-35b</code> (vLLM head).</li>
+      <li><strong>spark-01:</strong> <code>docker exec vllm-qwen-35b ray status</code> shows <strong>2 nodes</strong> and <strong>2.0/2.0 GPU</strong>, with both DAC IPs (<code>YOUR_NODE1_DAC_IP</code> and <code>YOUR_NODE2_DAC_IP</code>) listed.</li>
+      <li><strong>spark-01:</strong> <code>nvidia-smi</code> Processes section shows a <code>RayWorkerWrapper</code> at ~97&nbsp;GB. (<code>--query-gpu=memory.used</code> returns <code>[N/A]</code> on GB10 — expected.)</li>
+      <li><strong>spark-02:</strong> <code>nvidia-smi</code> Processes section shows a <code>RayWorkerWrapper</code> at ~97&nbsp;GB.</li>
+      <li><strong>spark-01:</strong> <code>curl http://localhost:8000/v1/models</code> returns <code>qwen3.6-35b</code> (vLLM head).</li>
     </ul>
 
-    <h3>Your side (sparky-01)</h3>
+    <h3>Your side (spark-01)</h3>
     <ul class="validation-checklist">
-      <li><strong>sparky-01:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_MASTER_KEY"</code> returns <code>qwen3.6-35b</code> through your LiteLLM.</li>
-      <li><strong>sparky-01:</strong> <code>sudo systemctl status litellm hermes-gateway</code> — both <strong>active (running)</strong>.</li>
-      <li><strong>sparky-01:</strong> <code>docker ps</code> shows <code>vllm-qwen-35b</code>, <code>open-webui</code>, <code>hermes-webui</code>, and <code>n8n</code> all <em>Up</em>.</li>
-      <li><strong>sparky-01:</strong> Open <code>http://localhost:8080</code> (or your tailnet hostname), send a chat message — completion streams back. Your LiteLLM log records the request.</li>
-      <li><strong>sparky-01:</strong> Send a Telegram message — Hermes responds. End-to-end your-side path: Telegram → Hermes → your LiteLLM → vLLM TP=2.</li>
+      <li><strong>spark-01:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_MASTER_KEY"</code> returns <code>qwen3.6-35b</code> through your LiteLLM.</li>
+      <li><strong>spark-01:</strong> <code>sudo systemctl status litellm hermes-gateway</code> — both <strong>active (running)</strong>.</li>
+      <li><strong>spark-01:</strong> <code>docker ps</code> shows <code>vllm-qwen-35b</code>, <code>open-webui</code>, <code>hermes-webui</code>, and <code>n8n</code> all <em>Up</em>.</li>
+      <li><strong>spark-01:</strong> Open <code>http://localhost:8080</code> (or your tailnet hostname), send a chat message — completion streams back. Your LiteLLM log records the request.</li>
+      <li><strong>spark-01:</strong> Send a Telegram message — Hermes responds. End-to-end your-side path: Telegram → Hermes → your LiteLLM → vLLM TP=2.</li>
     </ul>
 
-    <h3>Client side (sparky-02)</h3>
+    <h3>Client side (spark-02)</h3>
     <ul class="validation-checklist">
-      <li><strong>sparky-02:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY"</code> returns <code>qwen3.6-35b</code> through the client's LiteLLM.</li>
-      <li><strong>sparky-02:</strong> <code>curl http://localhost:8001/v1/chat/completions -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY" ...</code> returns a completion.</li>
-      <li><strong>sparky-02:</strong> <code>sudo systemctl status litellm</code> — <strong>active (running)</strong>. Logs are written to <code>~/sparky-ai-stack/logs/litellm.log</code> on <code>sparky-02</code>, separate from your logs.</li>
-      <li><strong>sparky-02:</strong> <code>docker ps</code> shows <code>vllm-ray-worker</code>, <code>open-webui</code>, and <code>n8n</code> all <em>Up</em>. (No Hermes container.)</li>
-      <li><strong>sparky-02:</strong> Open <code>http://localhost:8080</code> (or the client's tailnet hostname), send a chat message — completion streams back. Client's LiteLLM log records the request; your LiteLLM log on sparky-01 does <em>not</em>.</li>
+      <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY"</code> returns <code>qwen3.6-35b</code> through the client's LiteLLM.</li>
+      <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/chat/completions -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY" ...</code> returns a completion.</li>
+      <li><strong>spark-02:</strong> <code>sudo systemctl status litellm</code> — <strong>active (running)</strong>. Logs are written to <code>~/sparky-ai-stack/logs/litellm.log</code> on <code>spark-02</code>, separate from your logs.</li>
+      <li><strong>spark-02:</strong> <code>docker ps</code> shows <code>vllm-ray-worker</code>, <code>open-webui</code>, and <code>n8n</code> all <em>Up</em>. (No Hermes container.)</li>
+      <li><strong>spark-02:</strong> Open <code>http://localhost:8080</code> (or the client's tailnet hostname), send a chat message — completion streams back. Client's LiteLLM log records the request; your LiteLLM log on spark-01 does <em>not</em>.</li>
     </ul>
 
     <h3>Cross-stack isolation (the negative tests)</h3>
@@ -1639,19 +1639,19 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <li><strong>From client's tailnet:</strong> <code>curl http://YOUR_NODE1_TAILSCALE_IP:8000/v1/models</code> should fail. The unauthenticated vLLM endpoint is not reachable from the client's tailnet.</li>
       <li><strong>From client's tailnet:</strong> <code>curl http://YOUR_NODE1_TAILSCALE_IP:8080</code> should fail. Your Open WebUI is not reachable from the client's tailnet.</li>
       <li><strong>From your tailnet:</strong> <code>curl http://YOUR_NODE2_TAILSCALE_IP:8080</code> should fail. The client's Open WebUI is not reachable from your tailnet.</li>
-      <li><strong>sparky-01:</strong> <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> while the client sends a chat message → your log is silent. Client's traffic does not enter your stack.</li>
+      <li><strong>spark-01:</strong> <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> while the client sends a chat message → your log is silent. Client's traffic does not enter your stack.</li>
     </ul>
 
     <h3>DAC traffic during inference</h3>
     <ul class="validation-checklist">
-      <li><strong>sparky-02:</strong> <code>nload enp1s0f0np0</code> spikes into Gb/s during decoding from <em>either</em> side — both your and the client's inference requests traverse the DAC (yours for NCCL collectives, theirs for both the API call to <code>198.51.100.1:8000</code> and NCCL).</li>
+      <li><strong>spark-02:</strong> <code>nload enp1s0f0np0</code> spikes into Gb/s during decoding from <em>either</em> side — both your and the client's inference requests traverse the DAC (yours for NCCL collectives, theirs for both the API call to <code>198.51.100.1:8000</code> and NCCL).</li>
       <li><strong>Both sides simultaneously:</strong> have you and the client send a long prompt at the same time. Both completions should stream concurrently — vLLM's continuous batching handles the overlap.</li>
     </ul>
 
     <h3>Config validation</h3>
     <ul class="validation-checklist">
       <li>
-        <strong>sparky-01 (your Hermes config):</strong> YAML validation passes — a parse error will silently break Hermes by falling back to <code>.env</code>:
+        <strong>spark-01 (your Hermes config):</strong> YAML validation passes — a parse error will silently break Hermes by falling back to <code>.env</code>:
         <div class="code-block" style="margin:8px 0 0;">
           <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
           <pre><code>python3 -c "import yaml; yaml.safe_load(open('/home/YOUR_USERNAME/.hermes/config.yaml')); print('YAML valid')"</code></pre>
@@ -1663,7 +1663,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
   <div class="step" id="ports">
     <div class="step-header"><span class="step-num">REF</span><h2>Port reference</h2></div>
-    <h3>sparky-01 (your node)</h3>
+    <h3>spark-01 (your node)</h3>
     <div class="port-grid">
       <div class="port-card"><div class="port-num">8000</div><div class="port-name">vLLM head</div><div class="port-note">Shared compute — localhost + DAC peer only · NO TAILSCALE</div></div>
       <div class="port-card"><div class="port-num">6379</div><div class="port-name">Ray GCS</div><div class="port-note">DAC peer only</div></div>
@@ -1673,7 +1673,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="port-card"><div class="port-num">8787</div><div class="port-name">Your Hermes WebUI</div><div class="port-note">Your tailnet only</div></div>
       <div class="port-card"><div class="port-num">8265</div><div class="port-name">Ray dashboard</div><div class="port-note">Optional · localhost only</div></div>
     </div>
-    <h3 style="margin-top:18px;">sparky-02 (client node)</h3>
+    <h3 style="margin-top:18px;">spark-02 (client node)</h3>
     <div class="port-grid">
       <div class="port-card"><div class="port-num">—</div><div class="port-name">vLLM worker</div><div class="port-note">No API listener — Ray join over DAC only</div></div>
       <div class="port-card"><div class="port-num">8001</div><div class="port-name">Client LiteLLM</div><div class="port-note">Client's tailnet only · client's master_key</div></div>
@@ -1682,13 +1682,13 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     </div>
     <div class="callout warning" style="margin-top:14px;">
       <span class="callout-icon">⚠</span>
-      <div>Port <strong>8000 on sparky-01</strong> must NEVER be advertised to either tailnet. The client's only path to it is through <em>their own LiteLLM</em>, which calls it over the DAC. If port 8000 leaks onto a tailnet, the client (or anyone else on that tailnet) gets unauthenticated inference access. The host firewall rules in Step 06 enforce this.</div>
+      <div>Port <strong>8000 on spark-01</strong> must NEVER be advertised to either tailnet. The client's only path to it is through <em>their own LiteLLM</em>, which calls it over the DAC. If port 8000 leaks onto a tailnet, the client (or anyone else on that tailnet) gets unauthenticated inference access. The host firewall rules in Step 06 enforce this.</div>
     </div>
   </div>
 
   <div class="step" id="files">
     <div class="step-header"><span class="step-num">REF</span><h2>File locations</h2></div>
-    <h3>sparky-01 — your node</h3>
+    <h3>spark-01 — your node</h3>
     <div class="file-tree">
       <span class="dir">~/sparky-ai-stack/</span><br>
       ├── Dockerfile.vllm-spark       <span class="comment"># custom image: NGC vllm + ray</span><br>
@@ -1711,10 +1711,10 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       └── hermes-gateway.service      <span class="comment"># YOUR Telegram gateway auto-start</span>
     </div>
 
-    <h3>sparky-02 — client node (separate ownership)</h3>
+    <h3>spark-02 — client node (separate ownership)</h3>
     <div class="file-tree">
       <span class="dir">~/sparky-ai-stack/</span><br>
-      ├── Dockerfile.vllm-spark       <span class="comment"># identical custom image as sparky-01</span><br>
+      ├── Dockerfile.vllm-spark       <span class="comment"># identical custom image as spark-01</span><br>
       ├── litellm-config.yaml         <span class="comment"># CLIENT LiteLLM — client's master_key, points DAC → vLLM</span><br>
       ├── n8n.yml                     <span class="comment"># compose for client's n8n</span><br>
       ├── scripts/<br>
@@ -1734,11 +1734,11 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <table>
         <thead><tr><th>Node / Owner</th><th>Path</th><th>Contents</th></tr></thead>
         <tbody>
-          <tr><td>sparky-01 — you</td><td><code>~/sparky-ai-stack/logs/</code></td><td>Your LiteLLM corpus</td></tr>
-          <tr><td>sparky-01 — you</td><td><code>~/.hermes/</code></td><td>Your Hermes memory, sessions, skills</td></tr>
-          <tr><td>sparky-01 — you</td><td>Docker volumes <code>open-webui</code>, <code>n8n_data</code></td><td>Your UI state — chat history, knowledge bases, flows</td></tr>
-          <tr><td>sparky-02 — client</td><td><code>~/sparky-ai-stack/logs/</code></td><td>Client's LiteLLM corpus (their backup, not yours)</td></tr>
-          <tr><td>sparky-02 — client</td><td>Docker volumes <code>open-webui</code>, <code>n8n_data</code></td><td>Client's UI state (their backup, not yours)</td></tr>
+          <tr><td>spark-01 — you</td><td><code>~/sparky-ai-stack/logs/</code></td><td>Your LiteLLM corpus</td></tr>
+          <tr><td>spark-01 — you</td><td><code>~/.hermes/</code></td><td>Your Hermes memory, sessions, skills</td></tr>
+          <tr><td>spark-01 — you</td><td>Docker volumes <code>open-webui</code>, <code>n8n_data</code></td><td>Your UI state — chat history, knowledge bases, flows</td></tr>
+          <tr><td>spark-02 — client</td><td><code>~/sparky-ai-stack/logs/</code></td><td>Client's LiteLLM corpus (their backup, not yours)</td></tr>
+          <tr><td>spark-02 — client</td><td>Docker volumes <code>open-webui</code>, <code>n8n_data</code></td><td>Client's UI state (their backup, not yours)</td></tr>
         </tbody>
       </table>
     </div>
@@ -1760,7 +1760,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">Placement group allocation failed / <code>node:192.0.2.x not found</code></div>
       <div class="issue-sym"><span>Symptom</span><span>vLLM logs show an indefinite placement-group allocation failure or a Ray placement spec referencing a node IP Ray doesn't recognize. The cluster has 2 GPUs registered, but vLLM only sees one.</span></div>
       <div class="issue-sym"><span>Cause</span><span><code>VLLM_HOST_IP</code> is unset, so vLLM resolves the node's hostname to the mgmt IP (<code>192.0.2.x</code>) — but Ray registered each node on its DAC IP (<code>198.51.100.x</code>). The placement group spec then targets a node Ray has never seen.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Set <code>VLLM_HOST_IP</code> to <em>each container's own DAC IP</em>: on sparky-01's head container, <code>VLLM_HOST_IP=YOUR_NODE1_DAC_IP</code>; on sparky-02's worker container, <code>VLLM_HOST_IP=YOUR_NODE2_DAC_IP</code>. The Step 01 startup scripts set this for you.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Set <code>VLLM_HOST_IP</code> to <em>each container's own DAC IP</em>: on spark-01's head container, <code>VLLM_HOST_IP=YOUR_NODE1_DAC_IP</code>; on spark-02's worker container, <code>VLLM_HOST_IP=YOUR_NODE2_DAC_IP</code>. The Step 01 startup scripts set this for you.</span></div>
     </div>
 
     <div class="issue">
@@ -1772,7 +1772,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
     <div class="issue">
       <div class="issue-title">Worker container starts before head — retry behavior is fine</div>
-      <div class="issue-sym"><span>Symptom</span><span><code>docker logs vllm-ray-worker</code> on sparky-02 prints "head not yet reachable, retrying in 3s..." in a loop while the head is still loading.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span><code>docker logs vllm-ray-worker</code> on spark-02 prints "head not yet reachable, retrying in 3s..." in a loop while the head is still loading.</span></div>
       <div class="issue-sym"><span>Cause</span><span>The worker connects to the head's GCS at <code>YOUR_NODE1_DAC_IP:6379</code>. If the head isn't up yet, the worker retries forever. This is the expected path — the Step 01 launch order is "worker first, then head" precisely so that the worker is already retrying when the head comes up.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Leave the worker running. As soon as the head's Ray master finishes initializing, the worker will join the cluster and the retries will stop.</span></div>
     </div>
@@ -1781,7 +1781,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">Worker can't reach head — Ray GCS connection refused</div>
       <div class="issue-sym"><span>Symptom</span><span>Worker logs print "ConnectionError: ... 198.51.100.1:6379" continuously and never advance. The retry loop above never resolves.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the head container hasn't started, (b) <code>VLLM_HOST_IP</code> on the head was set to a non-DAC IP so Ray bound to the wrong interface, or (c) a firewall blocks port 6379 over the DAC.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>On sparky-01: <code>docker exec vllm-qwen-35b ray status</code> — if Ray isn't running, restart the container. Confirm <code>VLLM_HOST_IP=YOUR_NODE1_DAC_IP</code>. From sparky-02: <code>nc -zv YOUR_NODE1_DAC_IP 6379</code> should connect; if not, check firewall rules on the DAC interface.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>On spark-01: <code>docker exec vllm-qwen-35b ray status</code> — if Ray isn't running, restart the container. Confirm <code>VLLM_HOST_IP=YOUR_NODE1_DAC_IP</code>. From spark-02: <code>nc -zv YOUR_NODE1_DAC_IP 6379</code> should connect; if not, check firewall rules on the DAC interface.</span></div>
     </div>
 
     <div class="issue">
@@ -1800,14 +1800,14 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
     <div class="issue">
       <div class="issue-title">SSH by hostname hits the DAC instead of mgmt</div>
-      <div class="issue-sym"><span>Symptom</span><span><code>ssh sparky-02</code> from sparky-01 hangs or returns "connection refused", even though both nodes are reachable.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span><code>ssh spark-02</code> from spark-01 hangs or returns "connection refused", even though both nodes are reachable.</span></div>
       <div class="issue-sym"><span>Cause</span><span>By default, each node's hostname resolves to its DAC IP (<code>198.51.100.x</code>). Unless you've explicitly bound <code>sshd</code> to the DAC interface, SSH only listens on the mgmt LAN — but your client has resolved the hostname to the DAC IP.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Add mgmt-IP entries to <code>/etc/hosts</code> on both nodes (this is in Prerequisites): <code>echo "YOUR_NODE1_MGMT_IP  sparky-01" | sudo tee -a /etc/hosts</code> and likewise for sparky-02. The HF cache rsync in Step 01b uses the DAC IP explicitly, but every other <code>ssh sparky-0X</code> command relies on hostname resolution.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Add mgmt-IP entries to <code>/etc/hosts</code> on both nodes (this is in Prerequisites): <code>echo "YOUR_NODE1_MGMT_IP  spark-01" | sudo tee -a /etc/hosts</code> and likewise for spark-02. The HF cache rsync in Step 01b uses the DAC IP explicitly, but every other <code>ssh spark-0X</code> command relies on hostname resolution.</span></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title"><code>docker: permission denied</code> on sparky-02</div>
-      <div class="issue-sym"><span>Symptom</span><span>Any docker command on sparky-02 fails with <code>permission denied while trying to connect to the Docker daemon socket</code>.</span></div>
+      <div class="issue-title"><code>docker: permission denied</code> on spark-02</div>
+      <div class="issue-sym"><span>Symptom</span><span>Any docker command on spark-02 fails with <code>permission denied while trying to connect to the Docker daemon socket</code>.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Add your user to the <code>docker</code> group: <code>sudo usermod -aG docker YOUR_USERNAME &amp;&amp; newgrp docker</code>. The new group only takes effect after re-logging or running <code>newgrp docker</code> in the current shell.</span></div>
     </div>
 
@@ -1826,28 +1826,28 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
     <div class="issue">
       <div class="issue-title">Client LiteLLM can't reach vLLM</div>
-      <div class="issue-sym"><span>Symptom</span><span>Client LiteLLM on sparky-02 returns <code>connection refused</code> or <code>connect timeout</code> on every request. <code>~/sparky-ai-stack/logs/litellm.log</code> on sparky-02 shows <code>httpx.ConnectError</code> against <code>198.51.100.1:8000</code>.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>Either (a) the DAC link is down, (b) the vLLM head container on sparky-01 is not running, or (c) the host firewall on sparky-01 is blocking the DAC peer from reaching port 8000.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>From sparky-02: <code>ping -c 3 YOUR_NODE1_DAC_IP</code> (DAC reachable?), then <code>nc -zv YOUR_NODE1_DAC_IP 8000</code>. From sparky-01: <code>docker ps | grep vllm-qwen-35b</code> (running?) and <code>sudo ufw status | grep 8000</code>. The Step 06 ufw rule should explicitly allow <code>YOUR_NODE2_DAC_IP</code> on port 8000 over <code>enp1s0f0np0</code>.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span>Client LiteLLM on spark-02 returns <code>connection refused</code> or <code>connect timeout</code> on every request. <code>~/sparky-ai-stack/logs/litellm.log</code> on spark-02 shows <code>httpx.ConnectError</code> against <code>198.51.100.1:8000</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Either (a) the DAC link is down, (b) the vLLM head container on spark-01 is not running, or (c) the host firewall on spark-01 is blocking the DAC peer from reaching port 8000.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>From spark-02: <code>ping -c 3 YOUR_NODE1_DAC_IP</code> (DAC reachable?), then <code>nc -zv YOUR_NODE1_DAC_IP 8000</code>. From spark-01: <code>docker ps | grep vllm-qwen-35b</code> (running?) and <code>sudo ufw status | grep 8000</code>. The Step 06 ufw rule should explicitly allow <code>YOUR_NODE2_DAC_IP</code> on port 8000 over <code>enp1s0f0np0</code>.</span></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">Client sees sparky-01:8000 directly without auth</div>
+      <div class="issue-title">Client sees spark-01:8000 directly without auth</div>
       <div class="issue-sym"><span>Symptom</span><span>From the client's tailnet, <code>curl http://YOUR_NODE1_TAILSCALE_IP:8000/v1/models</code> succeeds — meaning the client could bypass their LiteLLM and hit the unauthenticated vLLM directly.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>vLLM has no auth. Either (a) Tailscale ACLs on sparky-01 inadvertently expose port 8000, or (b) the host firewall on sparky-01 is allowing inbound on <code>tailscale0</code> for port 8000, or (c) ufw is disabled.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Audit the ACL JSON on sparky-01's tailnet — there must be no <code>tag:owner:8000</code> entry anywhere. Then on sparky-01: <code>sudo ufw status verbose</code> — <em>no</em> rule should allow port 8000 on <code>tailscale0</code>. Only the explicit DAC-peer rule (<code>enp1s0f0np0 from YOUR_NODE2_DAC_IP to any port 8000</code>) should appear. If you find a leak, fix the ACL and ufw, then re-run the negative tests in the validation checklist.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>vLLM has no auth. Either (a) Tailscale ACLs on spark-01 inadvertently expose port 8000, or (b) the host firewall on spark-01 is allowing inbound on <code>tailscale0</code> for port 8000, or (c) ufw is disabled.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Audit the ACL JSON on spark-01's tailnet — there must be no <code>tag:owner:8000</code> entry anywhere. Then on spark-01: <code>sudo ufw status verbose</code> — <em>no</em> rule should allow port 8000 on <code>tailscale0</code>. Only the explicit DAC-peer rule (<code>enp1s0f0np0 from YOUR_NODE2_DAC_IP to any port 8000</code>) should appear. If you find a leak, fix the ACL and ufw, then re-run the negative tests in the validation checklist.</span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">Both LiteLLMs collide on port 8001 over the mgmt LAN</div>
-      <div class="issue-sym"><span>Symptom</span><span>You expected to <code>curl http://YOUR_NODE2_MGMT_IP:8001/v1/models</code> from sparky-01 and get the client's LiteLLM, and it works — leaking the client's API surface to your mgmt LAN.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span>You expected to <code>curl http://YOUR_NODE2_MGMT_IP:8001/v1/models</code> from spark-01 and get the client's LiteLLM, and it works — leaking the client's API surface to your mgmt LAN.</span></div>
       <div class="issue-sym"><span>Cause</span><span>By design, both LiteLLMs bind to <code>0.0.0.0:8001</code> so each is reachable from its own tailnet. Your firewall must restrict inbound on the mgmt-LAN interface to deny port 8001 cross-node — Tailscale ACLs alone don't help here because the mgmt LAN is not part of any tailnet.</span></div>
       <div class="issue-fix"><span>Fix</span><span>On both nodes, deny port 8001 inbound on the mgmt-LAN interface explicitly. The Step 06 ufw rules already restrict 8001 to <code>tailscale0</code> only — confirm with <code>sudo ufw status verbose</code> that no rule allows <code>8001</code> on the wildcard interface or on the mgmt iface.</span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">Client can see your LiteLLM logs (or vice versa)</div>
-      <div class="issue-sym"><span>Symptom</span><span>You find an entry in <code>~/sparky-ai-stack/logs/litellm.log</code> on sparky-01 that you didn't make. Or the client reports a request in their log that they didn't send.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span>You find an entry in <code>~/sparky-ai-stack/logs/litellm.log</code> on spark-01 that you didn't make. Or the client reports a request in their log that they didn't send.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Almost always: someone reused a master key across the two LiteLLMs, or the Open WebUI on one side is misconfigured to point at the other side's LiteLLM.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Confirm <code>master_key</code> values are unique on each node — they should never match. Then check each Open WebUI's API base URL: yours should be <code>http://host.docker.internal:8001/v1</code> (your local LiteLLM); client's should be the same hostname (their local LiteLLM, not your tailnet IP). If you find cross-pointing, fix it and rotate both master keys.</span></div>
     </div>
@@ -1908,18 +1908,18 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
   <div class="step" id="appendix-ha">
     <div class="step-header"><span class="step-num">APPENDIX</span><h2>Clustered Open WebUI / n8n (HA notes)</h2></div>
-    <p>Both Open WebUI and n8n have HA modes available, but for a two-node home/lab setup the operational complexity is not worth it. This stack runs them as single instances on <code>sparky-02</code>. If you ever want to pursue HA, here are the pointers.</p>
+    <p>Both Open WebUI and n8n have HA modes available, but for a two-node home/lab setup the operational complexity is not worth it. This stack runs them as single instances on <code>spark-02</code>. If you ever want to pursue HA, here are the pointers.</p>
     <h3>Open WebUI HA</h3>
     <ul style="font-size:13px;color:var(--text2);line-height:1.7;padding-left:20px;display:flex;flex-direction:column;gap:4px;">
       <li>Switch the <code>open-webui</code> container's storage from a Docker volume to a Postgres backend (env: <code>DATABASE_URL=postgresql://...</code>) and a shared filesystem for uploads and RAG documents.</li>
       <li>Run multiple replicas behind a TCP load balancer. Sticky sessions are recommended for SSE chat streams.</li>
-      <li>Postgres can sit on either node; if you put it on <code>sparky-01</code> you'll re-introduce the very latency-disturbance pattern this architecture is designed to avoid. Prefer a third small box or a dedicated HA pair.</li>
+      <li>Postgres can sit on either node; if you put it on <code>spark-01</code> you'll re-introduce the very latency-disturbance pattern this architecture is designed to avoid. Prefer a third small box or a dedicated HA pair.</li>
     </ul>
     <h3>n8n HA</h3>
     <ul style="font-size:13px;color:var(--text2);line-height:1.7;padding-left:20px;display:flex;flex-direction:column;gap:4px;">
       <li>n8n's <strong>queue mode</strong> requires Postgres for state and Redis for the BullMQ queue. The main container becomes the <em>main</em> instance; one or more <em>worker</em> instances pull jobs off the queue.</li>
       <li>Set <code>EXECUTIONS_MODE=queue</code>, <code>QUEUE_BULL_REDIS_HOST=…</code>, <code>DB_TYPE=postgresdb</code>, and the relevant Postgres env vars on every container. Replicas need the same <code>N8N_ENCRYPTION_KEY</code>.</li>
-      <li>For a two-node setup the simplest variant is one main on <code>sparky-02</code> and one worker on a third small box, with Postgres + Redis colocated on the third box.</li>
+      <li>For a two-node setup the simplest variant is one main on <code>spark-02</code> and one worker on a third small box, with Postgres + Redis colocated on the third box.</li>
       <li>Webhook traffic should hit only the main container; long-running executions land on workers transparently.</li>
     </ul>
     <div class="callout note"><span class="callout-icon">ℹ</span><span>If you genuinely need HA at this layer, the operational answer is usually "add a third box for Postgres + Redis," not "split across the two GPU nodes." Putting stateful services on the inference nodes will compromise either inference latency or HA availability — usually both.</span></div>
@@ -2188,7 +2188,7 @@ sudo apt install -y nodejs</code></pre>
     <div class="verify">Verify: <code>which npx</code> — expected output: <code>/usr/bin/npx</code></div>
 
     <h3>Step 3 — Add Brave Search MCP server in LiteLLM UI</h3>
-    <p>Navigate to <code>http://YOUR_NODE1_MGMT_IP:8001/ui</code> → MCP Servers → Add New MCP Server. (LiteLLM lives on <code>sparky-01</code>.)</p>
+    <p>Navigate to <code>http://YOUR_NODE1_MGMT_IP:8001/ui</code> → MCP Servers → Add New MCP Server. (LiteLLM lives on <code>spark-01</code>.)</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Field</th><th>Value</th></tr></thead>
@@ -2266,7 +2266,7 @@ sudo apt install -y nodejs</code></pre>
     </div>
 
     <h3>Step 4 — Add Playwright MCP server in LiteLLM UI</h3>
-    <p>Navigate to <code>http://YOUR_NODE1_MGMT_IP:8001/ui</code> → MCP Servers → Add New MCP Server. (LiteLLM lives on <code>sparky-01</code>.)</p>
+    <p>Navigate to <code>http://YOUR_NODE1_MGMT_IP:8001/ui</code> → MCP Servers → Add New MCP Server. (LiteLLM lives on <code>spark-01</code>.)</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Field</th><th>Value</th></tr></thead>
@@ -2304,7 +2304,7 @@ sudo apt install -y nodejs</code></pre>
     <p>The LiteLLM proxy ships with a built-in web UI at <code>/ui</code>. It requires a master key and a PostgreSQL database — SQLite is not supported for the UI auth layer. The following documents every error encountered during setup, in order.</p>
 
     <h3>Step 1 — Set a master key</h3>
-    <p>All commands below run on <strong><code>sparky-01</code></strong> (where LiteLLM lives). Add to <code>~/sparky-ai-stack/litellm-config.yaml</code>:</p>
+    <p>All commands below run on <strong><code>spark-01</code></strong> (where LiteLLM lives). Add to <code>~/sparky-ai-stack/litellm-config.yaml</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>general_settings:
@@ -2317,8 +2317,8 @@ sudo apt install -y nodejs</code></pre>
       <pre><code>echo "sk-$(openssl rand -hex 16)"</code></pre>
     </div>
 
-    <h3>Step 2 — Add PostgreSQL to a compose file on sparky-01</h3>
-    <p>Run Postgres on the same node as LiteLLM. Putting it on <code>sparky-02</code> would re-introduce the very latency-disturbance pattern this architecture is designed to avoid. Add to a new <code>~/sparky-ai-stack/litellm-db.yml</code> on <code>sparky-01</code>:</p>
+    <h3>Step 2 — Add PostgreSQL to a compose file on spark-01</h3>
+    <p>Run Postgres on the same node as LiteLLM. Putting it on <code>spark-02</code> would re-introduce the very latency-disturbance pattern this architecture is designed to avoid. Add to a new <code>~/sparky-ai-stack/litellm-db.yml</code> on <code>spark-01</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>  litellm-db:

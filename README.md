@@ -2,7 +2,7 @@
 
 A self-hosted AI server stack running across **two clustered Nvidia DGX Spark** nodes (arm64/aarch64) under **split ownership**. vLLM serves a shared model with tensor parallelism (TP=2) over Ray on a 200&nbsp;Gb/s direct-attach copper interconnect, but each node runs its own independent application stack owned by a different party.
 
-`sparky-01` is the **owner's** node (your LiteLLM, Open WebUI, Hermes Agent, n8n, Tailscale). `sparky-02` is the **client's** node (their LiteLLM, Open WebUI, n8n, Tailscale). Both LiteLLM proxies talk to the same vLLM endpoint on `sparky-01:8000` over the DAC; neither application stack sees the other.
+`spark-01` is the **owner's** node (your LiteLLM, Open WebUI, Hermes Agent, n8n, Tailscale). `spark-02` is the **client's** node (their LiteLLM, Open WebUI, n8n, Tailscale). Both LiteLLM proxies talk to the same vLLM endpoint on `spark-01:8000` over the DAC; neither application stack sees the other.
 
 > **Read the [Trust model](https://cmdlabtech.github.io/dgx-spark-ai-stack/#trust-model) section before deploying.** This architecture has specific properties at the API layer that you should understand explicitly.
 
@@ -14,16 +14,16 @@ The full step-by-step setup guide is at [cmdlabtech.github.io/dgx-spark-ai-stack
 
 Three logical layers:
 
-1. **Application stacks (separate ownership).** Two independent stacks on two nodes — your apps on `sparky-01`, client's apps on `sparky-02`. Knowledge bases, chat history, RAG pipelines, API keys, and logs are completely separate. Neither party has access to the other's stack.
+1. **Application stacks (separate ownership).** Two independent stacks on two nodes — your apps on `spark-01`, client's apps on `spark-02`. Knowledge bases, chat history, RAG pipelines, API keys, and logs are completely separate. Neither party has access to the other's stack.
 2. **LiteLLM proxies (one per side).** Each side runs its own LiteLLM with its own master key and its own SQLite log corpus. Your LiteLLM uses `api_base = http://localhost:8000/v1`; client's LiteLLM uses `api_base = http://198.51.100.1:8000/v1` over the DAC.
-3. **Shared compute pool.** vLLM head (Ray master, TP rank 0) runs on `sparky-01:8000` backed by the full 256 GB unified memory across both nodes. The Ray worker on `sparky-02` (TP rank 1) processes tensor activations only — no readable text crosses the worker.
+3. **Shared compute pool.** vLLM head (Ray master, TP rank 0) runs on `spark-01:8000` backed by the full 256 GB unified memory across both nodes. The Ray worker on `spark-02` (TP rank 1) processes tensor activations only — no readable text crosses the worker.
 
 Tailscale is a per-owner overlay: each node joins its owner's tailnet independently, with separate ACL policies. The DAC link (`198.51.100.0/30`) is private physical hardware between the two nodes — not routed through either tailnet.
 
 ## Trust model
 
-- **API-layer visibility.** The owner of `sparky-01` runs the vLLM API server; both LiteLLM proxies call it. Trust profile is structurally identical to using any commercial hosted-inference API (OpenAI, Anthropic, Together, etc.) — the entity running the API server can see traffic at the API layer.
-- **Tensor-layer isolation.** The Ray worker on `sparky-02` processes floating-point tensor activations, not text. NCCL allreduce on the DAC carries floats, not strings. The client's node never sees readable prompts or completions at the compute layer.
+- **API-layer visibility.** The owner of `spark-01` runs the vLLM API server; both LiteLLM proxies call it. Trust profile is structurally identical to using any commercial hosted-inference API (OpenAI, Anthropic, Together, etc.) — the entity running the API server can see traffic at the API layer.
+- **Tensor-layer isolation.** The Ray worker on `spark-02` processes floating-point tensor activations, not text. NCCL allreduce on the DAC carries floats, not strings. The client's node never sees readable prompts or completions at the compute layer.
 - **Application-layer isolation.** Knowledge bases, chat history, RAG indexes, vector stores, OAuth tokens, and request logs are 100% separate per node. No cross-mounted volumes, no shared Postgres, no shared file system.
 - **Network isolation.** Two separate tailnets. ACLs per owner. DAC is private hardware, not advertised on either tailnet.
 - **Appropriate when:** both parties have a working relationship; data is non-regulated; trust profile of "any hosted inference API" is acceptable.
@@ -33,19 +33,19 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
 
 | Component | Node | Owner | Port |
 |---|---|---|---|
-| [vLLM](https://github.com/vllm-project/vllm) head (Ray master, TP rank 0) | `sparky-01` | Shared compute | 8000 (local + DAC) · 6379 |
-| [vLLM](https://github.com/vllm-project/vllm) worker (Ray, TP rank 1) | `sparky-02` | Shared compute | — (no API listener) |
-| Your [LiteLLM](https://github.com/BerriAI/litellm) | `sparky-01` | You — your master key, your logs | 8001 (your tailnet) |
-| Client [LiteLLM](https://github.com/BerriAI/litellm) | `sparky-02` | Client — their master key, their logs | 8001 (client's tailnet) |
-| Your [Open WebUI](https://github.com/open-webui/open-webui) | `sparky-01` | You — your data | 8080 (your tailnet) |
-| Client [Open WebUI](https://github.com/open-webui/open-webui) | `sparky-02` | Client — their data | 8080 (client's tailnet) |
-| Your [Hermes Agent](https://github.com/NousResearch/hermes-agent) | `sparky-01` | You | — |
-| Your [Hermes WebUI](https://github.com/nesquena/hermes-webui) | `sparky-01` | You | 8787 (your tailnet) |
-| Your [n8n](https://github.com/n8n-io/n8n) | `sparky-01` | You | 5678 (your tailnet) |
-| Client [n8n](https://github.com/n8n-io/n8n) | `sparky-02` | Client | 5678 (client's tailnet) |
-| Your Tailscale | `sparky-01` | You — your ACLs | — |
-| Client Tailscale | `sparky-02` | Client — their ACLs | — |
-| Telegram gateway (Hermes) | `sparky-01` | You | — |
+| [vLLM](https://github.com/vllm-project/vllm) head (Ray master, TP rank 0) | `spark-01` | Shared compute | 8000 (local + DAC) · 6379 |
+| [vLLM](https://github.com/vllm-project/vllm) worker (Ray, TP rank 1) | `spark-02` | Shared compute | — (no API listener) |
+| Your [LiteLLM](https://github.com/BerriAI/litellm) | `spark-01` | You — your master key, your logs | 8001 (your tailnet) |
+| Client [LiteLLM](https://github.com/BerriAI/litellm) | `spark-02` | Client — their master key, their logs | 8001 (client's tailnet) |
+| Your [Open WebUI](https://github.com/open-webui/open-webui) | `spark-01` | You — your data | 8080 (your tailnet) |
+| Client [Open WebUI](https://github.com/open-webui/open-webui) | `spark-02` | Client — their data | 8080 (client's tailnet) |
+| Your [Hermes Agent](https://github.com/NousResearch/hermes-agent) | `spark-01` | You | — |
+| Your [Hermes WebUI](https://github.com/nesquena/hermes-webui) | `spark-01` | You | 8787 (your tailnet) |
+| Your [n8n](https://github.com/n8n-io/n8n) | `spark-01` | You | 5678 (your tailnet) |
+| Client [n8n](https://github.com/n8n-io/n8n) | `spark-02` | Client | 5678 (client's tailnet) |
+| Your Tailscale | `spark-01` | You — your ACLs | — |
+| Client Tailscale | `spark-02` | Client — their ACLs | — |
+| Telegram gateway (Hermes) | `spark-01` | You | — |
 
 **Default model:** `Qwen/Qwen3.6-35B-A3B-FP8` (FP8 MoE, ~97 GB resident per node at `--gpu-memory-utilization 0.80`).
 
@@ -67,7 +67,7 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
             │                                                │
             ▼                                                ▼
 ┌──────────────────────────────┐          ┌──────────────────────────────┐
-│ sparky-01 — YOUR NODE        │          │ sparky-02 — CLIENT NODE      │
+│ spark-01 — YOUR NODE         │          │ spark-02 — CLIENT NODE       │
 │ (your tailscale)             │          │ (client's tailscale)         │
 │                              │          │                              │
 │  Your Open WebUI    :8080    │          │  Client Open WebUI    :8080  │
@@ -84,8 +84,8 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
 ┌────────────────────────────────────────────────────────────────────┐
 │ SHARED COMPUTE POOL                                                │
 │                                                                    │
-│   vLLM head (Ray master) :8000  · TP rank 0 · sparky-01            │
-│   vLLM Ray worker               · TP rank 1 · sparky-02            │
+│   vLLM head (Ray master) :8000  · TP rank 0 · spark-01             │
+│   vLLM Ray worker               · TP rank 1 · spark-02             │
 │                                                                    │
 │   Qwen/Qwen3.6-35B-A3B-FP8 — 256 GB unified memory                 │
 │                                                                    │
@@ -173,13 +173,13 @@ In practice this means the vLLM cluster runs continuously and is only restarted 
 
 1. Hardware topology + Trust model + prerequisites — `/etc/hosts`, docker group, passwordless SSH between nodes
 2. **Step 01 — vLLM clustered (TP=2 over Ray on DAC)** — custom `vllm-spark:26.04` image on both nodes, HF cache rsync, startup scripts, launch order, `VLLM_HOST_IP` and NCCL config, GB10 `nvidia-smi` quirk
-3. **Step 02 — Your LiteLLM (sparky-01)** — your master key, your SQLite log corpus, points at `localhost:8000`
-4. **Step 03 — Client LiteLLM (sparky-02)** — separate install, separate master key, separate log corpus, points at `198.51.100.1:8000` over the DAC
-5. **Step 04 — Your Open WebUI (sparky-01)** — points at your LiteLLM, your tailnet
-6. **Step 05 — Client Open WebUI (sparky-02)** — points at client's LiteLLM, client's tailnet, client's data stays on `sparky-02`
+3. **Step 02 — Your LiteLLM (spark-01)** — your master key, your SQLite log corpus, points at `localhost:8000`
+4. **Step 03 — Client LiteLLM (spark-02)** — separate install, separate master key, separate log corpus, points at `198.51.100.1:8000` over the DAC
+5. **Step 04 — Your Open WebUI (spark-01)** — points at your LiteLLM, your tailnet
+6. **Step 05 — Client Open WebUI (spark-02)** — points at client's LiteLLM, client's tailnet, client's data stays on `spark-02`
 7. **Step 06 — Tailscale (both nodes, separate tailnets)** — per-owner ACLs, host firewall rules that prevent the unauthenticated vLLM port leaking onto either tailnet
-8. **Step 07 — Your Hermes Agent (sparky-01)** — Telegram gateway, Hermes WebUI
-9. **Step 08 — Your n8n (sparky-01)** — single-instance, owner-side flows. Client deploys their own n8n on `sparky-02` independently.
+8. **Step 07 — Your Hermes Agent (spark-01)** — Telegram gateway, Hermes WebUI
+9. **Step 08 — Your n8n (spark-01)** — single-instance, owner-side flows. Client deploys their own n8n on `spark-02` independently.
 10. Validation checklist — both-side positive tests + cross-stack negative tests (each side cannot reach the other)
 11. Cluster issues and resolutions: Ray GCS, `VLLM_HOST_IP` mismatch, NCCL on wrong interface, client LiteLLM can't reach vLLM, port-8000 leak through Tailscale ACL, cross-LiteLLM mgmt-LAN collision, log-bleed across owners
 12. Obsidian vault sync integration — Syncthing, obsidian-mcp, supergateway (Proxmox LXC, owner side)
@@ -188,8 +188,8 @@ In practice this means the vLLM cluster runs continuously and is only restarted 
 
 ## Notes
 
-- All copy-paste commands use placeholder values (`YOUR_USERNAME`, `YOUR_NODE1_MGMT_IP`, `YOUR_NODE2_MGMT_IP`, `YOUR_NODE1_DAC_IP`, `YOUR_NODE2_DAC_IP`, `YOUR_MASTER_KEY`, `YOUR_CLIENT_MASTER_KEY`, `YOUR_NODE1_TAILSCALE_IP`, `YOUR_NODE2_TAILSCALE_IP`) — substitute your own before running. Hostnames `sparky-01` and `sparky-02` are conventional; substitute your own.
-- **Master keys must be different.** Yours is unique to your LiteLLM on `sparky-01`. The client's is unique to their LiteLLM on `sparky-02`. They are never shared and never sync'd between nodes.
+- All copy-paste commands use placeholder values (`YOUR_USERNAME`, `YOUR_NODE1_MGMT_IP`, `YOUR_NODE2_MGMT_IP`, `YOUR_NODE1_DAC_IP`, `YOUR_NODE2_DAC_IP`, `YOUR_MASTER_KEY`, `YOUR_CLIENT_MASTER_KEY`, `YOUR_NODE1_TAILSCALE_IP`, `YOUR_NODE2_TAILSCALE_IP`) — substitute your own before running. Hostnames `spark-01` and `spark-02` are conventional; substitute your own.
+- **Master keys must be different.** Yours is unique to your LiteLLM on `spark-01`. The client's is unique to their LiteLLM on `spark-02`. They are never shared and never sync'd between nodes.
 - **Tailscale ACLs are independent per owner.** Each owner controls their own tailnet's ACL policy. Cross-tailnet exposure happens only if both owners explicitly configure it.
 - **Port 8000 (vLLM) must never leak onto either tailnet.** It has no auth. The Step 06 ufw rules are the enforcement; the Tailscale ACLs are the policy. Both must agree.
 - **Application-layer data stays per-owner.** Open WebUI knowledge bases, n8n flows, Hermes memory, LiteLLM logs — none of these cross the boundary. Each owner backs up their own node's state.
@@ -205,7 +205,7 @@ The LiteLLM proxy ships with a built-in web UI at `http://<host>:8001/ui`. It re
 
 **Step 1 — Set a master key**
 
-Add to `~/sparky-ai-stack/litellm-config.yaml` (on `sparky-01`):
+Add to `~/sparky-ai-stack/litellm-config.yaml` (on `spark-01`):
 
 ```yaml
 general_settings:
@@ -219,9 +219,9 @@ Generate a key with:
 echo "sk-$(openssl rand -hex 16)"
 ```
 
-**Step 2 — Add PostgreSQL on sparky-01**
+**Step 2 — Add PostgreSQL on spark-01**
 
-Run a Postgres container on `sparky-01` (the same node as LiteLLM). Avoid putting it on `sparky-02` — Postgres latency on the inference path defeats the point of backend isolation.
+Run a Postgres container on `spark-01` (the same node as LiteLLM). Avoid putting it on `spark-02` — Postgres latency on the inference path defeats the point of backend isolation.
 
 ```yaml
   litellm-db:

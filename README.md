@@ -1,65 +1,95 @@
-# NVIDIA DGX: At-Home AI Stack
+# NVIDIA DGX: At-Home AI Stack — two-node clustered
 
-A complete self-hosted AI server stack running on the **Nvidia DGX Spark** (arm64/aarch64).
+A self-hosted AI server stack running across **two clustered Nvidia DGX Spark** nodes (arm64/aarch64). vLLM serves the model with tensor parallelism (TP=2) over Ray on a dedicated 200&nbsp;Gb/s direct-attach copper interconnect. Backend services are isolated on one node so user-facing UIs never disturb model latency.
 
-Covers model serving, proxying, workflow automation, an autonomous agent layer, and multi-client access — everything needed to replicate the stack from scratch on a fresh machine.
+Covers model serving across two nodes, proxying, workflow automation, an autonomous agent layer, and multi-client access — everything needed to replicate the cluster from scratch.
 
 ## Setup guide
 
 The full step-by-step setup guide is at [cmdlabtech.github.io/dgx-spark-ai-stack](https://cmdlabtech.github.io/dgx-spark-ai-stack/).
 
+## Architecture summary
+
+Two physically separate DGX Spark nodes, separated by role:
+
+- **`sparky-01` — backend node.** vLLM head (Ray master) + LiteLLM proxy. No user-facing services. Protects inference latency from UI workloads.
+- **`sparky-02` — frontend node.** vLLM Ray worker, Open WebUI, Hermes Agent, n8n. All user traffic enters here.
+
+The two nodes are linked by a 200&nbsp;Gb/s DAC interconnect (`enp1s0f0np0`, MTU 9216, point-to-point /30) which carries NCCL collectives for tensor parallelism and Ray control traffic. A separate 1&nbsp;GbE mgmt LAN carries client traffic and the LiteLLM-to-frontend hop.
+
+vLLM is the only clustered service. Open WebUI and n8n run as single instances on `sparky-02` — clustered HA modes are documented in the appendix only.
+
 ## Stack
 
-| Component | Role | Port |
-|---|---|---|
-| [vLLM](https://github.com/vllm-project/vllm) | Model serving | 8000 (internal) |
-| [LiteLLM](https://github.com/BerriAI/litellm) | Proxy, logging, routing | 8001 |
-| [n8n](https://github.com/n8n-io/n8n) | Workflow automation | 5678 |
-| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | Autonomous agent layer | — |
-| [Hermes WebUI](https://github.com/nesquena/hermes-webui) | Agent browser UI | 8787 |
-| [Open WebUI](https://github.com/open-webui/open-webui) | Daily chat interface | Mac/desktop app |
-| Telegram | Mobile/remote access | via Hermes gateway |
-| Cline (VS Code) | Agentic coding | VS Code extension |
-| Syncthing | Vault sync (desktop, mobile, LXC) | 8384 |
-| obsidian-mcp + supergateway | Vault tool exposure to LiteLLM (Proxmox LXC) | 3000 |
+| Component | Node | Role | Port |
+|---|---|---|---|
+| [vLLM](https://github.com/vllm-project/vllm) head (Ray master) | `sparky-01` | Model serving — TP=2 over Ray on DAC | 8000 (local) · 6379 (Ray GCS) |
+| [vLLM](https://github.com/vllm-project/vllm) worker (Ray) | `sparky-02` | Second TP rank | — (joins via DAC) |
+| [LiteLLM](https://github.com/BerriAI/litellm) | `sparky-01` | Proxy, logging, routing | 8001 |
+| [Open WebUI](https://github.com/open-webui/open-webui) | `sparky-02` | Daily chat interface | 8080 |
+| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | `sparky-02` | Autonomous agent layer | — |
+| [Hermes WebUI](https://github.com/nesquena/hermes-webui) | `sparky-02` | Agent browser UI | 8787 |
+| [n8n](https://github.com/n8n-io/n8n) | `sparky-02` | Workflow automation | 5678 |
+| Telegram gateway | `sparky-02` | Mobile/remote access | via Hermes |
+| Syncthing | Proxmox LXC | Vault sync (optional) | 8384 |
+| obsidian-mcp + supergateway | Proxmox LXC | Vault tool exposure to LiteLLM | 3000 |
 
-**Model:** `Qwen/Qwen3.6-35B-A3B-FP8`
+**Default model:** `Qwen/Qwen3.6-35B-A3B-FP8` (FP8 MoE, ~97 GB resident per node at `--gpu-memory-utilization 0.80`).
+
+**Optional upgrade:** `Qwen/Qwen3.5-122B-A10B-GPTQ-Int4` — fits comfortably in clustered memory at INT4 (~30 GB per node).
 
 ## Hardware
 
-- Nvidia DGX Spark (Grace CPU · GB10 GPU · arm64) — Ubuntu 24.04 · GPU util 0.8
-- Proxmox LXC — `[YOUR-CONTAINER-HOSTNAME]` container (Ubuntu 24.04 LTS) · Syncthing vault sync
+- 2× Nvidia DGX Spark (Grace CPU · GB10 GPU · arm64) — Ubuntu 24.04
+- DAC interconnect: `enp1s0f0np0`, MTU 9216, /30 between nodes
+- Mgmt LAN: 1 GbE RJ45, default routes
+- Proxmox LXC (optional) — `[YOUR-CONTAINER-HOSTNAME]` (Ubuntu 24.04 LTS) for Syncthing vault sync
 
-## Architecture
+## Architecture diagram
 
 ```
-Desktop Client (Obsidian + Syncthing) ─┐
-Mobile Client  (Obsidian + Syncthing) ─┼─→ Syncthing ─→ LXC /vault ([YOUR-CONTAINER-HOSTNAME])
-                                       ┘
-                                            ↓
-                                  obsidian-mcp (stdio)
-                                            ↓
-                             supergateway (streamableHttp, port 3000)
-                                            ↓
-┌──────────────────────────────────────────────────┐
-│                  Nvidia DGX Spark                │
-│                                                  │
-│  Users                                           │
-│    ├── Open WebUI (Mac app)                      │
-│    ├── Cline (VS Code)                           │
-│    ├── n8n (workflows)                           │
-│    └── Telegram ──► Hermes Agent ──► Hermes WebUI│
-│          │               │                       │
-│          ▼               ▼                       │
-│      LiteLLM proxy ◄─────┘ ◄── MCP vault tool   │
-│      (port 8001, SQLite logs)                    │
-│          │                                       │
-│          ▼                                       │
-│      vLLM (port 8000)                            │
-│          │                                       │
-│          ▼                                       │
-│      Qwen3.6-35B-A3B-FP8                         │
-└──────────────────────────────────────────────────┘
+                      ┌──────────────────────┐
+                      │  Users / clients     │
+                      │  browser · Telegram  │
+                      │  desktop · VS Code   │
+                      └──────────┬───────────┘
+                                 │ mgmt LAN
+                                 ▼
+┌────────────────────────────────────────────────────────────┐
+│  sparky-02 · FRONTEND NODE   (mgmt: YOUR_NODE2_MGMT_IP)    │
+│                                                            │
+│  Open WebUI (8080)   n8n (5678)   Hermes Agent / WebUI     │
+│         │                │                 │               │
+│         └───────┬────────┴─────────────────┘               │
+│                 │                                          │
+│                 │  http://YOUR_NODE1_MGMT_IP:8001/v1       │
+│                 ▼                                          │
+│        ┌────────────────────────────┐                      │
+│        │  vLLM worker (Ray)         │◄────┐                │
+│        │  GPU 1 of TP=2             │     │ NCCL · Ray     │
+│        └────────────────────────────┘     │ over DAC       │
+│                                           │ enp1s0f0np0    │
+└───────────────────────────────────────────┼────────────────┘
+                                            │ 200 Gb/s
+┌───────────────────────────────────────────┼────────────────┐
+│  sparky-01 · BACKEND NODE    (mgmt: YOUR_NODE1_MGMT_IP)    │
+│                                           │                │
+│        ┌──────────────────────────────────┴───┐            │
+│        │  vLLM head (Ray master)              │            │
+│        │  --tensor-parallel-size 2 · GPU 0    │            │
+│        └────────────────┬─────────────────────┘            │
+│                         │                                  │
+│                         ▼                                  │
+│        ┌─────────────────────────────────────┐             │
+│        │  LiteLLM proxy (8001)               │             │
+│        │  → localhost:8000                   │             │
+│        └─────────────────────────────────────┘             │
+│                         │                                  │
+│                         ▼                                  │
+│        ┌─────────────────────────────────────┐             │
+│        │  Qwen/Qwen3.6-35B-A3B-FP8           │             │
+│        └─────────────────────────────────────┘             │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ## Obsidian Vault Sync & MCP Integration
@@ -128,35 +158,36 @@ Deploying Syncthing and the MCP pipeline on a separate Proxmox LXC rather than o
 
 ### Why vLLM runs outside Docker Compose
 
-vLLM is started with a standalone `docker run` command rather than being declared as a service in `docker-compose.yml`. This is intentional. Loading a 35B FP8 model takes several minutes and saturates GPU memory for the duration — restarting the vLLM container is expensive. Keeping it outside Compose means:
+vLLM is started with standalone `docker run` commands on each node (driven by per-node startup scripts in `~/sparky-ai-stack/scripts/`) rather than being declared as a service in any Compose file. This is intentional. Loading a 35B FP8 model across two nodes takes several minutes and saturates GPU memory on both nodes for the duration — restarting the cluster is expensive. Keeping it outside Compose means:
 
-- `docker compose up/down/restart` on n8n or hermes-webui has zero effect on vLLM
-- Iterating on workflow automation, the agent UI, or compose config doesn't force a model reload
-- vLLM can be updated or restarted independently on its own schedule without any service disruption to the rest of the stack
+- `docker compose up/down/restart` on n8n or hermes-webui has zero effect on the vLLM cluster
+- Iterating on workflow automation, the agent UI, or compose config doesn't force a model reload on either node
+- vLLM can be updated or restarted independently — the launch order (worker first, then head) is enforced explicitly by the scripts
 - A crash or misconfiguration in a compose service can't cascade into taking down the model server
 
-In practice this means vLLM runs continuously and is only restarted deliberately (e.g. to pick up a new model or change serving flags), while everything above it in the stack is free to cycle as often as needed.
+In practice this means the vLLM cluster runs continuously and is only restarted deliberately (e.g. to pick up a new model or change serving flags), while everything above it in the stack is free to cycle as often as needed.
 
 ## What the guide covers
 
-1. vLLM container setup with all flags documented
-2. Stack directory structure
-3. LiteLLM config and systemd service
-4. Docker Compose for n8n and Hermes WebUI
-5. Hermes Agent install, wizard answers, tool selection, Telegram gateway
-6. Open WebUI and Cline configuration
-7. Reboot test and service verification
-8. Port reference, file locations, backup targets
-9. Known issues and fixes (CUDA cache, arm64 quirks)
-10. Obsidian vault sync integration — Syncthing, obsidian-mcp, supergateway (Proxmox LXC)
-11. LiteLLM centralized MCP debug report — 18 issues across LXC setup, LiteLLM MCP config, Hermes, and Open WebUI
+1. Hardware topology and prerequisites — `/etc/hosts` mgmt-IP entries, docker group, passwordless SSH between nodes
+2. vLLM clustered (TP=2 over Ray on DAC) — custom `vllm-spark:26.04` image build on both nodes, HF cache rsync, per-node startup scripts, launch order, NCCL/`VLLM_HOST_IP` configuration, Ray cluster verification
+3. LiteLLM proxy on `sparky-01` — pointing at the local clustered vLLM, systemd service, override.conf cleanup
+4. Open WebUI on `sparky-02` — single instance, points at LiteLLM on `sparky-01`
+5. Hermes Agent + Telegram gateway on `sparky-02` — wizard answers, base URL pointing at LiteLLM on `sparky-01`
+6. n8n on `sparky-02` — single instance, persistent Docker volume
+7. Validation checklist (per-node) and end-to-end Telegram → Hermes → LiteLLM → vLLM TP=2 round-trip
+8. Cluster issues and resolutions: Ray GCS connection, `VLLM_HOST_IP` mismatch, NCCL on wrong interface, worker-before-head, `nvidia-smi memory.used [N/A]` on GB10
+9. Obsidian vault sync integration — Syncthing, obsidian-mcp, supergateway (Proxmox LXC)
+10. Brave Search MCP and Playwright MCP setup
+11. Appendix — clustered Open WebUI / n8n HA notes for those who want to pursue it
 
 ## Notes
 
-- All commands use placeholder values (`YOUR_USERNAME`, `YOUR_SERVER_IP`) — substitute your own before running
-- LiteLLM has no arm64 Docker image as of May 2026 — installed via pip directly on the host
-- The SQLite logs accumulated by LiteLLM (`~/dgx-ai-stack/logs/litellm.db`) serve as a fine-tuning corpus over time
-- vLLM is intentionally run via `docker run`, not as a compose service — this keeps it isolated from compose lifecycle operations so model weights stay loaded while the rest of the stack is restarted freely (see Architecture above)
+- All commands use placeholder values (`YOUR_USERNAME`, `YOUR_NODE1_MGMT_IP`, `YOUR_NODE2_MGMT_IP`, `YOUR_NODE1_DAC_IP`, `YOUR_NODE2_DAC_IP`) — substitute your own before running. Hostnames `sparky-01` and `sparky-02` are conventional in this guide; substitute your own.
+- LiteLLM has no arm64 Docker image as of May 2026 — installed via pip directly on `sparky-01`
+- The SQLite logs accumulated by LiteLLM (`~/sparky-ai-stack/logs/litellm.db`) serve as a fine-tuning corpus over time
+- vLLM is intentionally run via per-node `docker run` scripts, not as Compose services — this keeps the cluster isolated from compose lifecycle operations so model weights stay loaded across both nodes while the rest of the stack is restarted freely
+- `nvidia-smi --query-gpu=memory.used,memory.total` returns `[N/A]` on GB10 (Grace Blackwell unified memory). Use plain `nvidia-smi` and read the Processes section instead.
 
 ## Troubleshooting
 
@@ -166,7 +197,7 @@ The LiteLLM proxy ships with a built-in web UI at `http://<host>:8001/ui`. It re
 
 **Step 1 — Set a master key**
 
-Add to `~/dgx-ai-stack/litellm-config.yaml`:
+Add to `~/sparky-ai-stack/litellm-config.yaml` (on `sparky-01`):
 
 ```yaml
 general_settings:
@@ -180,9 +211,9 @@ Generate a key with:
 echo "sk-$(openssl rand -hex 16)"
 ```
 
-**Step 2 — Add PostgreSQL to docker-compose.yml**
+**Step 2 — Add PostgreSQL on sparky-01**
 
-Rather than a standalone `docker run`, declare it as a service so the entire stack is managed as a single unit:
+Run a Postgres container on `sparky-01` (the same node as LiteLLM). Avoid putting it on `sparky-02` — Postgres latency on the inference path defeats the point of backend isolation.
 
 ```yaml
   litellm-db:
@@ -253,7 +284,7 @@ sudo systemctl status litellm
 
 **Accessing the UI**
 
-Navigate to `http://YOUR_SERVER_IP:8001/ui`. Username: `admin`. Password: your `master_key` value.
+Navigate to `http://YOUR_NODE1_MGMT_IP:8001/ui`. Username: `admin`. Password: your `master_key` value.
 
 ## Container-to-host connectivity
 

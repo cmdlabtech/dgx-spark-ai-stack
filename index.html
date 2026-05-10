@@ -391,7 +391,7 @@
 <aside>
   <div class="sidebar-logo">
     <div class="wordmark">NVIDIA DGX<br>At-Home AI Stack</div>
-    <div class="sub">Split-Trust Shared Compute · arm64 · v3.0</div>
+    <div class="sub">Split-Trust Shared Compute · arm64 · v3.2</div>
   </div>
   <nav class="nav-section">
     <div class="nav-label">Overview</div>
@@ -954,6 +954,7 @@ docker run -d \
   -e GLOO_SOCKET_IFNAME="${DAC_IFACE}" \
   -e RAY_ADDRESS="${HOST_IP}:6379" \
   -v "${HOME}/.cache/huggingface:/root/.cache/huggingface" \
+  -v "${HOME}/sparky-ai-stack/vllm-compile-cache:/root/.cache/vllm/torch_compile_cache" \
   --restart unless-stopped \
   vllm-spark:26.04 \
   bash -lc '
@@ -1024,6 +1025,7 @@ docker run -d \
   -e NCCL_SOCKET_IFNAME="${DAC_IFACE}" \
   -e GLOO_SOCKET_IFNAME="${DAC_IFACE}" \
   -v "${HOME}/.cache/huggingface:/root/.cache/huggingface" \
+  -v "${HOME}/sparky-ai-stack/vllm-compile-cache:/root/.cache/vllm/torch_compile_cache" \
   --restart unless-stopped \
   vllm-spark:26.04 \
   bash -lc '
@@ -1044,6 +1046,24 @@ chmod +x ~/sparky-ai-stack/scripts/vllm-worker.sh</code></pre>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
       <div>Both containers run with <code>--network host</code> and <code>--ipc host</code> so NCCL and Ray see the real DAC interface and shared memory. <code>VLLM_HOST_IP</code> is set to each node's <strong>DAC</strong> IP — see the warning under Step 1d for why this is required.</div>
+    </div>
+
+    <h3>Step 1c-bis — Persist the vLLM compile cache (both nodes)</h3>
+    <p>On first launch, GPTQ-Marlin and <code>torch.compile</code> run JIT compilation that takes <strong>10–20 minutes silently</strong> per node — the log will appear to stall after the engine reports weights loaded. The compiled artifacts land at <code>/root/.cache/vllm/torch_compile_cache</code> inside the container. Because the container is ephemeral (we recreate it on every <code>vllm-head.sh</code> / <code>vllm-worker.sh</code> run), that cache is lost every time and the cluster re-pays the full compile cost on every restart.</p>
+    <p>Fix: mount a host directory into the container so the cache survives container recreation. The two <code>docker run</code> commands above already include the mount:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>-v "${HOME}/sparky-ai-stack/vllm-compile-cache:/root/.cache/vllm/torch_compile_cache"</code></pre>
+    </div>
+    <p>Create the host directory on each node before the first launch, otherwise Docker will create it root-owned and subsequent unprivileged access will fail:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>mkdir -p ~/sparky-ai-stack/vllm-compile-cache   # run on BOTH spark-01 and spark-02</code></pre>
+    </div>
+    <div class="verify">After the first successful load the cache is populated. All subsequent starts skip compilation entirely and load in ~5 minutes instead of 20–30.</div>
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <div>The cache is <strong>model and quantization specific</strong>. If you switch models (for example, falling back from the 122B GPTQ-Int4 to the 35B FP8), clear the cache directory first on both nodes — <code>rm -rf ~/sparky-ai-stack/vllm-compile-cache/*</code> — or you'll see kernel-shape mismatches at engine init.</div>
     </div>
 
     <h3>Step 1d — Launch order: worker first, then head</h3>
@@ -1220,6 +1240,69 @@ sudo systemctl status litellm --no-pager</code></pre>
     </div>
     <div class="verify">Verify from spark-01: <code>curl http://localhost:8001/v1/models</code> (no key needed if you didn't set <code>master_key</code> yet, otherwise use <code>-H "Authorization: Bearer YOUR_MASTER_KEY"</code>)</div>
     <div class="callout note"><span class="callout-icon">ℹ</span><span>Your LiteLLM should NOT be reachable from <code>spark-02</code>. If you are using Tailscale ACLs (Step 06), only your tailnet should reach <code>spark-01:8001</code>. The client uses their own LiteLLM (Step 03) — they never call yours.</span></div>
+
+    <h3>Step 2d — PostgreSQL for the Admin UI and virtual keys (required)</h3>
+    <p>The LiteLLM Admin UI and virtual-key generation both require PostgreSQL. <strong>SQLite is not supported</strong> — LiteLLM's Prisma schema is hardcoded for PostgreSQL, and the UI route returns <code>table public.LiteLLM_UserTable does not exist</code> if you try to point it at SQLite. The SQLite block in the config above is fine for request logging; it is <em>not</em> a substitute for the metadata DB.</p>
+
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — bring up the litellm-db postgres container</h4>
+    <p>On spark-01 the postgres container lives in <code>~/sparky-ai-stack/docker-compose.yml</code> alongside <code>n8n</code> and <code>hermes-webui</code>:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>services:
+  litellm-db:
+    image: postgres:16
+    container_name: litellm-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=litellm
+      - POSTGRES_DB=litellm
+    volumes:
+      - litellm_db:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  litellm_db:</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>cd ~/sparky-ai-stack
+docker compose up -d litellm-db
+docker compose ps litellm-db</code></pre>
+    </div>
+
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — apply the Prisma schema</h4>
+    <p>Install the Prisma CLI if missing, then push the LiteLLM Prisma schema into the new database. This must run once on spark-01 before LiteLLM starts, otherwise the UI will return <code>table public.LiteLLM_UserTable does not exist</code>.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>pip install prisma --break-system-packages
+
+DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
+  prisma db push \
+  --schema /home/YOUR_USERNAME/.local/lib/python3.12/site-packages/litellm/proxy/schema.prisma</code></pre>
+    </div>
+    <div class="verify">Expected: <code>Your database is now in sync with your Prisma schema. Done in &lt;Ns&gt;</code></div>
+
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — wire the database into litellm-config.yaml</h4>
+    <p>Add the <code>database_url</code> to <code>general_settings</code> (<strong>not</strong> at the top level — see troubleshooting) and enable model-in-DB storage so the UI can edit the model list:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>general_settings:
+  master_key: YOUR_MASTER_KEY
+  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
+
+litellm_settings:
+  store_model_in_db: true</code></pre>
+    </div>
+    <p>Restart and verify:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo systemctl restart litellm
+sudo systemctl status litellm --no-pager
+curl -s http://localhost:8001/health/readiness | head</code></pre>
+    </div>
+    <div class="verify">UI is at <code>http://spark-01:8001/ui</code> — log in with <code>admin</code> and your master key. Generate per-service virtual keys from the <strong>Virtual Keys</strong> tab (one for Open WebUI, one for n8n, one for Hermes — never paste the master key into a downstream service).</div>
   </div>
 
   <div class="step" id="step3">
@@ -1323,6 +1406,54 @@ sudo systemctl status litellm --no-pager</code></pre>
   -d '{"model":"qwen3.5-122b","messages":[{"role":"user","content":"hi from client"}],"max_tokens":16}'</code></pre>
     </div>
     <div class="verify">On spark-01, <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm-qwen-122b</code> on spark-01 — you should see the new request reach the vLLM head.</div>
+
+    <h3>Step 3d — PostgreSQL for the client Admin UI and virtual keys (required)</h3>
+    <p>Same constraint as Step 02: the LiteLLM Admin UI and virtual-key generation require PostgreSQL — SQLite is not supported because LiteLLM's Prisma schema is hardcoded for PostgreSQL. spark-02 doesn't run a docker-compose stack, so we use a standalone postgres container.</p>
+
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — standalone postgres container</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>docker run -d --name litellm-db --restart unless-stopped \
+  -e POSTGRES_USER=litellm \
+  -e POSTGRES_PASSWORD=litellm \
+  -e POSTGRES_DB=litellm \
+  -p 5432:5432 \
+  -v litellm_db:/var/lib/postgresql/data \
+  postgres:16</code></pre>
+    </div>
+
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — apply the Prisma schema</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>pip install prisma --break-system-packages
+
+DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
+  prisma db push \
+  --schema /home/YOUR_USERNAME/.local/lib/python3.12/site-packages/litellm/proxy/schema.prisma</code></pre>
+    </div>
+    <div class="verify">Expected: <code>Your database is now in sync with your Prisma schema.</code></div>
+
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — wire the database into the client litellm-config.yaml</h4>
+    <p><code>database_url</code> goes under <code>general_settings</code>, alongside the existing <code>master_key</code>. Add <code>store_model_in_db: true</code> under <code>litellm_settings</code>:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>general_settings:
+  master_key: YOUR_CLIENT_MASTER_KEY
+  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
+
+litellm_settings:
+  store_model_in_db: true</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo systemctl restart litellm
+sudo systemctl status litellm --no-pager</code></pre>
+    </div>
+    <div class="verify">Client UI is at <code>http://spark-02:8001/ui</code> — log in with <code>admin</code> and the client master key. The client generates their own per-app virtual keys from the <strong>Virtual Keys</strong> tab; you never see them.</div>
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <div>If a virtual key was generated <em>before</em> the schema was fully applied (e.g. you generated a key, then re-ran <code>prisma db push</code>), the old key will appear in the UI but lookups will fail with <code>Virtual key not found in LiteLLM_VerificationTokenTable</code>. Delete it in the UI, restart LiteLLM, then generate a new one.</div>
+    </div>
   </div>
 
   <div class="step" id="step4">
@@ -1415,6 +1546,62 @@ Rules:
 - Match response length to question complexity
 - To enable extended reasoning on a specific query, prefix with /think</code></pre>
     </div>
+
+    <h3>Step 5b — All client services on sparky-02 at a glance</h3>
+    <p>Three client-facing services run on <code>sparky-02</code>: <strong>LiteLLM</strong> (Step 03), <strong>Open WebUI</strong> (Step 05 above), and <strong>n8n</strong>. All three are reachable on the client's tailnet via <code>tag:hjp-ai</code> (see Step 06). The n8n container below is not covered elsewhere — bring it up after the client's LiteLLM is healthy:</p>
+
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — n8n container</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>docker run -d --name n8n --restart unless-stopped \
+  -p 5678:5678 \
+  -e N8N_HOST=0.0.0.0 \
+  -e N8N_PORT=5678 \
+  -e N8N_PROTOCOL=http \
+  -e WEBHOOK_URL=http://sparky-02:5678/ \
+  -e N8N_SECURE_COOKIE=false \
+  -e NODE_ENV=production \
+  -v n8n_data:/home/node/.n8n \
+  --add-host=host.docker.internal:host-gateway \
+  n8nio/n8n:latest</code></pre>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Service</th><th>Port</th><th>How it runs</th><th>Backend / api_base</th><th>Auth secret</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>LiteLLM</strong></td>
+            <td><code>8001</code></td>
+            <td>systemd (same structure as sparky-01)</td>
+            <td><code>http://10.100.100.1:8000/v1</code> (DAC link)</td>
+            <td>Client master key at <code>~/.sparky02-litellm-key</code> (<code>chmod 600</code>)</td>
+          </tr>
+          <tr>
+            <td><strong>Open WebUI</strong></td>
+            <td><code>8080</code></td>
+            <td><code>docker run --restart unless-stopped</code></td>
+            <td><code>OPENAI_API_BASE_URL=http://10.10.86.22:8001/v1</code></td>
+            <td>Client master key (or virtual key)</td>
+          </tr>
+          <tr>
+            <td><strong>n8n</strong></td>
+            <td><code>5678</code></td>
+            <td><code>docker run --restart unless-stopped</code></td>
+            <td><code>WEBHOOK_URL=http://sparky-02:5678/</code></td>
+            <td>n8n owner account (set on first login)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <div>All three services are reachable from the client's tailnet via <code>tag:hjp-ai</code> on TCP 8001 / 8080 / 5678 (see the ACL grants in Step 06). They are <em>not</em> reachable from your tailnet — split-trust by construction.</div>
+    </div>
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <div>Store the client master key at <code>~/.sparky02-litellm-key</code> with <code>chmod 600</code>. Reference it from the LiteLLM systemd unit via <code>EnvironmentFile=</code> rather than embedding it in <code>litellm-config.yaml</code>, so the file on disk does not contain the secret.</div>
+    </div>
   </div>
 
   <div class="step" id="step6">
@@ -1464,13 +1651,52 @@ tailscale ip -4   # note this address — your apps will be reachable here</code
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up \
-  --hostname=spark-02 \
-  --advertise-tags=tag:client \
-  --login-server=https://login.tailscale.com   # or the client's chosen control plane
+  --authkey=&lt;client-auth-key&gt; \
+  --hostname=sparky-02 \
+  --advertise-tags=tag:hjp-ai
 
 tailscale ip -4   # client's apps will be reachable here, only on their tailnet</code></pre>
     </div>
     <p>The client's tailnet ACLs are theirs to author. Mirror the structure above with their own users and tags. The client should expose <code>:8080</code> (their Open WebUI), <code>:8001</code> (their LiteLLM, only if they want programmatic access from elsewhere), and <code>:5678</code> (their n8n).</p>
+
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <div><strong>Disable key expiry</strong> for <code>sparky-02</code> in the client's Tailscale admin (Machines → sparky-02 → ⋯ → Disable key expiry). Server nodes shouldn't drop off the tailnet on a 90-day timer; the auth key rotation should be a deliberate action.</div>
+    </div>
+
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### Client tailnet ACL — replace the default allow-all</h4>
+    <p>The default Tailscale policy allows everything between everyone. Replace it with this <code>grants</code>-based policy. It leaves all non-server devices unrestricted (so the client's existing fleet is untouched), keeps <code>tag:hjp-dell-server</code> open (their existing Dell server stays as-is), and restricts <code>tag:hjp-ai</code> (this node) to only the three service ports — 8001 (LiteLLM), 8080 (Open WebUI), 5678 (n8n).</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>{
+  "grants": [
+    {
+      "src": ["*"],
+      "dst": ["autogroup:member"],
+      "ip": ["*"]
+    },
+    {
+      "src": ["*"],
+      "dst": ["tag:hjp-dell-server"],
+      "ip": ["*"]
+    },
+    {
+      "src": ["*"],
+      "dst": ["tag:hjp-ai"],
+      "ip": ["tcp:8001", "tcp:8080", "tcp:5678"]
+    }
+  ],
+  "tagOwners": {
+    "tag:hjp-ai":         ["autogroup:admin"],
+    "tag:hjp-dell-server":["autogroup:admin"]
+  }
+}</code></pre>
+    </div>
+    <div class="verify">After applying, from a client device on the same tailnet: <code>nc -zv sparky-02 8001</code>, <code>nc -zv sparky-02 8080</code>, and <code>nc -zv sparky-02 5678</code> all succeed. <code>nc -zv sparky-02 22</code> (SSH) and <code>nc -zv sparky-02 8000</code> (raw vLLM) both fail — proving the ACL is in effect.</div>
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <div><code>tag:hjp-ai</code> is intentionally not given <code>tcp:8000</code>. Port 8000 is the raw, unauthenticated vLLM head on <code>spark-01</code> reached over the DAC; it must never be exposed onto the client's tailnet. The client only ever calls their own LiteLLM on <code>sparky-02:8001</code>.</div>
+    </div>
 
     <h3>Lock down host firewalls</h3>
     <p>Tailscale ACLs are policy; the host firewall is enforcement. Apply ufw rules on <strong>both</strong> nodes so that even if Tailscale is misconfigured, ports 8000 and 8001 cannot leak to the wrong network.</p>
@@ -1918,6 +2144,27 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-sym"><span>Cause</span><span>The chat template was rendered with <code>preserve_thinking: true</code> (or any other flag that exposes the visible CoT track). The Qwen3.5 family produces extended reasoning whenever thinking is enabled at template time, and conversational queries trigger excessive deliberation under that setting.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Set <code>--default-chat-template-kwargs '{"enable_thinking": false}'</code> on the <code>vllm serve</code> command (the Step 01 head script does this). Users can opt into extended reasoning per-message by prefixing a prompt with <code>/think</code>. This matches the behavior the recommended Open WebUI system prompt (Step 05) is calibrated for.</span></div>
     </div>
+
+    <div class="issue">
+      <div class="issue-title">LiteLLM UI shows: <code>table public.LiteLLM_UserTable does not exist</code></div>
+      <div class="issue-sym"><span>Symptom</span><span>The LiteLLM Admin UI loads but every page (Users, Virtual Keys, Models) returns an error referencing a missing <code>LiteLLM_*</code> table in the <code>public</code> schema.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>The Postgres database is up and the connection succeeded, but the Prisma schema has not been pushed yet — the database is empty.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Run <code>prisma db push</code> against the LiteLLM Prisma schema:<br><code>DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" prisma db push --schema /home/YOUR_USERNAME/.local/lib/python3.12/site-packages/litellm/proxy/schema.prisma</code> — then restart LiteLLM. See Step 2d / 3d.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">LiteLLM UI shows: <code>Not connected to DB</code></div>
+      <div class="issue-sym"><span>Symptom</span><span>The Admin UI banner reports "Not connected to DB" even though Postgres is running and reachable on <code>localhost:5432</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Either (a) <code>database_url</code> is at the top level of <code>litellm-config.yaml</code> instead of nested under <code>general_settings</code> — LiteLLM only reads it from <code>general_settings</code>, or (b) the config still points at SQLite. SQLite is not supported for the UI; the Prisma schema is hardcoded for PostgreSQL.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Move the entry under <code>general_settings</code>:<br><code>general_settings:<br>&nbsp;&nbsp;database_url: "postgresql://litellm:litellm@localhost:5432/litellm"</code><br>and restart LiteLLM. Confirm with <code>journalctl -u litellm -n 50 --no-pager</code> — startup should report a successful Postgres connection.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Virtual key not found in <code>LiteLLM_VerificationTokenTable</code></div>
+      <div class="issue-sym"><span>Symptom</span><span>A virtual key generated from the UI is rejected on use with a <code>VerificationToken not found</code> error, but the key is still visible in the <strong>Virtual Keys</strong> tab.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>The key was generated against the database before the schema was fully initialized (e.g. you generated a key, then re-ran <code>prisma db push</code>, which dropped/recreated the verification token table).</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Delete the orphaned key in the UI, restart LiteLLM (<code>sudo systemctl restart litellm</code>), then generate a fresh key. The new key will be inserted into the current schema and will validate correctly.</span></div>
+    </div>
   </div>
 
   <div class="step" id="known-issues">
@@ -1954,6 +2201,13 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-sym"><span>Cause</span><span>A YAML syntax error causes Hermes to silently fall back to <code>.env</code> values. No error is shown at startup, so the misconfiguration is invisible.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Always validate YAML after editing: <code>python3 -c "import yaml; yaml.safe_load(open('/home/YOUR_USERNAME/.hermes/config.yaml')); print('YAML valid')"</code>. If the command prints anything other than <code>YAML valid</code>, fix the syntax before restarting.</span></div>
     </div>
+    <div class="issue">
+      <div class="issue-title">Hermes crashes on startup — MCP server connection failing</div>
+      <div class="issue-sym"><span>Symptom</span><span>Hermes exits during startup with a stack trace mentioning <code>mcp_servers</code> or a failed MCP client handshake. Logs reference an <code>asyncio</code> error or a TCP/stdio connection that never opened.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>This stack proxies all MCP traffic through LiteLLM (see Step 02). Hermes does not need a direct <code>mcp_servers</code> block in <code>~/.hermes/config.yaml</code> — it talks to LiteLLM's MCP endpoint over the LiteLLM API. A <code>mcp_servers</code> block in Hermes config is only correct in a <strong>direct-MCP</strong> (non-LiteLLM-proxied) topology, and on this stack it points Hermes at servers it can't reach.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Remove the <code>mcp_servers</code> block from <code>~/.hermes/config.yaml</code> entirely. Validate the YAML, then restart: <code>systemctl --user restart hermes</code> (or whichever supervisor you use). MCP tool calls continue to work because LiteLLM is in the path.</span></div>
+    </div>
+
     <div class="issue">
       <div class="issue-title">custom_providers indentation error at startup</div>
       <div class="issue-sym"><span>Symptom</span><span>Hermes fails to start with a YAML parse error after adding a custom provider to <code>~/.hermes/config.yaml</code>.</span></div>

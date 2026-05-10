@@ -494,7 +494,7 @@
         <text class="dts" x="825" y="49" text-anchor="middle" dominant-baseline="central">browser · over their tailnet</text>
 
         <!-- ============ LAYER 1: APPLICATION STACKS ============ -->
-        <text class="lyr" x="20" y="92">Layer 1 · Application stacks (separate ownership)</text>
+        <text class="lyr" x="20" y="80">Layer 1 · Application stacks (separate ownership)</text>
 
         <!-- sparky-01 (your) hardware boundary -->
         <rect x="20" y="100" width="520" height="248" rx="10" class="dhw1"/>
@@ -527,10 +527,10 @@
         <text class="dts" x="280" y="300" text-anchor="middle" dominant-baseline="central">api_base = http://localhost:8000/v1</text>
         <text class="dts" x="280" y="316" text-anchor="middle" dominant-baseline="central" fill="#16a34a">↑ from your apps · ↓ to shared vLLM</text>
 
-        <!-- Arrows: your apps → your LiteLLM -->
-        <line x1="112" y1="212" x2="160" y2="244" class="dl" marker-end="url(#arrow)"/>
+        <!-- Arrows: your apps → your LiteLLM (straight-down) -->
+        <line x1="112" y1="212" x2="112" y2="244" class="dl" marker-end="url(#arrow)"/>
         <line x1="280" y1="212" x2="280" y2="244" class="dl" marker-end="url(#arrow)"/>
-        <line x1="448" y1="212" x2="400" y2="244" class="dl" marker-end="url(#arrow)"/>
+        <line x1="448" y1="212" x2="448" y2="244" class="dl" marker-end="url(#arrow)"/>
 
         <!-- sparky-02 (client) hardware boundary -->
         <rect x="560" y="100" width="520" height="248" rx="10" class="dhw2"/>
@@ -559,21 +559,21 @@
         <text class="dts" x="820" y="300" text-anchor="middle" dominant-baseline="central">api_base = http://198.51.100.1:8000/v1 (over DAC)</text>
         <text class="dts" x="820" y="316" text-anchor="middle" dominant-baseline="central" fill="#16a34a">↑ from client apps · ↓ to shared vLLM</text>
 
-        <!-- Arrows: client apps → client LiteLLM -->
-        <line x1="720" y1="212" x2="700" y2="244" class="dl" marker-end="url(#arrow)"/>
-        <line x1="948" y1="212" x2="940" y2="244" class="dl" marker-end="url(#arrow)"/>
+        <!-- Arrows: client apps → client LiteLLM (straight-down) -->
+        <line x1="720" y1="212" x2="720" y2="244" class="dl" marker-end="url(#arrow)"/>
+        <line x1="948" y1="212" x2="948" y2="244" class="dl" marker-end="url(#arrow)"/>
 
-        <!-- Users → apps (your) -->
-        <line x1="200" y1="60" x2="120" y2="158" class="dl" marker-end="url(#arrow)"/>
+        <!-- Users → apps (your) — land on actual app centers -->
+        <line x1="112" y1="60" x2="112" y2="158" class="dl" marker-end="url(#arrow)"/>
         <line x1="280" y1="60" x2="280" y2="158" class="dl" marker-end="url(#arrow)"/>
-        <line x1="380" y1="60" x2="440" y2="158" class="dl" marker-end="url(#arrow)"/>
-        <!-- Users → apps (client) -->
-        <line x1="730" y1="60" x2="730" y2="158" class="dl" marker-end="url(#arrow)"/>
-        <line x1="900" y1="60" x2="950" y2="158" class="dl" marker-end="url(#arrow)"/>
+        <line x1="448" y1="60" x2="448" y2="158" class="dl" marker-end="url(#arrow)"/>
+        <!-- Users → apps (client) — land on actual app centers -->
+        <line x1="720" y1="60" x2="720" y2="158" class="dl" marker-end="url(#arrow)"/>
+        <line x1="948" y1="60" x2="948" y2="158" class="dl" marker-end="url(#arrow)"/>
 
         <!-- Vertical isolation barrier between the two stacks (visual cue) -->
-        <line x1="550" y1="84" x2="550" y2="354" stroke="#d1d5db" stroke-width="1" stroke-dasharray="2 4"/>
-        <text x="550" y="78" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#6b7280">— application-layer isolation —</text>
+        <line x1="550" y1="100" x2="550" y2="348" stroke="#d1d5db" stroke-width="1" stroke-dasharray="2 4"/>
+        <text x="550" y="232" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#6b7280" transform="rotate(-90 550 232)">— application-layer isolation —</text>
 
         <!-- ============ LAYER 2: SHARED COMPUTE POOL ============ -->
         <text class="lyr" x="20" y="386">Layer 2 · Shared compute pool (TP=2 over Ray on DAC)</text>
@@ -606,16 +606,21 @@
         <text x="550" y="763" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#9a3412">NCCL allreduce (tensor activations) · Ray control · NOT routed through either tailnet</text>
         <text x="550" y="777" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#9a3412">private physical hardware · separate from mgmt LAN and Tailscale overlays</text>
 
-        <!-- Arrows from each LiteLLM down into the shared pool -->
-        <line x1="280" y1="324" x2="280" y2="438" class="dl" marker-end="url(#arrow)"/>
-        <text x="288" y="380" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">localhost:8000</text>
+        <!-- Arrows from each LiteLLM down to the layer 2 boundary, then continue inside the pool to the head -->
+        <line x1="280" y1="324" x2="280" y2="394" class="dl"/>
+        <line x1="280" y1="402" x2="280" y2="438" class="dl" marker-end="url(#arrow)"/>
+        <rect x="240" y="358" width="120" height="18" rx="3" fill="#ffffff" stroke="#e5e7eb"/>
+        <text x="300" y="370" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#374151">localhost:8000</text>
 
-        <line x1="820" y1="324" x2="820" y2="438" class="dl" marker-end="url(#arrow)"/>
-        <text x="828" y="380" font-family="Inter,sans-serif" font-size="10" fill="#6b7280">198.51.100.1:8000 (DAC)</text>
+        <line x1="820" y1="324" x2="820" y2="394" class="dl"/>
+        <line x1="820" y1="402" x2="820" y2="438" class="dl" marker-end="url(#arrow)"/>
+        <rect x="744" y="358" width="170" height="18" rx="3" fill="#ffffff" stroke="#e5e7eb"/>
+        <text x="829" y="370" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#374151">198.51.100.1:8000 (over DAC)</text>
 
-        <!-- NCCL collective arrow between head and worker (within pool) -->
-        <path d="M 1010 480 C 1060 480, 1060 580, 1010 580" stroke="#ea580c" stroke-width="3" fill="none"/>
-        <text x="1075" y="530" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="600" fill="#9a3412">NCCL ↕</text>
+        <!-- NCCL collective arrow between head and worker (drawn OUTSIDE the boxes, head/worker right edge is x=1020) -->
+        <path d="M 1030 480 C 1060 480, 1060 580, 1030 580" stroke="#ea580c" stroke-width="3" fill="none"/>
+        <text x="1056" y="534" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#9a3412">NCCL</text>
+        <text x="1056" y="546" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" font-weight="600" fill="#9a3412">↕</text>
 
         <!-- ============ LAYER LEGEND ============ -->
         <text class="lyr" x="20" y="912">Boundary key · ─ ─ ─ blue = sparky-01 hardware · purple = sparky-02 hardware · teal = Tailscale overlay · orange = DAC physical link</text>

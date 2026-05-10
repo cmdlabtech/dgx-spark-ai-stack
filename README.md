@@ -47,9 +47,11 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
 | Client Tailscale | `spark-02` | Client — their ACLs | — |
 | Telegram gateway (Hermes) | `spark-01` | You | — |
 
-**Default model:** `Qwen/Qwen3.6-35B-A3B-FP8` (FP8 MoE, ~97 GB resident per node at `--gpu-memory-utilization 0.80`).
+**Production model:** `Qwen/Qwen3.5-122B-A10B-GPTQ-Int4` (GPTQ-Int4 MoE, ~96 GB resident per node at `--gpu-memory-utilization 0.80`; ≈34 GB weights/node + KV cache). Daily driver — meaningfully better quality than the bootstrap 35B and fits comfortably in the clustered 256 GB pool.
 
-**Optional upgrade:** `Qwen/Qwen3.5-122B-A10B-GPTQ-Int4` — fits comfortably in clustered memory at INT4 (~30 GB per node).
+**Bootstrap fallback:** `Qwen/Qwen3.6-35B-A3B-FP8` — the model used to bring the cluster up the first time; useful for fast iteration on Ray/NCCL/DAC wiring before committing to the longer 122B load.
+
+**Tested but does not fit:** `Qwen/Qwen3-235B-A22B-FP8` — at ~117.5 GB/node FP8 there is no room for KV cache; Ray OOMs the worker. Use a GPTQ-Int4 quantization or stick with the 122B above.
 
 ## Hardware
 
@@ -87,7 +89,7 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
 │   vLLM head (Ray master) :8000  · TP rank 0 · spark-01             │
 │   vLLM Ray worker               · TP rank 1 · spark-02             │
 │                                                                    │
-│   Qwen/Qwen3.6-35B-A3B-FP8 — 256 GB unified memory                 │
+│   Qwen/Qwen3.5-122B-A10B-GPTQ-Int4 — 256 GB unified memory         │
 │                                                                    │
 │   NCCL allreduce on DAC: enp1s0f0np0 · MTU 9216 · 198.51.100.0/30  │
 │   ↑ private physical hardware · NOT routed through any tailnet ↑   │
@@ -160,7 +162,7 @@ Deploying Syncthing and the MCP pipeline on a separate Proxmox LXC rather than o
 
 ### Why vLLM runs outside Docker Compose
 
-vLLM is started with standalone `docker run` commands on each node (driven by per-node startup scripts in `~/sparky-ai-stack/scripts/`) rather than being declared as a service in any Compose file. This is intentional. Loading a 35B FP8 model across two nodes takes several minutes and saturates GPU memory on both nodes for the duration — restarting the cluster is expensive. Keeping it outside Compose means:
+vLLM is started with standalone `docker run` commands on each node (driven by per-node startup scripts in `~/sparky-ai-stack/scripts/`) rather than being declared as a service in any Compose file. This is intentional. Loading the 122B GPTQ-Int4 model across two nodes takes several minutes (and on a cold cache, the GPTQ-Marlin JIT compile silently adds another 10–20 minutes) and saturates GPU memory on both nodes for the duration — restarting the cluster is expensive. Keeping it outside Compose means:
 
 - `docker compose up/down/restart` on n8n or hermes-webui has zero effect on the vLLM cluster
 - Iterating on workflow automation, the agent UI, or compose config doesn't force a model reload on either node

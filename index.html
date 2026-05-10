@@ -443,7 +443,7 @@
     <div class="stack-pills">
       <span class="pill blue">2× DGX Spark</span>
       <span class="pill blue">vLLM TP=2 · Ray</span>
-      <span class="pill blue">Qwen3.6-35B-A3B-FP8</span>
+      <span class="pill blue">Qwen3.5-122B-A10B-GPTQ-Int4</span>
       <span class="pill">LiteLLM × 2</span>
       <span class="pill">Open WebUI × 2</span>
       <span class="pill">n8n × 2</span>
@@ -603,8 +603,8 @@
 
         <!-- Model -->
         <rect x="60" y="762" width="980" height="56" rx="6" class="vllm-rect" fill="#fffaf0"/>
-        <text class="title-text" x="550" y="782" text-anchor="middle" dominant-baseline="central">Qwen/Qwen3.6-35B-A3B-FP8 — 256 GB unified memory pool</text>
-        <text class="sub-text" x="550" y="800" text-anchor="middle" dominant-baseline="central">alt: Qwen/Qwen3.5-122B-A10B-GPTQ-Int4</text>
+        <text class="title-text" x="550" y="782" text-anchor="middle" dominant-baseline="central">Qwen/Qwen3.5-122B-A10B-GPTQ-Int4 — 256 GB unified memory pool</text>
+        <text class="sub-text" x="550" y="800" text-anchor="middle" dominant-baseline="central">bootstrap fallback: Qwen/Qwen3.6-35B-A3B-FP8</text>
 
         <!-- DAC link bar -->
         <rect x="60" y="838" width="980" height="74" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
@@ -859,20 +859,25 @@ ssh spark-02 hostname    # from spark-01</code></pre>
     <div class="step-header"><span class="step-num">STEP 01</span><h2>vLLM clustered — TP=2 over Ray on the DAC link</h2></div>
     <p>vLLM is the only clustered service. The model runs with tensor-parallel size 2: <code>spark-01</code> hosts the Ray master and the vLLM head process; <code>spark-02</code> hosts a Ray worker. NCCL traffic for tensor-parallel collectives flows over the DAC link (<code>enp1s0f0np0</code>, MTU 9216).</p>
 
-    <h3>Default model and upgrade path</h3>
+    <h3>Production model and bootstrap fallback</h3>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Track</th><th>Model</th><th>Notes</th></tr></thead>
         <tbody>
           <tr>
-            <td><strong>Default</strong></td>
-            <td><code>Qwen/Qwen3.6-35B-A3B-FP8</code></td>
-            <td>Proven on this hardware. 35B MoE with A3B activation, FP8 quantized. ~97 GB resident on each node at <code>--gpu-memory-utilization 0.80</code>.</td>
+            <td><strong>Production (default)</strong></td>
+            <td><code>Qwen/Qwen3.5-122B-A10B-GPTQ-Int4</code></td>
+            <td>The intended daily driver. Larger MoE (122B / A10B), GPTQ-Int4 quantized — meaningfully better quality than the 35B, still fits comfortably in the clustered 256 GB pool (~34 GB weights per node + KV cache). At <code>--gpu-memory-utilization 0.80</code> the <code>RayWorkerWrapper</code> shows roughly <strong>~96 GB</strong> resident on each node (weights + KV cache). On a cold cache, the GPTQ-Marlin JIT compile adds ~10–20 minutes to first launch — see Cluster issues.</td>
           </tr>
           <tr>
-            <td>Optional upgrade</td>
-            <td><code>Qwen/Qwen3.5-122B-A10B-GPTQ-Int4</code></td>
-            <td>Larger MoE (122B / A10B), better quality, fits comfortably in clustered memory (~30&nbsp;GB per node at INT4). If the cache is already in <code>~/.cache/huggingface</code>, switching is a flag change. Use this when you want more capability at slight latency cost.</td>
+            <td>Bootstrap fallback</td>
+            <td><code>Qwen/Qwen3.6-35B-A3B-FP8</code></td>
+            <td>The model used to bring the cluster up the first time. 35B MoE / A3B activation, FP8 quantized. Useful for fast iteration on cluster wiring (Ray, NCCL, DAC) before committing to the longer 122B load. Switching back is a flag change — see "Bootstrap fallback" below.</td>
+          </tr>
+          <tr>
+            <td>Tested but does not fit</td>
+            <td><code>Qwen/Qwen3-235B-A22B-FP8</code></td>
+            <td>Does not fit. 235B at FP8 ≈ 235 GB total ≈ 117.5 GB per node — leaves no room for KV cache or OS on a 121 GB usable per-node pool. Ray kills the worker with an <code>OutOfMemoryError</code> at the 95% memory threshold. Use a GPTQ-Int4 quantization (a 235B INT4 lands at ~58 GB/node) or, for daily use, the 122B above.</td>
           </tr>
         </tbody>
       </table>
@@ -900,10 +905,10 @@ docker build -f Dockerfile.vllm-spark -t vllm-spark:26.04 .</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code># Optional: pre-fetch the model on spark-01 (or just let vLLM pull it later)
-huggingface-cli download Qwen/Qwen3.6-35B-A3B-FP8 \
-  --local-dir-use-symlinks False \
-  --resume-download
+      <pre><code># Pre-fetch the production 122B GPTQ-Int4 weights on spark-01.
+# Run as your normal user (e.g. cameron) — NOT root. See callout below.
+hf download Qwen/Qwen3.5-122B-A10B-GPTQ-Int4 \
+  --local-dir ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-122B-A10B-GPTQ-Int4
 
 # Rsync the cache to spark-02 over the DAC link
 rsync -avh --progress \
@@ -913,7 +918,11 @@ rsync -avh --progress \
     </div>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
-      <div>Sending the cache over the DAC keeps it off your mgmt LAN — a 35B FP8 model is &gt;30&nbsp;GB. Verify the rsync ran across <code>enp1s0f0np0</code> on <code>spark-02</code> with <code>nload enp1s0f0np0</code> in another shell during the transfer.</div>
+      <div>Sending the cache over the DAC keeps it off your mgmt LAN — the 122B GPTQ-Int4 weights are roughly 60&nbsp;GB. Verify the rsync ran across <code>enp1s0f0np0</code> on <code>spark-02</code> with <code>nload enp1s0f0np0</code> in another shell during the transfer.</div>
+    </div>
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <div><strong>Run <code>hf download</code> as your normal user, not <code>root</code>.</strong> The legacy <code>huggingface-cli</code> command is deprecated; use <code>hf download</code> from the new <code>huggingface_hub</code> CLI. If you previously ran the download as root, the target directory will be root-owned and subsequent runs as a normal user fail with <code>permission denied</code>. Fix: <code>sudo rm -rf ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-122B-A10B-GPTQ-Int4</code>, then recreate it and rerun the download as your user.</div>
     </div>
 
     <h3>Step 1c — Startup scripts on each node</h3>
@@ -931,10 +940,10 @@ set -euo pipefail
 HOST_IP="YOUR_NODE1_DAC_IP"
 DAC_IFACE="enp1s0f0np0"
 
-docker rm -f vllm-qwen-35b 2&gt;/dev/null || true
+docker rm -f vllm-qwen-122b 2&gt;/dev/null || true
 
 docker run -d \
-  --name vllm-qwen-35b \
+  --name vllm-qwen-122b \
   --network host \
   --ipc host \
   --gpus all \
@@ -955,28 +964,35 @@ docker run -d \
       --dashboard-host=0.0.0.0 \
       --num-gpus=1 \
       --block &amp;
-    sleep 5
+    # Was 20s previously — bumped to 60s so a simultaneous power-loss reboot of
+    # both nodes still gives the worker container time to come up and register
+    # before vLLM begins engine init. The until-loop below is the real guard,
+    # but the longer initial sleep avoids racing the loop on a cold boot.
+    sleep 60
     until ray status &gt;/dev/null 2&gt;&amp;1; do sleep 1; done
     echo "[head] ray up, waiting for worker to join..."
     until [ "$(ray status 2&gt;/dev/null | grep -c '"'"'1.0/1.0 GPU'"'"')" -gt 1 ] || \
           [ "$(ray status 2&gt;/dev/null | grep -c '"'"'GPU'"'"')" -ge 2 ]; do sleep 2; done
     echo "[head] worker joined, starting vllm serve"
 
-    exec vllm serve Qwen/Qwen3.6-35B-A3B-FP8 \
-      --served-model-name qwen3.6-35b \
-      --tensor-parallel-size 2 \
-      --distributed-executor-backend ray \
+    exec vllm serve Qwen/Qwen3.5-122B-A10B-GPTQ-Int4 \
+      --served-model-name qwen3.5-122b \
+      --dtype auto \
       --gpu-memory-utilization 0.80 \
-      --max-model-len 131072 \
+      --max-model-len 65536 \
+      --max-num-batched-tokens 4096 \
+      --enable-auto-tool-choice \
+      --tool-call-parser hermes \
       --enable-chunked-prefill \
       --enable-prefix-caching \
-      --enable-auto-tool-choice \
-      --tool-call-parser qwen3_coder \
-      --reasoning-parser qwen3 \
       --max-num-seqs 32 \
       --host 0.0.0.0 \
       --port 8000 \
-      --default-chat-template-kwargs '"'"'{"preserve_thinking": true}'"'"'
+      --reasoning-parser qwen3 \
+      --default-chat-template-kwargs '"'"'{"enable_thinking": false}'"'"' \
+      --tensor-parallel-size 2 \
+      --pipeline-parallel-size 1 \
+      --distributed-executor-backend ray
   '
 EOF
 chmod +x ~/sparky-ai-stack/scripts/vllm-head.sh</code></pre>
@@ -1050,15 +1066,15 @@ docker logs -f vllm-ray-worker   # leave open in another shell</code></pre>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>~/sparky-ai-stack/scripts/vllm-head.sh
-docker logs -f vllm-qwen-35b</code></pre>
+docker logs -f vllm-qwen-122b</code></pre>
     </div>
-    <p>The head will: (1) start Ray as the master, (2) wait for the worker to register a second GPU into the cluster, then (3) start <code>vllm serve</code>. Allow ~5–8 minutes for the FP8 weights to load on both nodes before the engine is ready.</p>
+    <p>The head will: (1) start Ray as the master, (2) wait for the worker to register a second GPU into the cluster, then (3) start <code>vllm serve</code>. Allow ~5–8 minutes for the GPTQ-Int4 weights to load on both nodes before the engine is ready. <strong>On a cold cache</strong> the GPTQ-Marlin JIT compile silently adds another 10–20 minutes after weight loading completes — the log will appear to stall after <code>ray_env.py:111</code> while the kernels compile inside the <code>RayWorkerWrapper</code>. This is expected; see Cluster issues. Compiled artifacts are cached so subsequent startups skip this step.</p>
 
     <h3>Step 1e — Verification</h3>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — Ray cluster status</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>docker exec vllm-qwen-35b ray status</code></pre>
+      <pre><code>docker exec vllm-qwen-122b ray status</code></pre>
     </div>
     <div class="verify">Expected: 2 nodes total, <code>2.0/2.0 GPU</code>, both DAC IPs listed (<code>YOUR_NODE1_DAC_IP</code> and <code>YOUR_NODE2_DAC_IP</code>)</div>
 
@@ -1068,9 +1084,9 @@ docker logs -f vllm-qwen-35b</code></pre>
       <pre><code>curl http://localhost:8000/v1/models
 curl http://localhost:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"qwen3.6-35b","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'</code></pre>
+  -d '{"model":"qwen3.5-122b","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'</code></pre>
     </div>
-    <div class="verify">Expected: <code>{"data":[{"id":"qwen3.6-35b",...}]}</code> on the first call, a streamed completion on the second</div>
+    <div class="verify">Expected: <code>{"data":[{"id":"qwen3.5-122b",...}]}</code> on the first call, a streamed completion on the second</div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### Both nodes — GPU residency (GB10 quirk)</h4>
     <p>GB10 (Grace Blackwell) uses unified memory. The standard <code>--query-gpu=memory.used,memory.total</code> fields return <code>[N/A]</code> on this hardware — that is expected, not a bug. Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section instead:</p>
@@ -1078,7 +1094,7 @@ curl http://localhost:8000/v1/chat/completions \
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>nvidia-smi   # run on each node</code></pre>
     </div>
-    <p>You should see a <code>RayWorkerWrapper</code> (or <code>vllm</code>) process on each node with roughly <strong>~97&nbsp;GB</strong> resident at <code>--gpu-memory-utilization 0.80</code> with the 35B FP8 model loaded.</p>
+    <p>You should see a <code>RayWorkerWrapper</code> (or <code>vllm</code>) process on each node with roughly <strong>~96&nbsp;GB</strong> resident at <code>--gpu-memory-utilization 0.80</code> with the 122B GPTQ-Int4 model loaded (≈34&nbsp;GB of weights per node + KV cache).</p>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — NCCL traffic on the DAC during inference</h4>
     <div class="code-block">
@@ -1087,25 +1103,30 @@ curl http://localhost:8000/v1/chat/completions \
     </div>
     <p>You should see Gb/s-class spikes on the DAC during decoding. If you see traffic on a different interface, <code>NCCL_SOCKET_IFNAME</code> didn't propagate — see the cluster troubleshooting section.</p>
 
-    <h3>Optional — switch to the 122B INT4 model</h3>
-    <p>If the cache is already populated with <code>Qwen/Qwen3.5-122B-A10B-GPTQ-Int4</code>, swap the <code>vllm serve</code> line in <code>~/sparky-ai-stack/scripts/vllm-head.sh</code>:</p>
+    <h3>Bootstrap fallback — the 35B FP8 model</h3>
+    <p>The <code>Qwen/Qwen3.6-35B-A3B-FP8</code> model is the original bootstrap model and remains useful for fast iteration on cluster wiring (Ray, NCCL, DAC) before committing to the longer 122B load. If the cache is already populated with the 35B FP8 weights, swap the <code>vllm serve</code> line in <code>~/sparky-ai-stack/scripts/vllm-head.sh</code> and the container name (<code>vllm-qwen-122b</code> → <code>vllm-qwen-35b</code>):</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>vllm serve Qwen/Qwen3.5-122B-A10B-GPTQ-Int4 \
-  --served-model-name qwen3.5-122b \
-  --tensor-parallel-size 2 \
-  --distributed-executor-backend ray \
-  --quantization gptq_marlin \
-  --dtype float16 \
+      <pre><code>vllm serve Qwen/Qwen3.6-35B-A3B-FP8 \
+  --served-model-name qwen3.6-35b \
+  --dtype auto \
   --gpu-memory-utilization 0.80 \
-  --max-model-len 65536 \
+  --max-model-len 131072 \
+  --max-num-batched-tokens 4096 \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
   --enable-chunked-prefill \
   --enable-prefix-caching \
-  --max-num-seqs 16 \
+  --max-num-seqs 32 \
   --host 0.0.0.0 \
-  --port 8000</code></pre>
+  --port 8000 \
+  --reasoning-parser qwen3 \
+  --default-chat-template-kwargs '{"enable_thinking": false}' \
+  --tensor-parallel-size 2 \
+  --pipeline-parallel-size 1 \
+  --distributed-executor-backend ray</code></pre>
     </div>
-    <p>Update <code>--served-model-name</code> in the LiteLLM config in Step 02 if you switch.</p>
+    <p>Update <code>--served-model-name</code> in the LiteLLM config in Step 02 (and the client's LiteLLM in Step 03) if you fall back. Expect ~97&nbsp;GB resident per node at FP8 instead of ~96&nbsp;GB at GPTQ-Int4.</p>
   </div>
 
   <div class="step" id="step2">
@@ -1131,9 +1152,9 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>cat &gt; ~/sparky-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
 model_list:
-  - model_name: qwen3.6-35b
+  - model_name: qwen3.5-122b
     litellm_params:
-      model: openai/qwen3.6-35b
+      model: openai/qwen3.5-122b
       api_base: http://localhost:8000/v1
       api_key: "not-needed"
 
@@ -1229,9 +1250,9 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>cat &gt; ~/sparky-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
 model_list:
-  - model_name: qwen3.6-35b
+  - model_name: qwen3.5-122b
     litellm_params:
-      model: openai/qwen3.6-35b
+      model: openai/qwen3.5-122b
       api_base: http://YOUR_NODE1_DAC_IP:8000/v1   # shared vLLM, over DAC
       api_key: "not-needed"
 
@@ -1299,9 +1320,9 @@ sudo systemctl status litellm --no-pager</code></pre>
       <pre><code>curl http://localhost:8001/v1/chat/completions \
   -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"model":"qwen3.6-35b","messages":[{"role":"user","content":"hi from client"}],"max_tokens":16}'</code></pre>
+  -d '{"model":"qwen3.5-122b","messages":[{"role":"user","content":"hi from client"}],"max_tokens":16}'</code></pre>
     </div>
-    <div class="verify">On spark-01, <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm-qwen-35b</code> on spark-01 — you should see the new request reach the vLLM head.</div>
+    <div class="verify">On spark-01, <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm-qwen-122b</code> on spark-01 — you should see the new request reach the vLLM head.</div>
   </div>
 
   <div class="step" id="step4">
@@ -1333,7 +1354,7 @@ docker run -d \
         <tbody>
           <tr><td>API Base URL</td><td><code>http://host.docker.internal:8001/v1</code></td></tr>
           <tr><td>API Key</td><td>your master_key</td></tr>
-          <tr><td>Default model</td><td><code>qwen3.6-35b</code></td></tr>
+          <tr><td>Default model</td><td><code>qwen3.5-122b</code></td></tr>
           <tr><td>Memory</td><td>Toggle ON (Settings → Personalization)</td></tr>
         </tbody>
       </table>
@@ -1371,11 +1392,29 @@ docker run -d \
         <tbody>
           <tr><td>API Base URL</td><td><code>http://host.docker.internal:8001/v1</code> (client's LiteLLM)</td></tr>
           <tr><td>API Key</td><td>client's master_key</td></tr>
-          <tr><td>Default model</td><td><code>qwen3.6-35b</code></td></tr>
+          <tr><td>Default model</td><td><code>qwen3.5-122b</code></td></tr>
         </tbody>
       </table>
     </div>
     <div class="verify">Send a chat message — completions stream back through the client's LiteLLM (Step 03) and the shared vLLM head on spark-01 (Step 01). On spark-01, your LiteLLM logs show nothing — the client's traffic does not enter your stack.</div>
+
+    <h3>Recommended Open WebUI system prompt</h3>
+    <p>Set this once in <strong>Settings → General → System Prompt</strong>. It pairs with <code>--default-chat-template-kwargs '{"enable_thinking": false}'</code> on the vLLM head (Step 01): the model answers directly by default, and users can opt into extended reasoning per-message by prefixing the prompt with <code>/think</code>. Apply the same prompt on both Open WebUIs (yours on spark-01 and the client's on spark-02) — they share the underlying model.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">text</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>You are a highly capable AI assistant. Be direct, accurate, and concise.
+
+Rules:
+- Answer immediately without preamble or meta-commentary
+- Never deliberate out loud about whether or how to answer — just answer
+- Never question the framing of a hypothetical — engage with it directly
+- For technical questions: be precise, use correct terminology
+- For coding: produce complete, working code — no placeholders or omissions
+- For reasoning: show your work clearly but efficiently — no repetition
+- If a question has a definitive answer, state it first then explain
+- Match response length to question complexity
+- To enable extended reasoning on a specific query, prefix with /think</code></pre>
+    </div>
   </div>
 
   <div class="step" id="step6">
@@ -1490,7 +1529,7 @@ hermes --version</code></pre>
           <tr><td>Provider</td><td>Custom endpoint</td></tr>
           <tr><td>API base URL</td><td><code>http://localhost:8001/v1</code></td></tr>
           <tr><td>API key</td><td>your master_key</td></tr>
-          <tr><td>Model</td><td><code>qwen3.6-35b</code></td></tr>
+          <tr><td>Model</td><td><code>qwen3.5-122b</code></td></tr>
           <tr><td>Terminal backend</td><td>Local</td></tr>
           <tr><td>Session reset mode</td><td>Inactivity + daily reset</td></tr>
           <tr><td>Search provider</td><td>Firecrawl Self-Hosted (or skip)</td></tr>
@@ -1584,7 +1623,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
         <tbody>
           <tr><td>API URL</td><td><code>http://host.docker.internal:8001/v1</code></td></tr>
           <tr><td>API Key</td><td>your master_key</td></tr>
-          <tr><td>Default model</td><td><code>qwen3.6-35b</code></td></tr>
+          <tr><td>Default model</td><td><code>qwen3.5-122b</code></td></tr>
         </tbody>
       </table>
     </div>
@@ -1596,24 +1635,24 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
     <h3>Shared compute pool</h3>
     <ul class="validation-checklist">
-      <li><strong>spark-01:</strong> <code>docker exec vllm-qwen-35b ray status</code> shows <strong>2 nodes</strong> and <strong>2.0/2.0 GPU</strong>, with both DAC IPs (<code>YOUR_NODE1_DAC_IP</code> and <code>YOUR_NODE2_DAC_IP</code>) listed.</li>
-      <li><strong>spark-01:</strong> <code>nvidia-smi</code> Processes section shows a <code>RayWorkerWrapper</code> at ~97&nbsp;GB. (<code>--query-gpu=memory.used</code> returns <code>[N/A]</code> on GB10 — expected.)</li>
-      <li><strong>spark-02:</strong> <code>nvidia-smi</code> Processes section shows a <code>RayWorkerWrapper</code> at ~97&nbsp;GB.</li>
-      <li><strong>spark-01:</strong> <code>curl http://localhost:8000/v1/models</code> returns <code>qwen3.6-35b</code> (vLLM head).</li>
+      <li><strong>spark-01:</strong> <code>docker exec vllm-qwen-122b ray status</code> shows <strong>2 nodes</strong> and <strong>2.0/2.0 GPU</strong>, with both DAC IPs (<code>YOUR_NODE1_DAC_IP</code> and <code>YOUR_NODE2_DAC_IP</code>) listed.</li>
+      <li><strong>spark-01:</strong> <code>nvidia-smi</code> Processes section shows a <code>RayWorkerWrapper</code> at ~96&nbsp;GB (122B GPTQ-Int4 at <code>--gpu-memory-utilization 0.80</code>). The <code>--query-gpu=memory.used</code> / <code>memory.total</code> fields return <code>[N/A]</code> on GB10 — expected, use the Processes section instead.</li>
+      <li><strong>spark-02:</strong> <code>nvidia-smi</code> Processes section shows a <code>RayWorkerWrapper</code> at ~96&nbsp;GB.</li>
+      <li><strong>spark-01:</strong> <code>curl http://localhost:8000/v1/models</code> returns <code>qwen3.5-122b</code> (vLLM head).</li>
     </ul>
 
     <h3>Your side (spark-01)</h3>
     <ul class="validation-checklist">
-      <li><strong>spark-01:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_MASTER_KEY"</code> returns <code>qwen3.6-35b</code> through your LiteLLM.</li>
+      <li><strong>spark-01:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_MASTER_KEY"</code> returns <code>qwen3.5-122b</code> through your LiteLLM.</li>
       <li><strong>spark-01:</strong> <code>sudo systemctl status litellm hermes-gateway</code> — both <strong>active (running)</strong>.</li>
-      <li><strong>spark-01:</strong> <code>docker ps</code> shows <code>vllm-qwen-35b</code>, <code>open-webui</code>, <code>hermes-webui</code>, and <code>n8n</code> all <em>Up</em>.</li>
+      <li><strong>spark-01:</strong> <code>docker ps</code> shows <code>vllm-qwen-122b</code>, <code>open-webui</code>, <code>hermes-webui</code>, and <code>n8n</code> all <em>Up</em>.</li>
       <li><strong>spark-01:</strong> Open <code>http://localhost:8080</code> (or your tailnet hostname), send a chat message — completion streams back. Your LiteLLM log records the request.</li>
       <li><strong>spark-01:</strong> Send a Telegram message — Hermes responds. End-to-end your-side path: Telegram → Hermes → your LiteLLM → vLLM TP=2.</li>
     </ul>
 
     <h3>Client side (spark-02)</h3>
     <ul class="validation-checklist">
-      <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY"</code> returns <code>qwen3.6-35b</code> through the client's LiteLLM.</li>
+      <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY"</code> returns <code>qwen3.5-122b</code> through the client's LiteLLM.</li>
       <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/chat/completions -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY" ...</code> returns a completion.</li>
       <li><strong>spark-02:</strong> <code>sudo systemctl status litellm</code> — <strong>active (running)</strong>. Logs are written to <code>~/sparky-ai-stack/logs/litellm.log</code> on <code>spark-02</code>, separate from your logs.</li>
       <li><strong>spark-02:</strong> <code>docker ps</code> shows <code>vllm-ray-worker</code>, <code>open-webui</code>, and <code>n8n</code> all <em>Up</em>. (No Hermes container.)</li>
@@ -1768,7 +1807,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">Worker can't reach head — Ray GCS connection refused</div>
       <div class="issue-sym"><span>Symptom</span><span>Worker logs print "ConnectionError: ... 198.51.100.1:6379" continuously and never advance. The retry loop above never resolves.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the head container hasn't started, (b) <code>VLLM_HOST_IP</code> on the head was set to a non-DAC IP so Ray bound to the wrong interface, or (c) a firewall blocks port 6379 over the DAC.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>On spark-01: <code>docker exec vllm-qwen-35b ray status</code> — if Ray isn't running, restart the container. Confirm <code>VLLM_HOST_IP=YOUR_NODE1_DAC_IP</code>. From spark-02: <code>nc -zv YOUR_NODE1_DAC_IP 6379</code> should connect; if not, check firewall rules on the DAC interface.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>On spark-01: <code>docker exec vllm-qwen-122b ray status</code> — if Ray isn't running, restart the container. Confirm <code>VLLM_HOST_IP=YOUR_NODE1_DAC_IP</code>. From spark-02: <code>nc -zv YOUR_NODE1_DAC_IP 6379</code> should connect; if not, check firewall rules on the DAC interface.</span></div>
     </div>
 
     <div class="issue">
@@ -1782,7 +1821,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title"><code>nvidia-smi memory.used</code> returns <code>[N/A]</code> on GB10</div>
       <div class="issue-sym"><span>Symptom</span><span><code>nvidia-smi --query-gpu=memory.used,memory.total --format=csv</code> returns <code>[N/A]</code> in both fields. Memory monitoring scripts that depend on these fields silently report nothing.</span></div>
       <div class="issue-sym"><span>Cause</span><span>GB10 (Grace Blackwell) uses unified memory. The classic <code>memory.used</code> / <code>memory.total</code> NVML fields are not populated on this hardware.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section. With the 35B FP8 model loaded at <code>--gpu-memory-utilization 0.80</code>, you should see a <code>RayWorkerWrapper</code> process at roughly <strong>~97&nbsp;GB</strong> on each node.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section. With the 122B GPTQ-Int4 model loaded at <code>--gpu-memory-utilization 0.80</code>, you should see a <code>RayWorkerWrapper</code> process at roughly <strong>~96&nbsp;GB</strong> on each node (≈34&nbsp;GB weights + KV cache). The 35B FP8 bootstrap model lands closer to <strong>~97&nbsp;GB</strong>.</span></div>
     </div>
 
     <div class="issue">
@@ -1794,8 +1833,8 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
     <div class="issue">
       <div class="issue-title"><code>docker: permission denied</code> on spark-02</div>
-      <div class="issue-sym"><span>Symptom</span><span>Any docker command on spark-02 fails with <code>permission denied while trying to connect to the Docker daemon socket</code>.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Add your user to the <code>docker</code> group: <code>sudo usermod -aG docker YOUR_USERNAME &amp;&amp; newgrp docker</code>. The new group only takes effect after re-logging or running <code>newgrp docker</code> in the current shell.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span>Any docker command on spark-02 fails with <code>permission denied while trying to connect to the Docker daemon socket</code>. Common on a freshly-imaged worker node where docker installed cleanly but the operator account isn't in the <code>docker</code> group yet.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Add the operator account to the <code>docker</code> group. On a fresh spark-02: <code>sudo usermod -aG docker cameron &amp;&amp; newgrp docker</code> (substitute your actual username). The new group only takes effect after re-logging or running <code>newgrp docker</code> in the current shell. The Step 01 worker script will not run until this is done.</span></div>
     </div>
 
     <div class="issue">
@@ -1808,14 +1847,14 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <div class="issue">
       <div class="issue-title">vLLM CUDA compile cache error on reboot</div>
       <div class="issue-sym"><span>Symptom</span><span><code>RuntimeError: CUDA driver error: operation not permitted</code></span></div>
-      <div class="issue-fix"><span>Fix</span><span><code>docker exec vllm-qwen-35b rm -rf /tmp/torchinductor_root /root/.cache/vllm/torch_compile_cache/torch_aot_compile &amp;&amp; docker restart vllm-qwen-35b</code></span></div>
+      <div class="issue-fix"><span>Fix</span><span><code>docker exec vllm-qwen-122b rm -rf /tmp/torchinductor_root /root/.cache/vllm/torch_compile_cache/torch_aot_compile &amp;&amp; docker restart vllm-qwen-122b</code></span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">Client LiteLLM can't reach vLLM</div>
       <div class="issue-sym"><span>Symptom</span><span>Client LiteLLM on spark-02 returns <code>connection refused</code> or <code>connect timeout</code> on every request. <code>~/sparky-ai-stack/logs/litellm.log</code> on spark-02 shows <code>httpx.ConnectError</code> against <code>198.51.100.1:8000</code>.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the DAC link is down, (b) the vLLM head container on spark-01 is not running, or (c) the host firewall on spark-01 is blocking the DAC peer from reaching port 8000.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>From spark-02: <code>ping -c 3 YOUR_NODE1_DAC_IP</code> (DAC reachable?), then <code>nc -zv YOUR_NODE1_DAC_IP 8000</code>. From spark-01: <code>docker ps | grep vllm-qwen-35b</code> (running?) and <code>sudo ufw status | grep 8000</code>. The Step 06 ufw rule should explicitly allow <code>YOUR_NODE2_DAC_IP</code> on port 8000 over <code>enp1s0f0np0</code>.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>From spark-02: <code>ping -c 3 YOUR_NODE1_DAC_IP</code> (DAC reachable?), then <code>nc -zv YOUR_NODE1_DAC_IP 8000</code>. From spark-01: <code>docker ps | grep vllm-qwen-122b</code> (running?) and <code>sudo ufw status | grep 8000</code>. The Step 06 ufw rule should explicitly allow <code>YOUR_NODE2_DAC_IP</code> on port 8000 over <code>enp1s0f0np0</code>.</span></div>
     </div>
 
     <div class="issue">
@@ -1837,6 +1876,47 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-sym"><span>Symptom</span><span>You find an entry in <code>~/sparky-ai-stack/logs/litellm.log</code> on spark-01 that you didn't make. Or the client reports a request in their log that they didn't send.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Almost always: someone reused a master key across the two LiteLLMs, or the Open WebUI on one side is misconfigured to point at the other side's LiteLLM.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Confirm <code>master_key</code> values are unique on each node — they should never match. Then check each Open WebUI's API base URL: yours should be <code>http://host.docker.internal:8001/v1</code> (your local LiteLLM); client's should be the same hostname (their local LiteLLM, not your tailnet IP). If you find cross-pointing, fix it and rotate both master keys.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">235B FP8 model OOM on the 256&nbsp;GB cluster</div>
+      <div class="issue-sym"><span>Symptom</span><span>Loading <code>Qwen/Qwen3-235B-A22B-FP8</code> at TP=2 fails. Ray kills the worker with an <code>OutOfMemoryError</code> at the ~95% memory threshold during weight loading; the head logs report a placement-group failure shortly after.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>235B at FP8 is ~235&nbsp;GB of weights total. Split across TP=2 that's ~117.5&nbsp;GB per node — and only ~121&nbsp;GB is usable per node, leaving no room for KV cache or OS overhead.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use a GPTQ-Int4 quantization instead. A 235B INT4 model is ~117&nbsp;GB total ≈ ~58&nbsp;GB per node and fits with comfortable headroom. Or use a smaller model — the 122B GPTQ-Int4 above is the recommended production choice.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title"><code>AssertionError: block_size (2096) must be &lt;= max_num_batched_tokens (2048)</code></div>
+      <div class="issue-sym"><span>Symptom</span><span>vLLM head exits during engine init on a Qwen MoE model with the assertion above.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>vLLM's Mamba cache align mode auto-enables for MoE models when <code>--enable-prefix-caching</code> is on, which sets <code>block_size=2096</code>. The default <code>max_num_batched_tokens=2048</code> is one block too small.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Add <code>--max-num-batched-tokens 4096</code> to the <code>vllm serve</code> command (the Step 01 head script does this). 4096 is the smallest power-of-two that satisfies the assertion with headroom.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">GPTQ-Marlin first-run takes 10–20 minutes with no log output</div>
+      <div class="issue-sym"><span>Symptom</span><span>On a cold cache with the 122B GPTQ-Int4 model, <code>docker logs -f vllm-qwen-122b</code> appears to stall after a line ending in <code>ray_env.py:111</code>. No new output for many minutes. The cluster looks frozen.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>GPTQ-Marlin requires <code>torch.compile</code> JIT compilation on first launch. The compile happens silently inside the <code>RayWorkerWrapper</code> process after weight loading completes — vLLM doesn't surface a progress line for it.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Wait it out — first launch typically takes 10–20 minutes for the compile. Verify progress with <code>nvidia-smi</code> on each node: both should show a <code>RayWorkerWrapper</code> at roughly ~34&nbsp;GB during compile and growing toward ~96&nbsp;GB once KV cache initializes. The compiled artifacts are cached at <code>/root/.cache/vllm/torch_compile_cache/</code>, so subsequent startups skip this step entirely.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title"><code>huggingface-cli</code> is deprecated</div>
+      <div class="issue-sym"><span>Symptom</span><span>Running <code>huggingface-cli download …</code> prints a deprecation notice, or the command is missing on a fresh install of <code>huggingface_hub</code>.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use the new CLI: <code>hf download &lt;model&gt; --local-dir &lt;path&gt;</code>. Step 01 has been updated to use <code>hf</code>; if you have an older snippet around, swap the binary name and the flags map cleanly.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title"><code>permission denied</code> when downloading to the HF cache</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>hf download</code> (or <code>huggingface-cli download</code>) fails with <code>PermissionError: [Errno 13] Permission denied</code> on a path under <code>~/.cache/huggingface/hub/</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>A previous download was run with <code>sudo</code> or as <code>root</code>, which left the target directory root-owned. The current shell (running as <code>cameron</code> or your normal user) cannot write into it.</span></div>
+      <div class="issue-fix"><span>Fix</span><span><code>sudo rm -rf &lt;target_dir&gt;</code>, then recreate the directory and rerun the <code>hf download</code> command as your normal user (<strong>not</strong> root). All <code>hf download</code> commands in this guide assume the non-root user.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Model "thinks" out loud / verbose deliberation in Open WebUI</div>
+      <div class="issue-sym"><span>Symptom</span><span>Conversational queries cause the model to produce long deliberative preambles ("Let me think about this..." or visible chain-of-thought). Latency climbs and token usage balloons. Sometimes the model loops in its own reasoning trace.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>The chat template was rendered with <code>preserve_thinking: true</code> (or any other flag that exposes the visible CoT track). The Qwen3.5 family produces extended reasoning whenever thinking is enabled at template time, and conversational queries trigger excessive deliberation under that setting.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Set <code>--default-chat-template-kwargs '{"enable_thinking": false}'</code> on the <code>vllm serve</code> command (the Step 01 head script does this). Users can opt into extended reasoning per-message by prefixing a prompt with <code>/think</code>. This matches the behavior the recommended Open WebUI system prompt (Step 05) is calibrated for.</span></div>
     </div>
   </div>
 
@@ -2236,9 +2316,9 @@ sudo apt install -y nodejs</code></pre>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>model_list:
-  - model_name: qwen3.6-35b
+  - model_name: qwen3.5-122b
     litellm_params:
-      model: openai/qwen3.6-35b
+      model: openai/qwen3.5-122b
       api_base: http://localhost:8000/v1
       api_key: "not-needed"
       max_tokens: 8192

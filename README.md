@@ -1,8 +1,10 @@
-# NVIDIA DGX: At-Home AI Stack — two-node clustered
+# NVIDIA DGX: At-Home AI Stack — split-trust shared compute
 
-A self-hosted AI server stack running across **two clustered Nvidia DGX Spark** nodes (arm64/aarch64). vLLM serves the model with tensor parallelism (TP=2) over Ray on a dedicated 200&nbsp;Gb/s direct-attach copper interconnect. Backend services are isolated on one node so user-facing UIs never disturb model latency.
+A self-hosted AI server stack running across **two clustered Nvidia DGX Spark** nodes (arm64/aarch64) under **split ownership**. vLLM serves a shared model with tensor parallelism (TP=2) over Ray on a 200&nbsp;Gb/s direct-attach copper interconnect, but each node runs its own independent application stack owned by a different party.
 
-Covers model serving across two nodes, proxying, workflow automation, an autonomous agent layer, and multi-client access — everything needed to replicate the cluster from scratch.
+`sparky-01` is the **owner's** node (your LiteLLM, Open WebUI, Hermes Agent, n8n, Tailscale). `sparky-02` is the **client's** node (their LiteLLM, Open WebUI, n8n, Tailscale). Both LiteLLM proxies talk to the same vLLM endpoint on `sparky-01:8000` over the DAC; neither application stack sees the other.
+
+> **Read the [Trust model](https://cmdlabtech.github.io/dgx-spark-ai-stack/#trust-model) section before deploying.** This architecture has specific properties at the API layer that you should understand explicitly.
 
 ## Setup guide
 
@@ -10,29 +12,40 @@ The full step-by-step setup guide is at [cmdlabtech.github.io/dgx-spark-ai-stack
 
 ## Architecture summary
 
-Two physically separate DGX Spark nodes, separated by role:
+Three logical layers:
 
-- **`sparky-01` — backend node.** vLLM head (Ray master) + LiteLLM proxy. No user-facing services. Protects inference latency from UI workloads.
-- **`sparky-02` — frontend node.** vLLM Ray worker, Open WebUI, Hermes Agent, n8n. All user traffic enters here.
+1. **Application stacks (separate ownership).** Two independent stacks on two nodes — your apps on `sparky-01`, client's apps on `sparky-02`. Knowledge bases, chat history, RAG pipelines, API keys, and logs are completely separate. Neither party has access to the other's stack.
+2. **LiteLLM proxies (one per side).** Each side runs its own LiteLLM with its own master key and its own SQLite log corpus. Your LiteLLM uses `api_base = http://localhost:8000/v1`; client's LiteLLM uses `api_base = http://10.100.100.1:8000/v1` over the DAC.
+3. **Shared compute pool.** vLLM head (Ray master, TP rank 0) runs on `sparky-01:8000` backed by the full 256 GB unified memory across both nodes. The Ray worker on `sparky-02` (TP rank 1) processes tensor activations only — no readable text crosses the worker.
 
-The two nodes are linked by a 200&nbsp;Gb/s DAC interconnect (`enp1s0f0np0`, MTU 9216, point-to-point /30) which carries NCCL collectives for tensor parallelism and Ray control traffic. A separate 1&nbsp;GbE mgmt LAN carries client traffic and the LiteLLM-to-frontend hop.
+Tailscale is a per-owner overlay: each node joins its owner's tailnet independently, with separate ACL policies. The DAC link (`10.100.100.0/30`) is private physical hardware between the two nodes — not routed through either tailnet.
 
-vLLM is the only clustered service. Open WebUI and n8n run as single instances on `sparky-02` — clustered HA modes are documented in the appendix only.
+## Trust model
+
+- **API-layer visibility.** The owner of `sparky-01` runs the vLLM API server; both LiteLLM proxies call it. Trust profile is structurally identical to using any commercial hosted-inference API (OpenAI, Anthropic, Together, etc.) — the entity running the API server can see traffic at the API layer.
+- **Tensor-layer isolation.** The Ray worker on `sparky-02` processes floating-point tensor activations, not text. NCCL allreduce on the DAC carries floats, not strings. The client's node never sees readable prompts or completions at the compute layer.
+- **Application-layer isolation.** Knowledge bases, chat history, RAG indexes, vector stores, OAuth tokens, and request logs are 100% separate per node. No cross-mounted volumes, no shared Postgres, no shared file system.
+- **Network isolation.** Two separate tailnets. ACLs per owner. DAC is private hardware, not advertised on either tailnet.
+- **Appropriate when:** both parties have a working relationship; data is non-regulated; trust profile of "any hosted inference API" is acceptable.
+- **Requires additional agreements when:** either party handles regulated data (HIPAA, GDPR, SOC2, PCI-DSS, attorney-client privileged) or has contractual data-handling requirements imposed by their own customers.
 
 ## Stack
 
-| Component | Node | Role | Port |
+| Component | Node | Owner | Port |
 |---|---|---|---|
-| [vLLM](https://github.com/vllm-project/vllm) head (Ray master) | `sparky-01` | Model serving — TP=2 over Ray on DAC | 8000 (local) · 6379 (Ray GCS) |
-| [vLLM](https://github.com/vllm-project/vllm) worker (Ray) | `sparky-02` | Second TP rank | — (joins via DAC) |
-| [LiteLLM](https://github.com/BerriAI/litellm) | `sparky-01` | Proxy, logging, routing | 8001 |
-| [Open WebUI](https://github.com/open-webui/open-webui) | `sparky-02` | Daily chat interface | 8080 |
-| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | `sparky-02` | Autonomous agent layer | — |
-| [Hermes WebUI](https://github.com/nesquena/hermes-webui) | `sparky-02` | Agent browser UI | 8787 |
-| [n8n](https://github.com/n8n-io/n8n) | `sparky-02` | Workflow automation | 5678 |
-| Telegram gateway | `sparky-02` | Mobile/remote access | via Hermes |
-| Syncthing | Proxmox LXC | Vault sync (optional) | 8384 |
-| obsidian-mcp + supergateway | Proxmox LXC | Vault tool exposure to LiteLLM | 3000 |
+| [vLLM](https://github.com/vllm-project/vllm) head (Ray master, TP rank 0) | `sparky-01` | Shared compute | 8000 (local + DAC) · 6379 |
+| [vLLM](https://github.com/vllm-project/vllm) worker (Ray, TP rank 1) | `sparky-02` | Shared compute | — (no API listener) |
+| Your [LiteLLM](https://github.com/BerriAI/litellm) | `sparky-01` | You — your master key, your logs | 8001 (your tailnet) |
+| Client [LiteLLM](https://github.com/BerriAI/litellm) | `sparky-02` | Client — their master key, their logs | 8001 (client's tailnet) |
+| Your [Open WebUI](https://github.com/open-webui/open-webui) | `sparky-01` | You — your data | 8080 (your tailnet) |
+| Client [Open WebUI](https://github.com/open-webui/open-webui) | `sparky-02` | Client — their data | 8080 (client's tailnet) |
+| Your [Hermes Agent](https://github.com/NousResearch/hermes-agent) | `sparky-01` | You | — |
+| Your [Hermes WebUI](https://github.com/nesquena/hermes-webui) | `sparky-01` | You | 8787 (your tailnet) |
+| Your [n8n](https://github.com/n8n-io/n8n) | `sparky-01` | You | 5678 (your tailnet) |
+| Client [n8n](https://github.com/n8n-io/n8n) | `sparky-02` | Client | 5678 (client's tailnet) |
+| Your Tailscale | `sparky-01` | You — your ACLs | — |
+| Client Tailscale | `sparky-02` | Client — their ACLs | — |
+| Telegram gateway (Hermes) | `sparky-01` | You | — |
 
 **Default model:** `Qwen/Qwen3.6-35B-A3B-FP8` (FP8 MoE, ~97 GB resident per node at `--gpu-memory-utilization 0.80`).
 
@@ -41,55 +54,44 @@ vLLM is the only clustered service. Open WebUI and n8n run as single instances o
 ## Hardware
 
 - 2× Nvidia DGX Spark (Grace CPU · GB10 GPU · arm64) — Ubuntu 24.04
-- DAC interconnect: `enp1s0f0np0`, MTU 9216, /30 between nodes
-- Mgmt LAN: 1 GbE RJ45, default routes
-- Proxmox LXC (optional) — `[YOUR-CONTAINER-HOSTNAME]` (Ubuntu 24.04 LTS) for Syncthing vault sync
+- DAC interconnect: `enp1s0f0np0`, MTU 9216, /30 between nodes — private physical link, not routed
+- Mgmt LAN: 1 GbE RJ45, default routes — for SSH and bootstrap
+- Two independent Tailscale tailnets — one per owner, with independent ACL policies
+- Proxmox LXC (optional, on owner side) — `[YOUR-CONTAINER-HOSTNAME]` (Ubuntu 24.04 LTS) for Syncthing vault sync
 
 ## Architecture diagram
 
 ```
-                      ┌──────────────────────┐
-                      │  Users / clients     │
-                      │  browser · Telegram  │
-                      │  desktop · VS Code   │
-                      └──────────┬───────────┘
-                                 │ mgmt LAN
-                                 ▼
-┌────────────────────────────────────────────────────────────┐
-│  sparky-02 · FRONTEND NODE   (mgmt: YOUR_NODE2_MGMT_IP)    │
-│                                                            │
-│  Open WebUI (8080)   n8n (5678)   Hermes Agent / WebUI     │
-│         │                │                 │               │
-│         └───────┬────────┴─────────────────┘               │
-│                 │                                          │
-│                 │  http://YOUR_NODE1_MGMT_IP:8001/v1       │
-│                 ▼                                          │
-│        ┌────────────────────────────┐                      │
-│        │  vLLM worker (Ray)         │◄────┐                │
-│        │  GPU 1 of TP=2             │     │ NCCL · Ray     │
-│        └────────────────────────────┘     │ over DAC       │
-│                                           │ enp1s0f0np0    │
-└───────────────────────────────────────────┼────────────────┘
-                                            │ 200 Gb/s
-┌───────────────────────────────────────────┼────────────────┐
-│  sparky-01 · BACKEND NODE    (mgmt: YOUR_NODE1_MGMT_IP)    │
-│                                           │                │
-│        ┌──────────────────────────────────┴───┐            │
-│        │  vLLM head (Ray master)              │            │
-│        │  --tensor-parallel-size 2 · GPU 0    │            │
-│        └────────────────┬─────────────────────┘            │
-│                         │                                  │
-│                         ▼                                  │
-│        ┌─────────────────────────────────────┐             │
-│        │  LiteLLM proxy (8001)               │             │
-│        │  → localhost:8000                   │             │
-│        └─────────────────────────────────────┘             │
-│                         │                                  │
-│                         ▼                                  │
-│        ┌─────────────────────────────────────┐             │
-│        │  Qwen/Qwen3.6-35B-A3B-FP8           │             │
-│        └─────────────────────────────────────┘             │
-└────────────────────────────────────────────────────────────┘
+       Your users                                     Client's users
+       (your tailnet)                                 (client's tailnet)
+            │                                                │
+            ▼                                                ▼
+┌──────────────────────────────┐          ┌──────────────────────────────┐
+│ sparky-01 — YOUR NODE        │          │ sparky-02 — CLIENT NODE      │
+│ (your tailscale)             │          │ (client's tailscale)         │
+│                              │          │                              │
+│  Your Open WebUI    :8080    │          │  Client Open WebUI    :8080  │
+│  Your n8n           :5678    │          │  Client n8n           :5678  │
+│  Your Hermes        :8787    │          │                              │
+│            │                 │          │            │                 │
+│            ▼                 │          │            ▼                 │
+│  Your LiteLLM       :8001    │          │  Client LiteLLM      :8001   │
+│  api_base=localhost:8000     │          │  api_base=10.100.100.1:8000  │
+└──────────┬───────────────────┘          └──────────┬───────────────────┘
+           │                                         │
+           │ localhost                               │ DAC (200 Gb/s)
+           ▼                                         ▼
+┌────────────────────────────────────────────────────────────────────┐
+│ SHARED COMPUTE POOL                                                │
+│                                                                    │
+│   vLLM head (Ray master) :8000  · TP rank 0 · sparky-01            │
+│   vLLM Ray worker               · TP rank 1 · sparky-02            │
+│                                                                    │
+│   Qwen/Qwen3.6-35B-A3B-FP8 — 256 GB unified memory                 │
+│                                                                    │
+│   NCCL allreduce on DAC: enp1s0f0np0 · MTU 9216 · 10.100.100.0/30  │
+│   ↑ private physical hardware · NOT routed through any tailnet ↑   │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Obsidian Vault Sync & MCP Integration
@@ -169,24 +171,30 @@ In practice this means the vLLM cluster runs continuously and is only restarted 
 
 ## What the guide covers
 
-1. Hardware topology and prerequisites — `/etc/hosts` mgmt-IP entries, docker group, passwordless SSH between nodes
-2. vLLM clustered (TP=2 over Ray on DAC) — custom `vllm-spark:26.04` image build on both nodes, HF cache rsync, per-node startup scripts, launch order, NCCL/`VLLM_HOST_IP` configuration, Ray cluster verification
-3. LiteLLM proxy on `sparky-01` — pointing at the local clustered vLLM, systemd service, override.conf cleanup
-4. Open WebUI on `sparky-02` — single instance, points at LiteLLM on `sparky-01`
-5. Hermes Agent + Telegram gateway on `sparky-02` — wizard answers, base URL pointing at LiteLLM on `sparky-01`
-6. n8n on `sparky-02` — single instance, persistent Docker volume
-7. Validation checklist (per-node) and end-to-end Telegram → Hermes → LiteLLM → vLLM TP=2 round-trip
-8. Cluster issues and resolutions: Ray GCS connection, `VLLM_HOST_IP` mismatch, NCCL on wrong interface, worker-before-head, `nvidia-smi memory.used [N/A]` on GB10
-9. Obsidian vault sync integration — Syncthing, obsidian-mcp, supergateway (Proxmox LXC)
-10. Brave Search MCP and Playwright MCP setup
-11. Appendix — clustered Open WebUI / n8n HA notes for those who want to pursue it
+1. Hardware topology + Trust model + prerequisites — `/etc/hosts`, docker group, passwordless SSH between nodes
+2. **Step 01 — vLLM clustered (TP=2 over Ray on DAC)** — custom `vllm-spark:26.04` image on both nodes, HF cache rsync, startup scripts, launch order, `VLLM_HOST_IP` and NCCL config, GB10 `nvidia-smi` quirk
+3. **Step 02 — Your LiteLLM (sparky-01)** — your master key, your SQLite log corpus, points at `localhost:8000`
+4. **Step 03 — Client LiteLLM (sparky-02)** — separate install, separate master key, separate log corpus, points at `10.100.100.1:8000` over the DAC
+5. **Step 04 — Your Open WebUI (sparky-01)** — points at your LiteLLM, your tailnet
+6. **Step 05 — Client Open WebUI (sparky-02)** — points at client's LiteLLM, client's tailnet, client's data stays on `sparky-02`
+7. **Step 06 — Tailscale (both nodes, separate tailnets)** — per-owner ACLs, host firewall rules that prevent the unauthenticated vLLM port leaking onto either tailnet
+8. **Step 07 — Your Hermes Agent (sparky-01)** — Telegram gateway, Hermes WebUI
+9. **Step 08 — Your n8n (sparky-01)** — single-instance, owner-side flows. Client deploys their own n8n on `sparky-02` independently.
+10. Validation checklist — both-side positive tests + cross-stack negative tests (each side cannot reach the other)
+11. Cluster issues and resolutions: Ray GCS, `VLLM_HOST_IP` mismatch, NCCL on wrong interface, client LiteLLM can't reach vLLM, port-8000 leak through Tailscale ACL, cross-LiteLLM mgmt-LAN collision, log-bleed across owners
+12. Obsidian vault sync integration — Syncthing, obsidian-mcp, supergateway (Proxmox LXC, owner side)
+13. Brave Search MCP and Playwright MCP setup
+14. Appendix — clustered Open WebUI / n8n HA notes for those who want to pursue it
 
 ## Notes
 
-- All commands use placeholder values (`YOUR_USERNAME`, `YOUR_NODE1_MGMT_IP`, `YOUR_NODE2_MGMT_IP`, `YOUR_NODE1_DAC_IP`, `YOUR_NODE2_DAC_IP`) — substitute your own before running. Hostnames `sparky-01` and `sparky-02` are conventional in this guide; substitute your own.
-- LiteLLM has no arm64 Docker image as of May 2026 — installed via pip directly on `sparky-01`
-- The SQLite logs accumulated by LiteLLM (`~/sparky-ai-stack/logs/litellm.db`) serve as a fine-tuning corpus over time
-- vLLM is intentionally run via per-node `docker run` scripts, not as Compose services — this keeps the cluster isolated from compose lifecycle operations so model weights stay loaded across both nodes while the rest of the stack is restarted freely
+- All copy-paste commands use placeholder values (`YOUR_USERNAME`, `YOUR_NODE1_MGMT_IP`, `YOUR_NODE2_MGMT_IP`, `YOUR_NODE1_DAC_IP`, `YOUR_NODE2_DAC_IP`, `YOUR_MASTER_KEY`, `YOUR_CLIENT_MASTER_KEY`, `YOUR_NODE1_TAILSCALE_IP`, `YOUR_NODE2_TAILSCALE_IP`) — substitute your own before running. Hostnames `sparky-01` and `sparky-02` are conventional; substitute your own.
+- **Master keys must be different.** Yours is unique to your LiteLLM on `sparky-01`. The client's is unique to their LiteLLM on `sparky-02`. They are never shared and never sync'd between nodes.
+- **Tailscale ACLs are independent per owner.** Each owner controls their own tailnet's ACL policy. Cross-tailnet exposure happens only if both owners explicitly configure it.
+- **Port 8000 (vLLM) must never leak onto either tailnet.** It has no auth. The Step 06 ufw rules are the enforcement; the Tailscale ACLs are the policy. Both must agree.
+- **Application-layer data stays per-owner.** Open WebUI knowledge bases, n8n flows, Hermes memory, LiteLLM logs — none of these cross the boundary. Each owner backs up their own node's state.
+- LiteLLM has no arm64 Docker image as of May 2026 — installed via pip directly on each node
+- vLLM is intentionally run via per-node `docker run` scripts, not as Compose services — keeps the cluster isolated from compose lifecycle operations
 - `nvidia-smi --query-gpu=memory.used,memory.total` returns `[N/A]` on GB10 (Grace Blackwell unified memory). Use plain `nvidia-smi` and read the Processes section instead.
 
 ## Troubleshooting

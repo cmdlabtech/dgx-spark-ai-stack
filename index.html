@@ -857,7 +857,7 @@ ssh spark-02 hostname    # from spark-01</code></pre>
 
   <div class="step" id="step1">
     <div class="step-header"><span class="step-num">STEP 01</span><h2>vLLM clustered — TP=2 over Ray on RoCE/RDMA</h2></div>
-    <p>vLLM is the only clustered service. The model runs with tensor-parallel size 2: <code>spark-01</code> hosts the Ray master and the vLLM head process; <code>spark-02</code> hosts a Ray worker. NCCL collectives flow over <strong>RoCE/RDMA</strong> on the DAC link — not TCP sockets. The <code>vllm-spark:26.04</code> container ships pre-built SM121a (Blackwell) wheels with <code>/dev/infiniband</code> passthrough and <code>NCCL_IB_HCA</code> wired in — NCCL binds to both RoCE twins automatically and runs RDMA allreduce at full link speed. The cluster is managed by <code>/scripts/vllm-head.sh</code> on <code>spark-01</code>, which starts the head container, starts Ray, and SSHes into <code>spark-02</code> to bring up the worker container.</p>
+    <p>vLLM is the only clustered service. The model runs with tensor-parallel size 2: <code>spark-01</code> hosts the Ray head node and the vLLM engine; <code>spark-02</code> hosts a Ray worker. NCCL collectives flow over the DAC link (<code>enp1s0f0np0</code>) between the two nodes. The <code>vllm-spark:26.04</code> container ships pre-built SM121a (Blackwell) wheels. Each node runs its own container: <code>vllm-head.sh</code> on <code>spark-01</code> starts Ray head then <code>vllm serve</code>; <code>vllm-worker.sh</code> on <code>spark-02</code> starts a Ray worker that connects back to the head. <strong>Startup order matters:</strong> the worker container on <code>spark-02</code> must be running before the head container on <code>spark-01</code> starts — the 60&nbsp;s sleep in <code>vllm-head.sh</code> is the window the worker has to join.</p>
 
     <h3>Production model</h3>
     <div class="table-wrap">
@@ -867,7 +867,7 @@ ssh spark-02 hostname    # from spark-01</code></pre>
           <tr>
             <td><strong>Production (default)</strong></td>
             <td><code>Qwen/Qwen3.5-122B-A10B-FP8</code></td>
-            <td>The intended daily driver — 122B / A10B MoE, FP8 quantized. ~57&nbsp;GB resident per node, leaving ~71&nbsp;GB headroom per node for KV cache. Steady-state throughput ~45&nbsp;tok/s at TP=2. 262K context window. <code>tool-call-parser: qwen3_coder</code> · <code>reasoning-parser: qwen3</code>.</td>
+            <td>The intended daily driver — 122B / A10B MoE, FP8 quantized. ~57&nbsp;GB resident per node, leaving ~71&nbsp;GB headroom per node for KV cache. Steady-state throughput ~45&nbsp;tok/s at TP=2. 131K context window. <code>tool-call-parser: qwen3_coder</code> · <code>reasoning-parser: qwen3</code>.</td>
           </tr>
           <tr>
             <td>Bootstrap fallback</td>
@@ -906,6 +906,7 @@ ls /dev/infiniband/</code></pre>
 
     <h3>Step 1b — Create the launch scripts (spark-01)</h3>
     <p>The cluster is driven by two bash scripts mounted into the <code>vllm-spark:26.04</code> container at runtime. Create them in <code>~/spark-ai-stack/scripts/</code> on <code>spark-01</code> — they will be rsynced to <code>spark-02</code> in the next step.</p>
+    <p><strong>Head script design:</strong> <code>vllm-head.sh</code> starts the Ray head node inside the container first (<code>ray start --head</code>), then waits 60&nbsp;seconds for the worker to join, then launches <code>vllm serve</code> with TP=2. The 60&nbsp;s window is the critical startup dependency — the worker on <code>spark-02</code> must be running and connected before the 60&nbsp;s elapses or <code>vllm serve</code> will not find both GPUs. Startup order: <strong>spark-02 worker first, then spark-01 head</strong>.</p>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
@@ -913,11 +914,23 @@ ls /dev/infiniband/</code></pre>
 
 # Head script — runs on spark-01 inside the container
 cat &gt; ~/spark-ai-stack/scripts/vllm-head.sh &lt;&lt; 'EOF'
-#!/usr/bin/env bash
+#!/bin/bash
+set -e
+
+ray start \
+  --head \
+  --node-ip-address=YOUR_NODE1_DAC_IP \
+  --port=6379 \
+  --num-gpus=1 \
+  --dashboard-host=0.0.0.0 \
+  --dashboard-port=8265
+
+sleep 60
+
 exec vllm serve Qwen/Qwen3.5-122B-A10B-FP8 \
   --served-model-name qwen3.5-122b \
-  --max-model-len 262144 \
-  --gpu-memory-utilization 0.7 \
+  --max-model-len 131072 \
+  --gpu-memory-utilization 0.68 \
   --port 8000 \
   --host 0.0.0.0 \
   --enable-prefix-caching \
@@ -933,8 +946,10 @@ EOF
 
 # Worker script — runs on spark-02 inside the container
 cat &gt; ~/spark-ai-stack/scripts/vllm-worker.sh &lt;&lt; 'EOF'
-#!/usr/bin/env bash
-exec ray start \
+#!/bin/bash
+set -e
+
+ray start \
   --address=YOUR_NODE1_DAC_IP:6379 \
   --node-ip-address=YOUR_NODE2_DAC_IP \
   --num-gpus=1 \
@@ -987,8 +1002,27 @@ rsync -avP \
     </div>
 
     <h3>Step 1e — Launch the cluster</h3>
-    <p>Start the containers in order: <strong>spark-01 first</strong> (starts the Ray head and <code>vllm serve</code>, which blocks until TP workers are registered), then <strong>spark-02</strong> (registers its GPU as a Ray worker). The API on <code>spark-01:8000</code> becomes ready once both GPUs are in the cluster and the model finishes loading.</p>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — head container</h4>
+    <p>Start the containers in order: <strong>spark-02 first</strong> — start the worker and wait until you see <code>Ray runtime started</code> in <code>docker logs vllm_node</code>. <em>Then</em> start the head on <strong>spark-01</strong>. The head script starts Ray, sleeps 60&nbsp;s, then calls <code>vllm serve</code>. The worker must have joined the Ray cluster within those 60&nbsp;s for TP=2 to find both GPUs. The API on <code>spark-01:8000</code> becomes ready once the model finishes loading.</p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — worker container (start first)</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>docker run -d --name vllm_node --restart unless-stopped \
+  --network host --ipc host --gpus all \
+  -e NCCL_SOCKET_IFNAME=enp1s0f0np0 \
+  -e NCCL_SOCKET_NTHREADS=4 \
+  -e NCCL_NSOCKS_PERTHREAD=4 \
+  -e NCCL_BUFFSIZE=4194304 \
+  -e NCCL_DEBUG=WARN \
+  -e VLLM_HOST_IP=YOUR_NODE2_DAC_IP \
+  -v /home/YOUR_USERNAME/.cache/huggingface:/root/.cache/huggingface \
+  -v /home/YOUR_USERNAME/spark-ai-stack/scripts:/scripts \
+  --entrypoint /scripts/vllm-worker.sh \
+  vllm-spark:26.04
+
+# Wait until the worker is ready before starting the head
+docker logs -f vllm_node   # on spark-02 — wait for "Ray runtime started"</code></pre>
+    </div>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — head container (start after worker is ready)</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>docker run -d --name vllm_node --restart unless-stopped \
@@ -1004,23 +1038,7 @@ rsync -avP \
   --entrypoint /scripts/vllm-head.sh \
   vllm-spark:26.04</code></pre>
     </div>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — worker container</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>docker run -d --name vllm_node --restart unless-stopped \
-  --network host --ipc host --gpus all \
-  -e NCCL_SOCKET_IFNAME=enp1s0f0np0 \
-  -e NCCL_SOCKET_NTHREADS=4 \
-  -e NCCL_NSOCKS_PERTHREAD=4 \
-  -e NCCL_BUFFSIZE=4194304 \
-  -e NCCL_DEBUG=WARN \
-  -e VLLM_HOST_IP=YOUR_NODE2_DAC_IP \
-  -v /home/YOUR_USERNAME/.cache/huggingface:/root/.cache/huggingface \
-  -v /home/YOUR_USERNAME/spark-ai-stack/scripts:/scripts \
-  --entrypoint /scripts/vllm-worker.sh \
-  vllm-spark:26.04</code></pre>
-    </div>
-    <p>Watch the head logs to confirm the worker joined and the model loaded:</p>
+    <p>Watch the head logs to confirm Ray is up, the worker joined, and the model loaded:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>docker logs -f vllm_node   # on spark-01</code></pre>
@@ -1031,14 +1049,14 @@ rsync -avP \
     </div>
 
     <h3>Step 1f — Verification</h3>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — confirm NCCL is using RDMA, not TCP sockets</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — confirm NCCL is using the DAC interface</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>docker logs vllm_node | grep -E "NET/IB|NET/Socket"</code></pre>
+      <pre><code>docker logs vllm_node | grep "NCCL INFO NET"</code></pre>
     </div>
     <div class="verify">
-      Good: lines like <code>NCCL INFO NET/IB : Using [0]rocep1s0f0:1/IB [1]roceP2p1s0f0:1/IB</code> — NCCL is on RDMA.<br>
-      Bad: <code>NCCL INFO NET/Socket : Using …</code> — NCCL fell back to TCP; throughput will be ~2–3&nbsp;tok/s. See Cluster issues.
+      Expected: a line referencing <code>enp1s0f0np0</code> — NCCL is pinned to the DAC interface via <code>NCCL_SOCKET_IFNAME</code>.<br>
+      If you see a management interface (<code>eth0</code>, <code>eno1</code>, etc.) instead, NCCL is using the slow path. Verify that <code>VLLM_HOST_IP</code> is set to the DAC IP (<code>10.100.100.x</code>) and that <code>NCCL_SOCKET_IFNAME=enp1s0f0np0</code> is present in the docker run command.
     </div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — Ray cluster status</h4>
@@ -1146,7 +1164,7 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable vllm-worker.service</code></pre>
     </div>
-    <div class="verify">After rebooting both nodes, check each: <code>systemctl status vllm-head</code> on <code>spark-01</code> and <code>systemctl status vllm-worker</code> on <code>spark-02</code> — both should show <strong>active (running)</strong>. Then <code>curl http://localhost:8000/v1/models</code> on <code>spark-01</code> returns the model list once the warm-up completes (~20 s after both services are up).</div>
+    <div class="verify">After rebooting both nodes, check each: <code>systemctl status vllm-worker</code> on <code>spark-02</code> and <code>systemctl status vllm-head</code> on <code>spark-01</code> — both should show <strong>active (running)</strong>. The 60&nbsp;s sleep in <code>vllm-head.sh</code> gives the worker enough time to join even when both nodes boot simultaneously. Once the head's <code>vllm serve</code> phase completes, <code>curl http://localhost:8000/v1/models</code> on <code>spark-01</code> returns the model list.</div>
 
     <h3>Performance results</h3>
     <div class="table-wrap">
@@ -1155,41 +1173,34 @@ sudo systemctl enable vllm-worker.service</code></pre>
         <tbody>
           <tr><td>Hardware</td><td>2× NVIDIA DGX Spark (GB10, 128&nbsp;GB unified memory each)</td><td>Total 256&nbsp;GB unified pool</td></tr>
           <tr><td>Model</td><td><code>Qwen/Qwen3.5-122B-A10B-FP8</code></td><td>122B / A10B MoE, FP8 quantized</td></tr>
-          <tr><td>Network</td><td>200&nbsp;Gb/s DAC (QSFP) · NCCL over RoCE/RDMA</td><td><code>NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0</code></td></tr>
+          <tr><td>Network</td><td>200&nbsp;Gb/s DAC (QSFP) · NCCL over <code>enp1s0f0np0</code></td><td><code>NCCL_SOCKET_IFNAME=enp1s0f0np0</code></td></tr>
           <tr><td>Tensor parallel</td><td>TP=2 across both nodes</td><td>Ray-backed distributed executor</td></tr>
           <tr><td>First request (CUDA-graph warmup)</td><td>~20&nbsp;s</td><td>One-time cost per cold start</td></tr>
           <tr><td><strong>Steady-state throughput</strong></td><td><strong>~45&nbsp;tok/s</strong></td><td>Single-stream decode</td></tr>
-          <tr><td>Context window</td><td>262,144 tokens</td><td>Full Qwen3.5 context retained</td></tr>
+          <tr><td>Context window</td><td>131,072 tokens</td><td><code>--max-model-len 131072</code> — higher values OOM during KV cache profiling</td></tr>
           <tr><td>Memory per node</td><td>~57&nbsp;GB resident</td><td>Leaves ~71&nbsp;GB free per node for KV cache</td></tr>
-          <tr><td>GPU memory utilization</td><td>0.70</td><td><code>--gpu-memory-utilization 0.7</code></td></tr>
+          <tr><td>GPU memory utilization</td><td>0.68</td><td><code>--gpu-memory-utilization 0.68</code> — do not raise above 0.68 (OOM on startup)</td></tr>
         </tbody>
       </table>
     </div>
     <p>The performance ceiling is GB10 LPDDR5X memory bandwidth (273&nbsp;GB/s). With 10B active parameters at FP8 (≈10&nbsp;GB of weight reads per decoded token across the active MoE experts), ~45&nbsp;tok/s is expected at TP=2 single-stream decode.</p>
 
     <h3>Bootstrap fallback — the 35B FP8 model</h3>
-    <p>The 35B FP8 model is still useful for fast iteration on cluster wiring (Ray, NCCL, RoCE) before committing to the longer 122B load. Replace the <code>vllm-head.sh</code> serve command temporarily:</p>
+    <p>The 35B FP8 model is useful for fast iteration on cluster wiring before committing to the longer 122B load. Because <code>vllm-head.sh</code> now starts Ray inside the container, the <code>--entrypoint ""</code> one-liner no longer works for TP=2. Instead, temporarily edit the serve command in <code>vllm-head.sh</code> on <code>spark-01</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code># One-off: override the entrypoint to serve the 35B model
-docker run -d --name vllm_node --rm \
-  --network host --ipc host --gpus all \
-  -e NCCL_SOCKET_IFNAME=enp1s0f0np0 \
-  -e NCCL_SOCKET_NTHREADS=4 \
-  -e NCCL_NSOCKS_PERTHREAD=4 \
-  -e NCCL_BUFFSIZE=4194304 \
-  -e NCCL_DEBUG=WARN \
-  -e VLLM_HOST_IP=YOUR_NODE1_DAC_IP \
-  -v /home/YOUR_USERNAME/.cache/huggingface:/root/.cache/huggingface \
-  --entrypoint "" \
-  vllm-spark:26.04 \
-  vllm serve Qwen/Qwen3.6-35B-A3B-FP8 \
-    --served-model-name qwen3.6-35b \
-    --max-model-len 32768 \
-    -tp 2 --distributed-executor-backend ray \
-    --port 8000 --host 0.0.0.0</code></pre>
+      <pre><code># On spark-01 — swap the model in vllm-head.sh temporarily
+sed -i \
+  -e 's|Qwen/Qwen3.5-122B-A10B-FP8|Qwen/Qwen3.6-35B-A3B-FP8|' \
+  -e 's|--served-model-name qwen3.5-122b|--served-model-name qwen3.6-35b|' \
+  -e 's|--max-model-len 131072|--max-model-len 32768|' \
+  ~/spark-ai-stack/scripts/vllm-head.sh
+
+# Then launch normally (spark-02 worker first, then spark-01 head)
+# Restore afterwards:
+# git checkout ~/spark-ai-stack/scripts/vllm-head.sh</code></pre>
     </div>
-    <p>Update <code>model_name</code> in the LiteLLM config (Steps 02/03) to <code>qwen3.6-35b</code> if you use the fallback.</p>
+    <p>Update <code>model_name</code> in the LiteLLM config (Steps 02/03) to <code>qwen3.6-35b</code> while using the fallback. Restore <code>vllm-head.sh</code> before switching back to 122B.</p>
   </div>
 
   <div class="step" id="step2">
@@ -1220,11 +1231,12 @@ model_list:
       model: openai/qwen3.5-122b
       api_base: http://localhost:8000/v1
       api_key: "not-needed"
+      max_tokens: 32768
     model_info:
       supports_function_calling: true
       supports_tool_choice: true
-      max_context_window: 262144
-      max_input_tokens: 229376
+      max_context_window: 131072
+      max_input_tokens: 98304
       max_output_tokens: 32768
 
 litellm_settings:
@@ -1387,11 +1399,12 @@ model_list:
       model: openai/qwen3.5-122b
       api_base: http://YOUR_NODE1_DAC_IP:8000/v1   # shared vLLM, over DAC
       api_key: "not-needed"
+      max_tokens: 32768
     model_info:
       supports_function_calling: true
       supports_tool_choice: true
-      max_context_window: 262144
-      max_input_tokens: 229376
+      max_context_window: 131072
+      max_input_tokens: 98304
       max_output_tokens: 32768
 
 litellm_settings:
@@ -2220,6 +2233,30 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
 
   <div class="step" id="known-issues">
     <div class="step-header"><span class="step-num">REF</span><h2>Other known issues</h2></div>
+    <div class="issue">
+      <div class="issue-title">--load-format fastsafetensors causes load failure</div>
+      <div class="issue-sym"><span>Symptom</span><span>Container exits immediately or vLLM logs an error about an unrecognised <code>--load-format</code> value.</span></div>
+      <div class="issue-sym"><span>Cause</span><span><code>fastsafetensors</code> is not supported in <code>vllm-spark:26.04</code>.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Omit <code>--load-format</code> entirely. The default safetensors loader works correctly with this image.</span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">OOM during KV cache profiling at startup (gpu-memory-utilization above 0.68)</div>
+      <div class="issue-sym"><span>Symptom</span><span>vLLM starts weight loading, reaches the KV cache profiling phase, and then the process is killed or errors with an out-of-memory exception. Happens on startup, before any requests are served.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>With two GB10 nodes at TP=2 and the 122B FP8 model, <code>--gpu-memory-utilization</code> values above 0.68 allocate more KV cache than the available unified memory headroom after weights are resident.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Keep <code>--gpu-memory-utilization 0.68</code> as shown in Step 1b. Do not raise this value with the current model/hardware combination.</span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">vllm serve can't find both GPUs — worker was not ready before head started</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>vllm serve</code> starts on <code>spark-01</code> but only sees 1 GPU, or hangs waiting for TP rank 1 to register.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>The <code>vllm-head.sh</code> script starts the Ray head node, waits 60&nbsp;s, then calls <code>vllm serve -tp 2</code>. If the worker on <code>spark-02</code> was not started first and had not joined the Ray cluster within those 60&nbsp;s, vLLM sees only the local GPU.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Always start the worker container on <code>spark-02</code> first. Wait until <code>docker logs vllm_node</code> shows <code>Ray runtime started</code> on <code>spark-02</code>, then start the head container on <code>spark-01</code>. If already in a bad state: stop both containers, start the worker, confirm it logs <code>Ray runtime started</code>, then start the head.</span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">LiteLLM /v1/models does not report context_length</div>
+      <div class="issue-sym"><span>Symptom</span><span>Clients that auto-detect context window size (e.g. Cline) show a very small or incorrect context window even though <code>max_context_window</code> is set in the LiteLLM <code>model_info</code> block.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>LiteLLM does not forward <code>model_info.max_context_window</code> in the <code>/v1/models</code> response regardless of config.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Set the context window manually in each client. For Cline: open model settings and set context window to <code>131072</code>. For Open WebUI: use the model editor to set <code>Context Length</code> to <code>131072</code>.</span></div>
+    </div>
     <div class="issue">
       <div class="issue-title">NVFP4 quantization is single-node only on DGX Spark</div>
       <div class="issue-sym"><span>Limitation</span><span>NVFP4 multi-node cluster mode is not supported as of <code>vllm-spark:26.04</code> / <code>vllm/vllm-openai:cu130-nightly</code>. NVFP4 fails at cluster launch when selected with TP=2 multi-node on DGX Spark.</span></div>

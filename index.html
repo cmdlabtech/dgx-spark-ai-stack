@@ -443,7 +443,7 @@
     <div class="stack-pills">
       <span class="pill blue">2× DGX Spark</span>
       <span class="pill blue">vLLM TP=2 · Ray</span>
-      <span class="pill blue">Qwen3.5-122B-A10B-int4-AutoRound</span>
+      <span class="pill blue">Qwen3.5-122B-A10B-FP8</span>
       <span class="pill">LiteLLM × 2</span>
       <span class="pill">Open WebUI × 2</span>
       <span class="pill">n8n × 2</span>
@@ -459,7 +459,7 @@
     <p style="margin:0 0 16px;font-size:13.5px;color:var(--text2);">Two physically separate DGX Spark nodes share a single tensor-parallel vLLM cluster (TP=2 over Ray on a 200&nbsp;Gb/s DAC link) — but each node runs its own independent application stack owned by a different party. The diagram shows three logical layers: <strong>application stacks</strong> (top, separate per owner), <strong>LiteLLM proxies</strong> (middle, one per side, separate keys and logs), and the <strong>shared compute pool</strong> (bottom, TP=2 across both nodes, served by the vLLM head on <code>spark-01:8000</code>). Tailscale sits as a separate overlay on each node — the DAC link is its own private hardware and does not traverse Tailscale.</p>
     <div class="diagram-wrap">
       <svg width="100%" viewBox="0 0 1100 940" role="img" xmlns="http://www.w3.org/2000/svg" aria-labelledby="arch-desc">
-        <desc id="arch-desc">Two-layer split-trust architecture. Top: two independent application stacks. Left = spark-01 (your node) with Your Open WebUI, Your n8n, Your Hermes, and Your LiteLLM, on your Tailscale tailnet. Right = spark-02 (client node) with Client Open WebUI, Client n8n, and Client LiteLLM, on a separate client Tailscale tailnet. Both LiteLLM proxies feed into a single shared compute pool below: vLLM head (Ray master, TP rank 0) on spark-01:8000, vLLM Ray worker (TP rank 1) on spark-02, the Qwen model in 256 GB unified memory, connected via the DAC link (200 Gb/s, enp1s0f0np0, 198.51.100.0/30). Your LiteLLM calls vLLM over localhost:8000; client's LiteLLM calls it over the DAC at 198.51.100.1:8000. NCCL collectives between head and worker flow on the DAC. Tailscale overlays carry application traffic only; the DAC is private physical hardware not routed through either tailnet.</desc>
+        <desc id="arch-desc">Two-layer split-trust architecture. Top: two independent application stacks. Left = spark-01 (your node) with Your Open WebUI, Your n8n, Your Hermes, and Your LiteLLM, on your Tailscale tailnet. Right = spark-02 (client node) with Client Open WebUI, Client n8n, and Client LiteLLM, on a separate client Tailscale tailnet. Both LiteLLM proxies feed into a single shared compute pool below: vLLM head (Ray master, TP rank 0) on spark-01:8000, vLLM Ray worker (TP rank 1) on spark-02, the Qwen model in 256 GB unified memory, connected via the DAC link (200 Gb/s, enp1s0f0np0, 10.100.100.0/30). Your LiteLLM calls vLLM over localhost:8000; client's LiteLLM calls it over the DAC at 10.100.100.1:8000. NCCL collectives between head and worker flow on the DAC. Tailscale overlays carry application traffic only; the DAC is private physical hardware not routed through either tailnet.</desc>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -501,7 +501,7 @@
         <text x="40" y="107" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#1d4ed8">spark-01 · YOUR NODE</text>
         <!-- Small white pill behind the IP label so the dashed boundary doesn't slice through the text -->
         <rect x="306" y="92" width="222" height="22" rx="4" fill="#ffffff" stroke="#e5e7eb" stroke-width="1"/>
-        <text x="522" y="107" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="10" fill="#6b7280">192.0.2.21 (mgmt) · 198.51.100.1 (DAC)</text>
+        <text x="522" y="107" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="10" fill="#6b7280">10.10.86.21 (mgmt) · 10.100.100.1 (DAC)</text>
 
         <!-- Tailscale label (light fill, doesn't cover anything) -->
         <rect x="32" y="124" width="496" height="26" rx="5" class="ts-badge"/>
@@ -539,7 +539,7 @@
         <text x="580" y="107" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#5b21b6">spark-02 · CLIENT NODE</text>
         <!-- Small white pill behind the IP label so the dashed boundary doesn't slice through the text -->
         <rect x="846" y="92" width="222" height="22" rx="4" fill="#ffffff" stroke="#e5e7eb" stroke-width="1"/>
-        <text x="1062" y="107" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="10" fill="#6b7280">192.0.2.22 (mgmt) · 198.51.100.2 (DAC)</text>
+        <text x="1062" y="107" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="10" fill="#6b7280">10.10.86.22 (mgmt) · 10.100.100.2 (DAC)</text>
 
         <!-- Tailscale label -->
         <rect x="572" y="124" width="496" height="26" rx="5" class="ts-badge"/>
@@ -562,7 +562,7 @@
         <rect x="580" y="254" width="490" height="124" rx="6" class="litellm-rect"/>
         <text class="title-text" x="825" y="280" text-anchor="middle" dominant-baseline="central">Client LiteLLM · :8001</text>
         <text class="sub-text" x="825" y="304" text-anchor="middle" dominant-baseline="central">client's master_key · client's SQLite log corpus</text>
-        <text class="mono-text" x="825" y="324" text-anchor="middle" dominant-baseline="central">api_base = http://198.51.100.1:8000/v1 (over DAC)</text>
+        <text class="mono-text" x="825" y="324" text-anchor="middle" dominant-baseline="central">api_base = http://10.100.100.1:8000/v1 (over DAC)</text>
         <text class="sub-text" x="825" y="354" text-anchor="middle" dominant-baseline="central" fill="#16a34a">↑ from client apps   ↓ to shared vLLM</text>
 
         <!-- ============ Arrows from each LiteLLM down to the shared pool ============ -->
@@ -574,7 +574,7 @@
         <!-- Client LiteLLM bottom (y=378) → vLLM head top (y=566), with DAC label pill -->
         <line x1="825" y1="378" x2="825" y2="566" class="arrow-line" marker-end="url(#arrow)"/>
         <rect x="715" y="468" width="220" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
-        <text x="825" y="483" text-anchor="middle" class="mono-text" dominant-baseline="central">198.51.100.1:8000 (over DAC)</text>
+        <text x="825" y="483" text-anchor="middle" class="mono-text" dominant-baseline="central">10.100.100.1:8000 (over DAC)</text>
 
         <!-- ============ Shared compute pool ============ -->
         <rect x="20" y="510" width="1060" height="420" rx="10" class="pool-boundary"/>
@@ -582,19 +582,19 @@
         <text x="40" y="517" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">SHARED COMPUTE POOL · TP=2 over Ray</text>
 
         <!-- Pool intro text -->
-        <text x="550" y="548" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412" font-weight="500">single vLLM endpoint at 198.51.100.1:8000 — both LiteLLM proxies talk to it</text>
+        <text x="550" y="548" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412" font-weight="500">single vLLM endpoint at 10.100.100.1:8000 — both LiteLLM proxies talk to it</text>
 
         <!-- vLLM head -->
         <rect x="60" y="566" width="980" height="76" rx="6" class="vllm-rect"/>
         <text class="title-text" x="550" y="588" text-anchor="middle" dominant-baseline="central">vLLM head (Ray master) · TP rank 0 · spark-01:8000 · :6379 (Ray GCS)</text>
         <text class="sub-text" x="550" y="608" text-anchor="middle" dominant-baseline="central">--tensor-parallel-size 2 · --distributed-executor-backend ray</text>
-        <text class="mono-text" x="550" y="626" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.1 · NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 · GPU 0</text>
+        <text class="mono-text" x="550" y="626" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=10.100.100.1 · NCCL_SOCKET_IFNAME=enp1s0f0np0 · GPU 0</text>
 
         <!-- vLLM worker -->
         <rect x="60" y="664" width="980" height="76" rx="6" class="vllm-rect"/>
         <text class="title-text" x="550" y="686" text-anchor="middle" dominant-baseline="central">vLLM Ray worker · TP rank 1 · spark-02 (no API listener)</text>
         <text class="sub-text" x="550" y="706" text-anchor="middle" dominant-baseline="central">processes tensor activations only — no readable text</text>
-        <text class="mono-text" x="550" y="724" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.2 · NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 · GPU 1</text>
+        <text class="mono-text" x="550" y="724" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=10.100.100.2 · NCCL_SOCKET_IFNAME=enp1s0f0np0 · GPU 1</text>
 
         <!-- NCCL connector between head and worker (drawn outside boxes, on right) -->
         <path d="M 1050 604 C 1080 604, 1080 702, 1050 702" stroke="#ea580c" stroke-width="3" fill="none"/>
@@ -603,13 +603,13 @@
 
         <!-- Model -->
         <rect x="60" y="762" width="980" height="56" rx="6" class="vllm-rect" fill="#fffaf0"/>
-        <text class="title-text" x="550" y="782" text-anchor="middle" dominant-baseline="central">Intel/Qwen3.5-122B-A10B-int4-AutoRound — 256 GB unified memory pool</text>
+        <text class="title-text" x="550" y="782" text-anchor="middle" dominant-baseline="central">Qwen/Qwen3.5-122B-A10B-FP8 — 256 GB unified memory pool</text>
         <text class="sub-text" x="550" y="800" text-anchor="middle" dominant-baseline="central">bootstrap fallback: Qwen/Qwen3.6-35B-A3B-FP8</text>
 
         <!-- DAC link bar -->
         <rect x="60" y="838" width="980" height="74" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
         <text x="550" y="860" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#9a3412">DAC · 200 Gb/s direct-attach copper</text>
-        <text x="550" y="880" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#9a3412">enp1s0f0np0 · MTU 9216 · 198.51.100.0/30</text>
+        <text x="550" y="880" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#9a3412">enp1s0f0np0 · MTU 9216 · 10.100.100.0/30</text>
         <text x="550" y="898" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#9a3412">NCCL allreduce over RoCE/RDMA · Ray control · NOT routed through either tailnet · separate from mgmt LAN</text>
 
       </svg>
@@ -631,7 +631,7 @@
     <p>Knowledge bases, chat history, RAG pipelines, vector indexes, API keys, request logs, and OAuth tokens are completely separate on each node. Your Open WebUI's database is on <code>spark-01</code>; the client's is on <code>spark-02</code>. Your LiteLLM master key is yours; the client's is the client's. Neither party has access to the other's application stack — there is no cross-mounted volume, no shared Postgres, no shared file system. The only thing that crosses the boundary is the inference call from the client's LiteLLM into <code>spark-01:8000</code>.</p>
 
     <h3>Network isolation — separate tailnets, private DAC</h3>
-    <p>Each node joins its owner's Tailscale tailnet independently. ACLs on each tailnet are controlled by that owner. The DAC link (<code>198.51.100.0/30</code>) is private physical hardware between the two nodes — it is not routed through either Tailscale network and is not advertised on either tailnet. Tailscale carries application traffic only (clients reaching their own UIs); compute traffic stays on the DAC.</p>
+    <p>Each node joins its owner's Tailscale tailnet independently. ACLs on each tailnet are controlled by that owner. The DAC link (<code>10.100.100.0/30</code>) is private physical hardware between the two nodes — it is not routed through either Tailscale network and is not advertised on either tailnet. Tailscale carries application traffic only (clients reaching their own UIs); compute traffic stays on the DAC.</p>
 
     <h3>When this architecture is appropriate</h3>
     <ul style="font-size:13.5px;color:var(--text2);line-height:1.75;padding-left:20px;display:flex;flex-direction:column;gap:4px;">
@@ -663,15 +663,15 @@
           <tr>
             <td><code>spark-01</code></td>
             <td>You (private)</td>
-            <td><code>192.0.2.21</code></td>
-            <td><code>198.51.100.1</code></td>
+            <td><code>10.10.86.21</code></td>
+            <td><code>10.100.100.1</code></td>
             <td>vLLM head (Ray master, TP rank 0), Your LiteLLM, Your Open WebUI, Your Hermes Agent, Your n8n, Your Tailscale</td>
           </tr>
           <tr>
             <td><code>spark-02</code></td>
             <td>Client (separate ownership)</td>
-            <td><code>192.0.2.22</code></td>
-            <td><code>198.51.100.2</code></td>
+            <td><code>10.10.86.22</code></td>
+            <td><code>10.100.100.2</code></td>
             <td>vLLM Ray worker (TP rank 1), Client LiteLLM, Client Open WebUI, Client n8n, Client Tailscale</td>
           </tr>
         </tbody>
@@ -679,7 +679,7 @@
     </div>
     <h3>Interconnects</h3>
     <ul style="font-size:13.5px;color:var(--text2);line-height:1.75;padding-left:20px;display:flex;flex-direction:column;gap:4px;">
-      <li><strong>DAC interconnect</strong> — <code>enp1s0f0np0</code>, MTU 9216, point-to-point <code>198.51.100.0/30</code>. Carries NCCL for tensor-parallel collectives, Ray control, and the client LiteLLM's inference calls into <code>spark-01:8000</code>. Not routed through either Tailscale network.</li>
+      <li><strong>DAC interconnect</strong> — <code>enp1s0f0np0</code>, MTU 9216, point-to-point <code>10.100.100.0/30</code>. Carries NCCL for tensor-parallel collectives, Ray control, and the client LiteLLM's inference calls into <code>spark-01:8000</code>. Not routed through either Tailscale network.</li>
       <li><strong>Mgmt interconnect</strong> — <code>192.0.2.0/24</code> over RJ45, default routes. Used for SSH and node-bootstrap traffic during setup.</li>
       <li><strong>Tailscale (each owner)</strong> — each node independently joins its owner's tailnet. Application traffic (browser → Open WebUI, Telegram → Hermes, etc.) traverses Tailscale. The DAC link is never advertised onto either tailnet.</li>
       <li><strong>SSH</strong> — passwordless both directions between <code>spark-01</code> and <code>spark-02</code> at the mgmt IPs (required for the rsync step in Step 01). After setup, this can be locked down or removed.</li>
@@ -687,7 +687,7 @@
     <h3>Architecture principles</h3>
     <ol style="font-size:13.5px;color:var(--text2);line-height:1.75;padding-left:20px;display:flex;flex-direction:column;gap:8px;">
       <li><strong>Shared compute, split application.</strong> The vLLM cluster is the <em>only</em> shared resource. Application stacks above it (LiteLLM, Open WebUI, Hermes, n8n, Tailscale) are duplicated and independently owned.</li>
-      <li><strong>Both LiteLLMs hit the same vLLM endpoint.</strong> Your LiteLLM uses <code>http://localhost:8000/v1</code>; client's LiteLLM uses <code>http://198.51.100.1:8000/v1</code> over the DAC. Neither proxy goes through the other's stack.</li>
+      <li><strong>Both LiteLLMs hit the same vLLM endpoint.</strong> Your LiteLLM uses <code>http://localhost:8000/v1</code>; client's LiteLLM uses <code>http://10.100.100.1:8000/v1</code> over the DAC. Neither proxy goes through the other's stack.</li>
       <li><strong>Separate keys, separate logs, separate data.</strong> Each LiteLLM has its own master key; each Open WebUI has its own knowledge bases and chat history. Nothing is shared at the application layer.</li>
       <li><strong>Tailscale is per-owner.</strong> Two separate tailnets, two separate ACL policies. Cross-tailnet traffic only happens if both owners explicitly configure it (which by default they do not).</li>
       <li><strong>Single-instance per side.</strong> No clustered Open WebUI / clustered n8n on either node. HA modes are documented in the <a href="#appendix-ha">appendix</a> only.</li>
@@ -764,11 +764,11 @@
           <h4>spark-01 — your node</h4>
           <div class="worksheet-row">
             <label for="ws-n1-mgmt">mgmt IP</label>
-            <input type="text" id="ws-n1-mgmt" data-key="YOUR_NODE1_MGMT_IP" placeholder="e.g. 192.0.2.21" autocomplete="off"/>
+            <input type="text" id="ws-n1-mgmt" data-key="YOUR_NODE1_MGMT_IP" placeholder="e.g. 10.10.86.21" autocomplete="off"/>
           </div>
           <div class="worksheet-row">
             <label for="ws-n1-dac">DAC IP</label>
-            <input type="text" id="ws-n1-dac" data-key="YOUR_NODE1_DAC_IP" placeholder="e.g. 198.51.100.1" autocomplete="off"/>
+            <input type="text" id="ws-n1-dac" data-key="YOUR_NODE1_DAC_IP" placeholder="e.g. 10.100.100.1" autocomplete="off"/>
           </div>
           <div class="worksheet-row">
             <label for="ws-n1-ts">Tailscale IP</label>
@@ -779,11 +779,11 @@
           <h4>spark-02 — client node</h4>
           <div class="worksheet-row">
             <label for="ws-n2-mgmt">mgmt IP</label>
-            <input type="text" id="ws-n2-mgmt" data-key="YOUR_NODE2_MGMT_IP" placeholder="e.g. 192.0.2.22" autocomplete="off"/>
+            <input type="text" id="ws-n2-mgmt" data-key="YOUR_NODE2_MGMT_IP" placeholder="e.g. 10.10.86.22" autocomplete="off"/>
           </div>
           <div class="worksheet-row">
             <label for="ws-n2-dac">DAC IP</label>
-            <input type="text" id="ws-n2-dac" data-key="YOUR_NODE2_DAC_IP" placeholder="e.g. 198.51.100.2" autocomplete="off"/>
+            <input type="text" id="ws-n2-dac" data-key="YOUR_NODE2_DAC_IP" placeholder="e.g. 10.100.100.2" autocomplete="off"/>
           </div>
           <div class="worksheet-row">
             <label for="ws-n2-ts">Tailscale IP</label>
@@ -857,7 +857,7 @@ ssh spark-02 hostname    # from spark-01</code></pre>
 
   <div class="step" id="step1">
     <div class="step-header"><span class="step-num">STEP 01</span><h2>vLLM clustered — TP=2 over Ray on RoCE/RDMA</h2></div>
-    <p>vLLM is the only clustered service. The model runs with tensor-parallel size 2: <code>spark-01</code> hosts the Ray master and the vLLM head process; <code>spark-02</code> hosts a Ray worker. NCCL collectives flow over <strong>RoCE/RDMA</strong> on the DAC link — not TCP sockets. The earlier hand-built <code>vllm-spark:26.04</code> approach is obsolete: it ran NCCL over TCP/IP (no <code>/dev/infiniband</code> passthrough, no <code>NCCL_IB_HCA</code>), so steady-state throughput sat at 2–3&nbsp;tok/s instead of the 45&nbsp;tok/s the hardware is capable of. The community-maintained <code>eugr/spark-vllm-docker</code> stack ships pre-built SM121a (Blackwell) wheels and wires up the RoCE/infiniband passthrough correctly. Use it.</p>
+    <p>vLLM is the only clustered service. The model runs with tensor-parallel size 2: <code>spark-01</code> hosts the Ray master and the vLLM head process; <code>spark-02</code> hosts a Ray worker. NCCL collectives flow over <strong>RoCE/RDMA</strong> on the DAC link — not TCP sockets. The <code>vllm-spark:26.04</code> container ships pre-built SM121a (Blackwell) wheels with <code>/dev/infiniband</code> passthrough and <code>NCCL_IB_HCA</code> wired in — NCCL binds to both RoCE twins automatically and runs RDMA allreduce at full link speed. The cluster is managed by <code>/scripts/vllm-head.sh</code> on <code>spark-01</code>, which starts the head container, starts Ray, and SSHes into <code>spark-02</code> to bring up the worker container.</p>
 
     <h3>Production model</h3>
     <div class="table-wrap">
@@ -866,8 +866,8 @@ ssh spark-02 hostname    # from spark-01</code></pre>
         <tbody>
           <tr>
             <td><strong>Production (default)</strong></td>
-            <td><code>Intel/Qwen3.5-122B-A10B-int4-AutoRound</code></td>
-            <td>The intended daily driver — 122B / A10B MoE quantized with Intel AutoRound INT4. ~37&nbsp;GB resident per node, leaving ~91&nbsp;GB headroom per node for KV cache. Steady-state throughput ~45&nbsp;tok/s at TP=2. 262K context window. Requires the <code>--tf5</code> build flag (adds AutoRound support).</td>
+            <td><code>Qwen/Qwen3.5-122B-A10B-FP8</code></td>
+            <td>The intended daily driver — 122B / A10B MoE, FP8 quantized. ~57&nbsp;GB resident per node, leaving ~71&nbsp;GB headroom per node for KV cache. Steady-state throughput ~45&nbsp;tok/s at TP=2. 262K context window. <code>tool-call-parser: qwen3_coder</code> · <code>reasoning-parser: qwen3</code>.</td>
           </tr>
           <tr>
             <td>Bootstrap fallback</td>
@@ -904,53 +904,78 @@ ls /dev/infiniband/</code></pre>
       <div>If <code>/dev/infiniband</code> doesn't exist or both port-0 devices aren't Up, NCCL will silently fall back to TCP and you will see 2–3&nbsp;tok/s instead of 45&nbsp;tok/s. Fix the RoCE plumbing on the host before continuing — RDMA passthrough into the container can only work if the devices are present and Up on the host.</div>
     </div>
 
-    <h3>Step 1b — Clone and build the image (spark-01)</h3>
-    <p>The build pulls the pre-built SM121a (Blackwell) wheels — no compilation required — and the helper script auto-copies the resulting image to <code>spark-02</code> over the DAC. The <code>--tf5</code> flag adds the AutoRound INT4 support that the production recipe needs. Total build time ~30 minutes (mostly image pull + cross-node copy).</p>
+    <h3>Step 1b — Create the launch scripts (spark-01)</h3>
+    <p>The cluster is driven by two bash scripts mounted into the <code>vllm-spark:26.04</code> container at runtime. Create them in <code>~/spark-ai-stack/scripts/</code> on <code>spark-01</code> — they will be rsynced to <code>spark-02</code> in the next step.</p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>git clone https://github.com/eugr/spark-vllm-docker.git
-cd spark-vllm-docker
-./build-and-copy.sh --tf5 --copy-to YOUR_NODE2_DAC_IP</code></pre>
-    </div>
-    <div class="verify">After the script finishes, <code>docker images | grep vllm-node-tf5</code> on both nodes should show <code>vllm-node-tf5:latest</code> at ~19&nbsp;GB.</div>
+      <pre><code>mkdir -p ~/spark-ai-stack/scripts
 
-    <h3>Step 1c — Autodiscovery (spark-01)</h3>
-    <p>The discovery step detects the local and peer DAC IPs, identifies the RoCE twins for <code>NCCL_IB_HCA</code>, and writes the values to <code>.env</code>. Every subsequent <code>run-recipe.sh</code> invocation reads from this file — get it right once and the cluster launch becomes a one-liner.</p>
+# Head script — runs on spark-01 inside the container
+cat &gt; ~/spark-ai-stack/scripts/vllm-head.sh &lt;&lt; 'EOF'
+#!/usr/bin/env bash
+exec vllm serve Qwen/Qwen3.5-122B-A10B-FP8 \
+  --served-model-name qwen3.5-122b \
+  --max-model-len 262144 \
+  --gpu-memory-utilization 0.7 \
+  --port 8000 \
+  --host 0.0.0.0 \
+  --enable-prefix-caching \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --reasoning-parser qwen3 \
+  --max-num-batched-tokens 8192 \
+  --max-num-seqs 32 \
+  --enable-chunked-prefill \
+  -tp 2 \
+  --distributed-executor-backend ray
+EOF
+
+# Worker script — runs on spark-02 inside the container
+cat &gt; ~/spark-ai-stack/scripts/vllm-worker.sh &lt;&lt; 'EOF'
+#!/usr/bin/env bash
+exec ray start \
+  --address=YOUR_NODE1_DAC_IP:6379 \
+  --node-ip-address=YOUR_NODE2_DAC_IP \
+  --num-gpus=1 \
+  --block
+EOF
+
+chmod +x ~/spark-ai-stack/scripts/vllm-head.sh \
+         ~/spark-ai-stack/scripts/vllm-worker.sh</code></pre>
+    </div>
+    <div class="verify"><code>ls -la ~/spark-ai-stack/scripts/</code> shows both scripts executable.</div>
+
+    <h3>Step 1c — Stage image and scripts on spark-02</h3>
+    <p>Both nodes need the <code>vllm-spark:26.04</code> image and the scripts directory. Pipe the image over the DAC to avoid re-downloading, and rsync the scripts in the same pass.</p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cd ~/spark-vllm-docker
-./run-recipe.sh --discover</code></pre>
+      <pre><code># Pipe the image over the 200 Gb/s DAC — much faster than re-pulling
+docker save vllm-spark:26.04 | ssh -b YOUR_NODE1_DAC_IP YOUR_NODE2_DAC_IP docker load
+
+# Sync the scripts directory
+rsync -avP \
+  -e "ssh -b YOUR_NODE1_DAC_IP" \
+  ~/spark-ai-stack/scripts/ \
+  YOUR_NODE2_DAC_IP:~/spark-ai-stack/scripts/</code></pre>
     </div>
-    <p>Accept the prompts. The resulting <code>.env</code> file should contain:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">env</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>CLUSTER_NODES=YOUR_NODE1_DAC_IP,YOUR_NODE2_DAC_IP
-COPY_HOSTS=YOUR_NODE2_DAC_IP
-LOCAL_IP=YOUR_NODE1_DAC_IP
-ETH_IF=enp1s0f0np0
-IB_IF=rocep1s0f0,roceP2p1s0f0
-CONTAINER_HF_TOKEN=&lt;your_hf_token&gt;</code></pre>
-    </div>
-    <p>Append the Hugging Face token after discovery — the discovery prompt won't ask for it:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>echo "CONTAINER_HF_TOKEN=YOUR_HF_TOKEN" &gt;&gt; ~/spark-vllm-docker/.env</code></pre>
-    </div>
+    <div class="verify">On spark-02: <code>docker images | grep vllm-spark</code> shows <code>vllm-spark:26.04</code>. <code>ls ~/spark-ai-stack/scripts/</code> shows both scripts executable.</div>
 
     <h3>Step 1d — Download the model and rsync to spark-02 over the DAC</h3>
     <p>Both nodes need the model weights resident locally. Pull on <code>spark-01</code> first, then rsync to <code>spark-02</code> over the DAC — keeps the ~60&nbsp;GB transfer off the mgmt LAN.</p>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code># Run as your normal user (e.g. cameron) — NOT root. See callout below.
-HF_TOKEN=YOUR_HF_TOKEN hf download Intel/Qwen3.5-122B-A10B-int4-AutoRound \
-  --local-dir ~/.cache/huggingface/hub/models--Intel--Qwen3.5-122B-A10B-int4-AutoRound/
+      <pre><code># Run as your normal user — NOT root. See callout below.
+HF_TOKEN=YOUR_HF_TOKEN hf download Qwen/Qwen3.5-122B-A10B-FP8 \
+  --local-dir ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-122B-A10B-FP8/
 
 # Bind explicitly to the local DAC IP so the rsync runs over enp1s0f0np0
 rsync -avP \
   -e "ssh -b YOUR_NODE1_DAC_IP" \
-  ~/.cache/huggingface/hub/models--Intel--Qwen3.5-122B-A10B-int4-AutoRound/ \
-  YOUR_NODE2_DAC_IP:~/.cache/huggingface/hub/models--Intel--Qwen3.5-122B-A10B-int4-AutoRound/</code></pre>
+  ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-122B-A10B-FP8/ \
+  YOUR_NODE2_DAC_IP:~/.cache/huggingface/hub/models--Qwen--Qwen3.5-122B-A10B-FP8/</code></pre>
     </div>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
@@ -958,33 +983,51 @@ rsync -avP \
     </div>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div><strong>Run <code>hf download</code> as your normal user, not <code>root</code>.</strong> If a previous download was run as root, the target directory is root-owned and subsequent runs as a normal user fail with <code>permission denied</code>. Fix: <code>sudo rm -rf ~/.cache/huggingface/hub/models--Intel--Qwen3.5-122B-A10B-int4-AutoRound</code>, then re-run the download as your user.</div>
+      <div><strong>Run <code>hf download</code> as your normal user, not <code>root</code>.</strong> If a previous download was run as root, the target directory is root-owned and subsequent runs as a normal user fail with <code>permission denied</code>. Fix: <code>sudo rm -rf ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-122B-A10B-FP8</code>, then re-run the download as your user.</div>
     </div>
 
     <h3>Step 1e — Launch the cluster</h3>
-    <p>The launch script reads <code>.env</code>, starts the head container on <code>spark-01</code>, SSHes into <code>spark-02</code> to start the worker container, and forms the Ray cluster. Both containers are started from the same image, so Ray versions are guaranteed to match.</p>
+    <p>Start the containers in order: <strong>spark-01 first</strong> (starts the Ray head and <code>vllm serve</code>, which blocks until TP workers are registered), then <strong>spark-02</strong> (registers its GPU as a Ray worker). The API on <code>spark-01:8000</code> becomes ready once both GPUs are in the cluster and the model finishes loading.</p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — head container</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cd ~/spark-vllm-docker
-./run-recipe.sh qwen3.5-122b-int4-autoround -d -- \
-  --served-model-name qwen3.5-122b \
-  --default-chat-template-kwargs '{"enable_thinking": false}'</code></pre>
+      <pre><code>docker run -d --name vllm_node --restart unless-stopped \
+  --network host --ipc host --gpus all \
+  -e NCCL_SOCKET_IFNAME=enp1s0f0np0 \
+  -e NCCL_SOCKET_NTHREADS=4 \
+  -e NCCL_NSOCKS_PERTHREAD=4 \
+  -e NCCL_BUFFSIZE=4194304 \
+  -e NCCL_DEBUG=WARN \
+  -e VLLM_HOST_IP=YOUR_NODE1_DAC_IP \
+  -v /home/YOUR_USERNAME/.cache/huggingface:/root/.cache/huggingface \
+  -v /home/YOUR_USERNAME/spark-ai-stack/scripts:/scripts \
+  --entrypoint /scripts/vllm-head.sh \
+  vllm-spark:26.04</code></pre>
     </div>
-    <p>What <code>run-recipe.sh</code> does automatically:</p>
-    <ul style="font-size:13px;color:var(--text2);line-height:1.7;padding-left:20px;display:flex;flex-direction:column;gap:4px;">
-      <li>Sets <code>NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0</code> so NCCL pins to both RoCE twins.</li>
-      <li>Passes <code>/dev/infiniband</code> devices into both containers (RDMA verbs + CM).</li>
-      <li>Forms the Ray cluster (head on <code>spark-01</code>, worker on <code>spark-02</code>) and waits until both GPUs are registered before starting <code>vllm serve</code>.</li>
-      <li>Applies the <code>fix-qwen3.5-chat-template</code> mod and uses <code>fastsafetensors</code> for fast loader I/O.</li>
-    </ul>
-    <p>Watch the launch:</p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — worker container</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>docker logs -f vllm_node</code></pre>
+      <pre><code>docker run -d --name vllm_node --restart unless-stopped \
+  --network host --ipc host --gpus all \
+  -e NCCL_SOCKET_IFNAME=enp1s0f0np0 \
+  -e NCCL_SOCKET_NTHREADS=4 \
+  -e NCCL_NSOCKS_PERTHREAD=4 \
+  -e NCCL_BUFFSIZE=4194304 \
+  -e NCCL_DEBUG=WARN \
+  -e VLLM_HOST_IP=YOUR_NODE2_DAC_IP \
+  -v /home/YOUR_USERNAME/.cache/huggingface:/root/.cache/huggingface \
+  -v /home/YOUR_USERNAME/spark-ai-stack/scripts:/scripts \
+  --entrypoint /scripts/vllm-worker.sh \
+  vllm-spark:26.04</code></pre>
+    </div>
+    <p>Watch the head logs to confirm the worker joined and the model loaded:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>docker logs -f vllm_node   # on spark-01</code></pre>
     </div>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
-      <div>The container name from the eugr stack is <code>vllm_node</code> (not <code>vllm-qwen-122b</code>) on both head and worker. Update any older scripts or aliases.</div>
+      <div>The container is named <code>vllm_node</code> on both nodes. On <code>spark-01</code> it runs the vLLM API server; on <code>spark-02</code> it runs the Ray worker only — no API listener on <code>spark-02</code>.</div>
     </div>
 
     <h3>Step 1f — Verification</h3>
@@ -1021,30 +1064,39 @@ curl http://localhost:8000/v1/chat/completions \
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>nvidia-smi   # run on each node</code></pre>
     </div>
-    <p>You should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process on each node with roughly <strong>~37&nbsp;GB</strong> resident at the AutoRound INT4 weight footprint — leaving ~91&nbsp;GB free per node for KV cache.</p>
+    <p>You should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process on each node with roughly <strong>~57&nbsp;GB</strong> resident at the FP8 weight footprint — leaving ~71&nbsp;GB free per node for KV cache.</p>
 
     <h3>Step 1g — Systemd auto-start</h3>
-    <p>Run only on <code>spark-01</code> — the cluster launcher SSHes into <code>spark-02</code> to bring up the worker. The 30-second <code>ExecStartPre</code> sleep gives <code>spark-02</code> time to finish booting and have Docker running before the head SSHes in.</p>
+    <p>Each node manages its own container via a systemd service. The worker service starts unconditionally on boot and waits until the head's Ray GCS is reachable — no cross-node SSH required. Enable the correct service on each node.</p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — head service</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>sudo tee /etc/systemd/system/vllm-cluster.service &lt;&lt; 'EOF'
+      <pre><code>sudo tee /etc/systemd/system/vllm-head.service &lt;&lt; 'EOF'
 [Unit]
-Description=vLLM Cluster - Qwen3.5-122B AutoRound
+Description=vLLM Head — Qwen3.5-122B FP8
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/spark-vllm-docker
-ExecStartPre=/bin/sleep 30
-ExecStart=/home/YOUR_USERNAME/spark-vllm-docker/run-recipe.sh \
-  qwen3.5-122b-int4-autoround -d -- \
-  --served-model-name qwen3.5-122b \
-  --default-chat-template-kwargs '{"enable_thinking": false}'
-ExecStop=/home/YOUR_USERNAME/spark-vllm-docker/launch-cluster.sh stop
+ExecStartPre=-/usr/bin/docker rm -f vllm_node
+ExecStart=/usr/bin/docker run --name vllm_node \
+  --network host --ipc host --gpus all \
+  -e NCCL_SOCKET_IFNAME=enp1s0f0np0 \
+  -e NCCL_SOCKET_NTHREADS=4 \
+  -e NCCL_NSOCKS_PERTHREAD=4 \
+  -e NCCL_BUFFSIZE=4194304 \
+  -e NCCL_DEBUG=WARN \
+  -e VLLM_HOST_IP=YOUR_NODE1_DAC_IP \
+  -v /home/YOUR_USERNAME/.cache/huggingface:/root/.cache/huggingface \
+  -v /home/YOUR_USERNAME/spark-ai-stack/scripts:/scripts \
+  --entrypoint /scripts/vllm-head.sh \
+  vllm-spark:26.04
+ExecStop=/usr/bin/docker stop vllm_node
+Restart=on-failure
+RestartSec=15
 TimeoutStartSec=300
 TimeoutStopSec=60
 
@@ -1053,9 +1105,48 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable vllm-cluster.service</code></pre>
+sudo systemctl enable vllm-head.service</code></pre>
     </div>
-    <div class="verify">After a reboot of both nodes, <code>systemctl status vllm-cluster</code> on <code>spark-01</code> should show <code>active (exited)</code> and <code>curl http://localhost:8000/v1/models</code> should return the model list once warmup completes.</div>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — worker service</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo tee /etc/systemd/system/vllm-worker.service &lt;&lt; 'EOF'
+[Unit]
+Description=vLLM Worker — Ray TP rank 1
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+ExecStartPre=-/usr/bin/docker rm -f vllm_node
+ExecStart=/usr/bin/docker run --name vllm_node \
+  --network host --ipc host --gpus all \
+  -e NCCL_SOCKET_IFNAME=enp1s0f0np0 \
+  -e NCCL_SOCKET_NTHREADS=4 \
+  -e NCCL_NSOCKS_PERTHREAD=4 \
+  -e NCCL_BUFFSIZE=4194304 \
+  -e NCCL_DEBUG=WARN \
+  -e VLLM_HOST_IP=YOUR_NODE2_DAC_IP \
+  -v /home/YOUR_USERNAME/.cache/huggingface:/root/.cache/huggingface \
+  -v /home/YOUR_USERNAME/spark-ai-stack/scripts:/scripts \
+  --entrypoint /scripts/vllm-worker.sh \
+  vllm-spark:26.04
+ExecStop=/usr/bin/docker stop vllm_node
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable vllm-worker.service</code></pre>
+    </div>
+    <div class="verify">After rebooting both nodes, check each: <code>systemctl status vllm-head</code> on <code>spark-01</code> and <code>systemctl status vllm-worker</code> on <code>spark-02</code> — both should show <strong>active (running)</strong>. Then <code>curl http://localhost:8000/v1/models</code> on <code>spark-01</code> returns the model list once the warm-up completes (~20 s after both services are up).</div>
 
     <h3>Performance results</h3>
     <div class="table-wrap">
@@ -1063,30 +1154,42 @@ sudo systemctl enable vllm-cluster.service</code></pre>
         <thead><tr><th>Metric</th><th>Value</th><th>Notes</th></tr></thead>
         <tbody>
           <tr><td>Hardware</td><td>2× NVIDIA DGX Spark (GB10, 128&nbsp;GB unified memory each)</td><td>Total 256&nbsp;GB unified pool</td></tr>
-          <tr><td>Model</td><td><code>Intel/Qwen3.5-122B-A10B-int4-AutoRound</code></td><td>122B / A10B MoE, INT4 (AutoRound)</td></tr>
+          <tr><td>Model</td><td><code>Qwen/Qwen3.5-122B-A10B-FP8</code></td><td>122B / A10B MoE, FP8 quantized</td></tr>
           <tr><td>Network</td><td>200&nbsp;Gb/s DAC (QSFP) · NCCL over RoCE/RDMA</td><td><code>NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0</code></td></tr>
           <tr><td>Tensor parallel</td><td>TP=2 across both nodes</td><td>Ray-backed distributed executor</td></tr>
           <tr><td>First request (CUDA-graph warmup)</td><td>~20&nbsp;s</td><td>One-time cost per cold start</td></tr>
           <tr><td><strong>Steady-state throughput</strong></td><td><strong>~45&nbsp;tok/s</strong></td><td>Single-stream decode</td></tr>
           <tr><td>Context window</td><td>262,144 tokens</td><td>Full Qwen3.5 context retained</td></tr>
-          <tr><td>Memory per node</td><td>~37&nbsp;GB resident</td><td>Leaves ~91&nbsp;GB free per node for KV cache</td></tr>
-          <tr><td>Previous (hand-built, NCCL over TCP)</td><td>~2–3&nbsp;tok/s</td><td>Same hardware, wrong transport</td></tr>
-          <tr><td><strong>Improvement</strong></td><td><strong>~18×</strong></td><td>From correct NCCL RoCE configuration alone</td></tr>
+          <tr><td>Memory per node</td><td>~57&nbsp;GB resident</td><td>Leaves ~71&nbsp;GB free per node for KV cache</td></tr>
+          <tr><td>GPU memory utilization</td><td>0.70</td><td><code>--gpu-memory-utilization 0.7</code></td></tr>
         </tbody>
       </table>
     </div>
-    <p>The performance ceiling is GB10 LPDDR5X memory bandwidth (273&nbsp;GB/s). With 10B active parameters at INT4 (≈5&nbsp;GB of weight reads per decoded token), the theoretical maximum is ~55&nbsp;tok/s per node. 45&nbsp;tok/s is ~82% of the memory-bandwidth ceiling — there is not much performance left on the table.</p>
+    <p>The performance ceiling is GB10 LPDDR5X memory bandwidth (273&nbsp;GB/s). With 10B active parameters at FP8 (≈10&nbsp;GB of weight reads per decoded token across the active MoE experts), ~45&nbsp;tok/s is expected at TP=2 single-stream decode.</p>
 
     <h3>Bootstrap fallback — the 35B FP8 model</h3>
-    <p>The 35B FP8 model is still useful for fast iteration on cluster wiring (Ray, NCCL, RoCE) before committing to the longer 122B load. The eugr stack ships a recipe for it; if you've populated the cache, fall back with:</p>
+    <p>The 35B FP8 model is still useful for fast iteration on cluster wiring (Ray, NCCL, RoCE) before committing to the longer 122B load. Replace the <code>vllm-head.sh</code> serve command temporarily:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cd ~/spark-vllm-docker
-./run-recipe.sh qwen3.6-35b-fp8 -d -- \
-  --served-model-name qwen3.6-35b \
-  --default-chat-template-kwargs '{"enable_thinking": false}'</code></pre>
+      <pre><code># One-off: override the entrypoint to serve the 35B model
+docker run -d --name vllm_node --rm \
+  --network host --ipc host --gpus all \
+  -e NCCL_SOCKET_IFNAME=enp1s0f0np0 \
+  -e NCCL_SOCKET_NTHREADS=4 \
+  -e NCCL_NSOCKS_PERTHREAD=4 \
+  -e NCCL_BUFFSIZE=4194304 \
+  -e NCCL_DEBUG=WARN \
+  -e VLLM_HOST_IP=YOUR_NODE1_DAC_IP \
+  -v /home/YOUR_USERNAME/.cache/huggingface:/root/.cache/huggingface \
+  --entrypoint "" \
+  vllm-spark:26.04 \
+  vllm serve Qwen/Qwen3.6-35B-A3B-FP8 \
+    --served-model-name qwen3.6-35b \
+    --max-model-len 32768 \
+    -tp 2 --distributed-executor-backend ray \
+    --port 8000 --host 0.0.0.0</code></pre>
     </div>
-    <p>Update <code>--served-model-name</code> in the LiteLLM config in Step 02 (and the client's LiteLLM in Step 03) to match if you fall back.</p>
+    <p>Update <code>model_name</code> in the LiteLLM config (Steps 02/03) to <code>qwen3.6-35b</code> if you use the fallback.</p>
   </div>
 
   <div class="step" id="step2">
@@ -1099,8 +1202,8 @@ sudo systemctl enable vllm-cluster.service</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — directories and install</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/sparky-ai-stack/logs
-cd ~/sparky-ai-stack
+      <pre><code>mkdir -p ~/spark-ai-stack/logs
+cd ~/spark-ai-stack
 
 pip3 install litellm[proxy] --break-system-packages
 echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc</code></pre>
@@ -1110,23 +1213,29 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — config (single backend pointing at the local clustered vLLM)</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/sparky-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
+      <pre><code>cat &gt; ~/spark-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
 model_list:
   - model_name: qwen3.5-122b
     litellm_params:
       model: openai/qwen3.5-122b
       api_base: http://localhost:8000/v1
       api_key: "not-needed"
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+      max_context_window: 262144
+      max_input_tokens: 229376
+      max_output_tokens: 32768
 
 litellm_settings:
   verbose: true
   database:
     type: sqlite
-    path: /home/YOUR_USERNAME/sparky-ai-stack/logs/litellm.db
+    path: /home/YOUR_USERNAME/spark-ai-stack/logs/litellm.db
   log_config:
     level: INFO
     format: json
-    filepath: /home/YOUR_USERNAME/sparky-ai-stack/logs/litellm.log
+    filepath: /home/YOUR_USERNAME/spark-ai-stack/logs/litellm.log
 
 router_settings:
   num_retries: 0
@@ -1150,7 +1259,7 @@ Wants=docker.service
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/sparky-ai-stack
+WorkingDirectory=/home/YOUR_USERNAME/spark-ai-stack
 ExecStart=/home/YOUR_USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
 Restart=on-failure
 RestartSec=5
@@ -1185,7 +1294,7 @@ sudo systemctl status litellm --no-pager</code></pre>
     <p>The LiteLLM Admin UI and virtual-key generation both require PostgreSQL. <strong>SQLite is not supported</strong> — LiteLLM's Prisma schema is hardcoded for PostgreSQL, and the UI route returns <code>table public.LiteLLM_UserTable does not exist</code> if you try to point it at SQLite. The SQLite block in the config above is fine for request logging; it is <em>not</em> a substitute for the metadata DB.</p>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — bring up the litellm-db postgres container</h4>
-    <p>On spark-01 the postgres container lives in <code>~/sparky-ai-stack/docker-compose.yml</code> alongside <code>n8n</code> and <code>hermes-webui</code>:</p>
+    <p>On spark-01 the postgres container lives in <code>~/spark-ai-stack/docker-compose.yml</code> alongside <code>n8n</code> and <code>hermes-webui</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>services:
@@ -1207,7 +1316,7 @@ volumes:
     </div>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cd ~/sparky-ai-stack
+      <pre><code>cd ~/spark-ai-stack
 docker compose up -d litellm-db
 docker compose ps litellm-db</code></pre>
     </div>
@@ -1254,8 +1363,8 @@ curl -s http://localhost:8001/health/readiness | head</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — install</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/sparky-ai-stack/logs
-cd ~/sparky-ai-stack
+      <pre><code>mkdir -p ~/spark-ai-stack/logs
+cd ~/spark-ai-stack
 
 pip3 install litellm[proxy] --break-system-packages
 echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc</code></pre>
@@ -1271,23 +1380,29 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — config (points at vLLM over the DAC)</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/sparky-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
+      <pre><code>cat &gt; ~/spark-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
 model_list:
   - model_name: qwen3.5-122b
     litellm_params:
       model: openai/qwen3.5-122b
       api_base: http://YOUR_NODE1_DAC_IP:8000/v1   # shared vLLM, over DAC
       api_key: "not-needed"
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+      max_context_window: 262144
+      max_input_tokens: 229376
+      max_output_tokens: 32768
 
 litellm_settings:
   verbose: true
   database:
     type: sqlite
-    path: /home/YOUR_USERNAME/sparky-ai-stack/logs/litellm.db
+    path: /home/YOUR_USERNAME/spark-ai-stack/logs/litellm.db
   log_config:
     level: INFO
     format: json
-    filepath: /home/YOUR_USERNAME/sparky-ai-stack/logs/litellm.log
+    filepath: /home/YOUR_USERNAME/spark-ai-stack/logs/litellm.log
 
 general_settings:
   master_key: YOUR_CLIENT_MASTER_KEY    # set to the sk-client-... value above
@@ -1314,7 +1429,7 @@ Wants=docker.service
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/sparky-ai-stack
+WorkingDirectory=/home/YOUR_USERNAME/spark-ai-stack
 ExecStart=/home/YOUR_USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
 Restart=on-failure
 RestartSec=5
@@ -1345,7 +1460,7 @@ sudo systemctl status litellm --no-pager</code></pre>
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3.5-122b","messages":[{"role":"user","content":"hi from client"}],"max_tokens":16}'</code></pre>
     </div>
-    <div class="verify">On spark-01, <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm_node</code> on spark-01 — you should see the new request reach the vLLM head.</div>
+    <div class="verify">On spark-01, <code>tail -f ~/spark-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm_node</code> on spark-01 — you should see the new request reach the vLLM head.</div>
 
     <h3>Step 3d — PostgreSQL for the client Admin UI and virtual keys (required)</h3>
     <p>Same constraint as Step 02: the LiteLLM Admin UI and virtual-key generation require PostgreSQL — SQLite is not supported because LiteLLM's Prisma schema is hardcoded for PostgreSQL. spark-02 doesn't run a docker-compose stack, so we use a standalone postgres container.</p>
@@ -1403,8 +1518,8 @@ sudo systemctl status litellm --no-pager</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — directory and run</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/sparky-ai-stack
-cd ~/sparky-ai-stack
+      <pre><code>mkdir -p ~/spark-ai-stack
+cd ~/spark-ai-stack
 
 docker run -d \
   --name open-webui \
@@ -1441,8 +1556,8 @@ docker run -d \
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — directory and run</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/sparky-ai-stack
-cd ~/sparky-ai-stack
+      <pre><code>mkdir -p ~/spark-ai-stack
+cd ~/spark-ai-stack
 
 docker run -d \
   --name open-webui \
@@ -1487,10 +1602,10 @@ Rules:
 - To enable extended reasoning on a specific query, prefix with /think</code></pre>
     </div>
 
-    <h3>Step 5b — All client services on sparky-02 at a glance</h3>
-    <p>Three client-facing services run on <code>sparky-02</code>: <strong>LiteLLM</strong> (Step 03), <strong>Open WebUI</strong> (Step 05 above), and <strong>n8n</strong>. All three are reachable on the client's tailnet via <code>tag:hjp-ai</code> (see Step 06). The n8n container below is not covered elsewhere — bring it up after the client's LiteLLM is healthy:</p>
+    <h3>Step 5b — All client services on spark-02 at a glance</h3>
+    <p>Three client-facing services run on <code>spark-02</code>: <strong>LiteLLM</strong> (Step 03), <strong>Open WebUI</strong> (Step 05 above), and <strong>n8n</strong>. All three are reachable on the client's tailnet via <code>tag:hjp-ai</code> (see Step 06). The n8n container below is not covered elsewhere — bring it up after the client's LiteLLM is healthy:</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — n8n container</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — n8n container</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>docker run -d --name n8n --restart unless-stopped \
@@ -1498,7 +1613,7 @@ Rules:
   -e N8N_HOST=0.0.0.0 \
   -e N8N_PORT=5678 \
   -e N8N_PROTOCOL=http \
-  -e WEBHOOK_URL=http://sparky-02:5678/ \
+  -e WEBHOOK_URL=http://spark-02:5678/ \
   -e N8N_SECURE_COOKIE=false \
   -e NODE_ENV=production \
   -v n8n_data:/home/node/.n8n \
@@ -1513,9 +1628,9 @@ Rules:
           <tr>
             <td><strong>LiteLLM</strong></td>
             <td><code>8001</code></td>
-            <td>systemd (same structure as sparky-01)</td>
+            <td>systemd (same structure as spark-01)</td>
             <td><code>http://10.100.100.1:8000/v1</code> (DAC link)</td>
-            <td>Client master key at <code>~/.sparky02-litellm-key</code> (<code>chmod 600</code>)</td>
+            <td>Client master key at <code>~/.spark02-litellm-key</code> (<code>chmod 600</code>)</td>
           </tr>
           <tr>
             <td><strong>Open WebUI</strong></td>
@@ -1528,7 +1643,7 @@ Rules:
             <td><strong>n8n</strong></td>
             <td><code>5678</code></td>
             <td><code>docker run --restart unless-stopped</code></td>
-            <td><code>WEBHOOK_URL=http://sparky-02:5678/</code></td>
+            <td><code>WEBHOOK_URL=http://spark-02:5678/</code></td>
             <td>n8n owner account (set on first login)</td>
           </tr>
         </tbody>
@@ -1540,13 +1655,13 @@ Rules:
     </div>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div>Store the client master key at <code>~/.sparky02-litellm-key</code> with <code>chmod 600</code>. Reference it from the LiteLLM systemd unit via <code>EnvironmentFile=</code> rather than embedding it in <code>litellm-config.yaml</code>, so the file on disk does not contain the secret.</div>
+      <div>Store the client master key at <code>~/.spark02-litellm-key</code> with <code>chmod 600</code>. Reference it from the LiteLLM systemd unit via <code>EnvironmentFile=</code> rather than embedding it in <code>litellm-config.yaml</code>, so the file on disk does not contain the secret.</div>
     </div>
   </div>
 
   <div class="step" id="step6">
     <div class="step-header"><span class="step-num">STEP 06</span><h2>Tailscale (both nodes, separate tailnets)</h2></div>
-    <p>Each node joins its owner's tailnet independently. Two separate tailnets, two separate ACL policies, two separate sets of users. The DAC link (<code>198.51.100.0/30</code>) is private physical hardware between the two nodes — it is <strong>not</strong> advertised onto either tailnet, and it is not used for any cross-tailnet routing.</p>
+    <p>Each node joins its owner's tailnet independently. Two separate tailnets, two separate ACL policies, two separate sets of users. The DAC link (<code>10.100.100.0/30</code>) is private physical hardware between the two nodes — it is <strong>not</strong> advertised onto either tailnet, and it is not used for any cross-tailnet routing.</p>
 
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
@@ -1583,7 +1698,7 @@ tailscale ip -4   # note this address — your apps will be reachable here</code
   }
 }</code></pre>
     </div>
-    <p><strong>Do NOT</strong> add <code>tag:owner:8000</code> to any allow rule. Port 8000 (vLLM) is unauthenticated and must remain reachable only from <code>localhost</code> (your LiteLLM in Step 02) and the DAC IP <code>198.51.100.1</code> (the client's LiteLLM in Step 03).</p>
+    <p><strong>Do NOT</strong> add <code>tag:owner:8000</code> to any allow rule. Port 8000 (vLLM) is unauthenticated and must remain reachable only from <code>localhost</code> (your LiteLLM in Step 02) and the DAC IP <code>10.100.100.1</code> (the client's LiteLLM in Step 03).</p>
 
     <h3>spark-02 — client's tailnet</h3>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — install + join (client's auth key)</h4>
@@ -1592,7 +1707,7 @@ tailscale ip -4   # note this address — your apps will be reachable here</code
       <pre><code>curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up \
   --authkey=&lt;client-auth-key&gt; \
-  --hostname=sparky-02 \
+  --hostname=spark-02 \
   --advertise-tags=tag:hjp-ai
 
 tailscale ip -4   # client's apps will be reachable here, only on their tailnet</code></pre>
@@ -1601,7 +1716,7 @@ tailscale ip -4   # client's apps will be reachable here, only on their tailnet<
 
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
-      <div><strong>Disable key expiry</strong> for <code>sparky-02</code> in the client's Tailscale admin (Machines → sparky-02 → ⋯ → Disable key expiry). Server nodes shouldn't drop off the tailnet on a 90-day timer; the auth key rotation should be a deliberate action.</div>
+      <div><strong>Disable key expiry</strong> for <code>spark-02</code> in the client's Tailscale admin (Machines → spark-02 → ⋯ → Disable key expiry). Server nodes shouldn't drop off the tailnet on a 90-day timer; the auth key rotation should be a deliberate action.</div>
     </div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### Client tailnet ACL — replace the default allow-all</h4>
@@ -1632,10 +1747,10 @@ tailscale ip -4   # client's apps will be reachable here, only on their tailnet<
   }
 }</code></pre>
     </div>
-    <div class="verify">After applying, from a client device on the same tailnet: <code>nc -zv sparky-02 8001</code>, <code>nc -zv sparky-02 8080</code>, and <code>nc -zv sparky-02 5678</code> all succeed. <code>nc -zv sparky-02 22</code> (SSH) and <code>nc -zv sparky-02 8000</code> (raw vLLM) both fail — proving the ACL is in effect.</div>
+    <div class="verify">After applying, from a client device on the same tailnet: <code>nc -zv spark-02 8001</code>, <code>nc -zv spark-02 8080</code>, and <code>nc -zv spark-02 5678</code> all succeed. <code>nc -zv spark-02 22</code> (SSH) and <code>nc -zv spark-02 8000</code> (raw vLLM) both fail — proving the ACL is in effect.</div>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div><code>tag:hjp-ai</code> is intentionally not given <code>tcp:8000</code>. Port 8000 is the raw, unauthenticated vLLM head on <code>spark-01</code> reached over the DAC; it must never be exposed onto the client's tailnet. The client only ever calls their own LiteLLM on <code>sparky-02:8001</code>.</div>
+      <div><code>tag:hjp-ai</code> is intentionally not given <code>tcp:8000</code>. Port 8000 is the raw, unauthenticated vLLM head on <code>spark-01</code> reached over the DAC; it must never be exposed onto the client's tailnet. The client only ever calls their own LiteLLM on <code>spark-02:8001</code>.</div>
     </div>
 
     <h3>Lock down host firewalls</h3>
@@ -1720,7 +1835,7 @@ sudo systemctl status hermes-gateway --no-pager</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — docker-compose for hermes-webui</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/sparky-ai-stack/hermes-webui.yml &lt;&lt; 'EOF'
+      <pre><code>cat &gt; ~/spark-ai-stack/hermes-webui.yml &lt;&lt; 'EOF'
 services:
   hermes-webui:
     image: ghcr.io/nesquena/hermes-webui:latest
@@ -1740,7 +1855,7 @@ services:
 EOF
 
 mkdir -p ~/workspace
-docker compose -f ~/sparky-ai-stack/hermes-webui.yml up -d</code></pre>
+docker compose -f ~/spark-ai-stack/hermes-webui.yml up -d</code></pre>
     </div>
     <div class="verify">Visit <code>http://localhost:8787</code> on spark-01 (or your tailnet hostname).</div>
   </div>
@@ -1752,7 +1867,7 @@ docker compose -f ~/sparky-ai-stack/hermes-webui.yml up -d</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — docker-compose for n8n</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/sparky-ai-stack/n8n.yml &lt;&lt; 'EOF'
+      <pre><code>cat &gt; ~/spark-ai-stack/n8n.yml &lt;&lt; 'EOF'
 services:
   n8n:
     image: n8nio/n8n:latest
@@ -1777,7 +1892,7 @@ volumes:
   n8n_data:
 EOF
 
-docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
+docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
     </div>
     <div class="verify">Visit <code>http://localhost:5678</code> on spark-01 (or your tailnet hostname) and create the owner account.</div>
 
@@ -1802,9 +1917,9 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <h3>Shared compute pool</h3>
     <ul class="validation-checklist">
       <li><strong>spark-01:</strong> <code>docker exec vllm_node ray status</code> shows <strong>2 nodes</strong> and <strong>2.0/2.0 GPU</strong>, with both DAC IPs (<code>YOUR_NODE1_DAC_IP</code> and <code>YOUR_NODE2_DAC_IP</code>) listed.</li>
-      <li><strong>spark-01:</strong> <code>docker logs vllm_node | grep "NCCL INFO NET/IB"</code> shows both <code>rocep1s0f0</code> and <code>roceP2p1s0f0</code> — NCCL is on RoCE/RDMA, not TCP sockets.</li>
-      <li><strong>spark-01:</strong> <code>nvidia-smi</code> Processes section shows a <code>vllm</code> / <code>RayWorkerWrapper</code> at ~37&nbsp;GB (122B AutoRound INT4). The <code>--query-gpu=memory.used</code> / <code>memory.total</code> fields return <code>[N/A]</code> on GB10 — expected, use the Processes section instead.</li>
-      <li><strong>spark-02:</strong> <code>nvidia-smi</code> Processes section shows a <code>vllm</code> / <code>RayWorkerWrapper</code> at ~37&nbsp;GB.</li>
+      <li><strong>spark-01:</strong> <code>docker logs vllm_node | grep "NCCL INFO NET"</code> shows <code>enp1s0f0np0</code> — NCCL is using the DAC socket interface.</li>
+      <li><strong>spark-01:</strong> <code>nvidia-smi</code> Processes section shows a <code>vllm</code> / <code>RayWorkerWrapper</code> at ~57&nbsp;GB (122B FP8). The <code>--query-gpu=memory.used</code> / <code>memory.total</code> fields return <code>[N/A]</code> on GB10 — expected, use the Processes section instead.</li>
+      <li><strong>spark-02:</strong> <code>nvidia-smi</code> Processes section shows a <code>vllm</code> / <code>RayWorkerWrapper</code> at ~57&nbsp;GB.</li>
       <li><strong>spark-01:</strong> <code>curl http://localhost:8000/v1/models</code> returns <code>qwen3.5-122b</code> (vLLM head). A streamed completion runs at ~45&nbsp;tok/s steady state.</li>
     </ul>
 
@@ -1821,7 +1936,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <ul class="validation-checklist">
       <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY"</code> returns <code>qwen3.5-122b</code> through the client's LiteLLM.</li>
       <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/chat/completions -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY" ...</code> returns a completion.</li>
-      <li><strong>spark-02:</strong> <code>sudo systemctl status litellm</code> — <strong>active (running)</strong>. Logs are written to <code>~/sparky-ai-stack/logs/litellm.log</code> on <code>spark-02</code>, separate from your logs.</li>
+      <li><strong>spark-02:</strong> <code>sudo systemctl status litellm</code> — <strong>active (running)</strong>. Logs are written to <code>~/spark-ai-stack/logs/litellm.log</code> on <code>spark-02</code>, separate from your logs.</li>
       <li><strong>spark-02:</strong> <code>docker ps</code> shows <code>vllm_node</code> (the worker), <code>open-webui</code>, and <code>n8n</code> all <em>Up</em>. (No Hermes container.)</li>
       <li><strong>spark-02:</strong> Open <code>http://localhost:8080</code> (or the client's tailnet hostname), send a chat message — completion streams back. Client's LiteLLM log records the request; your LiteLLM log on spark-01 does <em>not</em>.</li>
     </ul>
@@ -1832,12 +1947,12 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <li><strong>From client's tailnet:</strong> <code>curl http://YOUR_NODE1_TAILSCALE_IP:8000/v1/models</code> should fail. The unauthenticated vLLM endpoint is not reachable from the client's tailnet.</li>
       <li><strong>From client's tailnet:</strong> <code>curl http://YOUR_NODE1_TAILSCALE_IP:8080</code> should fail. Your Open WebUI is not reachable from the client's tailnet.</li>
       <li><strong>From your tailnet:</strong> <code>curl http://YOUR_NODE2_TAILSCALE_IP:8080</code> should fail. The client's Open WebUI is not reachable from your tailnet.</li>
-      <li><strong>spark-01:</strong> <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> while the client sends a chat message → your log is silent. Client's traffic does not enter your stack.</li>
+      <li><strong>spark-01:</strong> <code>tail -f ~/spark-ai-stack/logs/litellm.log</code> while the client sends a chat message → your log is silent. Client's traffic does not enter your stack.</li>
     </ul>
 
     <h3>DAC traffic during inference</h3>
     <ul class="validation-checklist">
-      <li><strong>spark-02:</strong> <code>nload enp1s0f0np0</code> spikes into Gb/s during decoding from <em>either</em> side — both your and the client's inference requests traverse the DAC (yours for NCCL collectives, theirs for both the API call to <code>198.51.100.1:8000</code> and NCCL).</li>
+      <li><strong>spark-02:</strong> <code>nload enp1s0f0np0</code> spikes into Gb/s during decoding from <em>either</em> side — both your and the client's inference requests traverse the DAC (yours for NCCL collectives, theirs for both the API call to <code>10.100.100.1:8000</code> and NCCL).</li>
       <li><strong>Both sides simultaneously:</strong> have you and the client send a long prompt at the same time. Both completions should stream concurrently — vLLM's continuous batching handles the overlap.</li>
     </ul>
 
@@ -1883,12 +1998,12 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <div class="step-header"><span class="step-num">REF</span><h2>File locations</h2></div>
     <h3>spark-01 — your node</h3>
     <div class="file-tree">
-      <span class="dir">~/spark-vllm-docker/</span>            <span class="comment"># cloned eugr/spark-vllm-docker — vLLM launcher</span><br>
-      ├── .env                        <span class="comment"># LOCAL_IP, ETH_IF, IB_IF, CONTAINER_HF_TOKEN — written by --discover</span><br>
-      ├── build-and-copy.sh           <span class="comment"># builds vllm-node-tf5:latest + copies to spark-02</span><br>
-      ├── run-recipe.sh               <span class="comment"># launches Ray + vllm serve from the chosen recipe</span><br>
-      └── launch-cluster.sh           <span class="comment"># stop/teardown helper invoked by systemd</span><br><br>
-      <span class="dir">~/sparky-ai-stack/</span><br>
+      <span class="dir">~/spark-ai-stack/scripts/</span>        <span class="comment"># vLLM launch scripts (mounted into vllm-spark:26.04)</span><br>
+      ├── vllm-head.sh                <span class="comment"># vllm serve — runs on spark-01 inside the container</span><br>
+      └── vllm-worker.sh              <span class="comment"># ray start --block — runs on spark-02 inside the container</span><br><br>
+      /etc/systemd/system/<br>
+      ├── vllm-head.service           <span class="comment"># spark-01 only — starts vllm_node head container</span><br><br>
+      <span class="dir">~/spark-ai-stack/</span><br>
       ├── litellm-config.yaml         <span class="comment"># YOUR LiteLLM — your master_key, localhost:8000</span><br>
       ├── hermes-webui.yml            <span class="comment"># compose for your hermes-webui</span><br>
       ├── n8n.yml                     <span class="comment"># compose for your n8n</span><br>
@@ -1901,7 +2016,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       ├── open-webui                  <span class="comment"># YOUR Open WebUI database, knowledge bases, RAG</span><br>
       └── n8n_data                    <span class="comment"># YOUR n8n flows + credentials</span><br><br>
       /etc/systemd/system/<br>
-      ├── vllm-cluster.service        <span class="comment"># vLLM cluster auto-start (head SSHes to worker)</span><br>
+      ├── vllm-head.service           <span class="comment"># vLLM head auto-start (docker run vllm-spark:26.04 --entrypoint vllm-head.sh)</span><br>
       ├── litellm.service             <span class="comment"># YOUR LiteLLM auto-start</span><br>
       ├── litellm.service.d/override.conf  <span class="comment"># PYTHONPATH only</span><br>
       └── hermes-gateway.service      <span class="comment"># YOUR Telegram gateway auto-start</span>
@@ -1910,19 +2025,23 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <h3>spark-02 — client node (separate ownership)</h3>
     <div class="file-tree">
       <span class="dir">~/.cache/huggingface/hub/</span>       <span class="comment"># model weights rsync'd from spark-01 over DAC</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;└── models--Intel--Qwen3.5-122B-A10B-int4-AutoRound/<br><br>
-      <span class="dir">~/sparky-ai-stack/</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;└── models--Qwen--Qwen3.5-122B-A10B-FP8/<br><br>
+      <span class="dir">~/spark-ai-stack/</span><br>
       ├── litellm-config.yaml         <span class="comment"># CLIENT LiteLLM — client's master_key, points DAC → vLLM</span><br>
       ├── n8n.yml                     <span class="comment"># compose for client's n8n</span><br>
       └── logs/<br>
       &nbsp;&nbsp;&nbsp;&nbsp;├── litellm.db             <span class="comment"># CLIENT SQLite log — separate corpus</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;└── litellm.log            <span class="comment"># CLIENT text log</span><br><br>
-      Docker image (pushed from spark-01):<br>
-      └── vllm-node-tf5:latest        <span class="comment"># identical image as spark-01; worker container started by spark-01's launcher over SSH</span><br><br>
+      <span class="dir">~/spark-ai-stack/scripts/</span>        <span class="comment"># rsynced from spark-01 over DAC</span><br>
+      ├── vllm-head.sh                <span class="comment"># not used on spark-02 — present for parity</span><br>
+      └── vllm-worker.sh              <span class="comment"># entrypoint for the worker container</span><br><br>
+      Docker image (copied from spark-01 over DAC):<br>
+      └── vllm-spark:26.04            <span class="comment"># identical to spark-01; loaded via docker save | ssh | docker load</span><br><br>
       Docker volumes:<br>
       ├── open-webui                  <span class="comment"># CLIENT Open WebUI database, knowledge bases, RAG</span><br>
       └── n8n_data                    <span class="comment"># CLIENT n8n flows + credentials</span><br><br>
       /etc/systemd/system/<br>
+      ├── vllm-worker.service         <span class="comment"># vLLM worker auto-start (docker run vllm-spark:26.04 --entrypoint vllm-worker.sh)</span><br>
       └── litellm.service             <span class="comment"># CLIENT LiteLLM auto-start</span>
     </div>
 
@@ -1931,10 +2050,10 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <table>
         <thead><tr><th>Node / Owner</th><th>Path</th><th>Contents</th></tr></thead>
         <tbody>
-          <tr><td>spark-01 — you</td><td><code>~/sparky-ai-stack/logs/</code></td><td>Your LiteLLM corpus</td></tr>
+          <tr><td>spark-01 — you</td><td><code>~/spark-ai-stack/logs/</code></td><td>Your LiteLLM corpus</td></tr>
           <tr><td>spark-01 — you</td><td><code>~/.hermes/</code></td><td>Your Hermes memory, sessions, skills</td></tr>
           <tr><td>spark-01 — you</td><td>Docker volumes <code>open-webui</code>, <code>n8n_data</code></td><td>Your UI state — chat history, knowledge bases, flows</td></tr>
-          <tr><td>spark-02 — client</td><td><code>~/sparky-ai-stack/logs/</code></td><td>Client's LiteLLM corpus (their backup, not yours)</td></tr>
+          <tr><td>spark-02 — client</td><td><code>~/spark-ai-stack/logs/</code></td><td>Client's LiteLLM corpus (their backup, not yours)</td></tr>
           <tr><td>spark-02 — client</td><td>Docker volumes <code>open-webui</code>, <code>n8n_data</code></td><td>Client's UI state (their backup, not yours)</td></tr>
         </tbody>
       </table>
@@ -1950,56 +2069,56 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">vLLM inference is extremely slow (2–3&nbsp;tok/s) on multi-node setup</div>
       <div class="issue-sym"><span>Symptom</span><span>The cluster comes up cleanly, both GPUs register, and completions stream — but throughput sits at 2–3&nbsp;tok/s instead of the expected ~45&nbsp;tok/s. <code>nload</code> on the DAC shows traffic, but only a fraction of link capacity.</span></div>
       <div class="issue-sym"><span>Cause</span><span>NCCL is falling back to TCP/IP sockets instead of using RDMA over RoCE. Either <code>/dev/infiniband</code> wasn't passed into the container, <code>NCCL_IB_HCA</code> wasn't set, or both. The hand-built <code>vllm-spark:26.04</code> image had this problem by design — RDMA passthrough was never plumbed in.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Confirm the transport with <code>docker logs vllm_node | grep -E "NET/IB|NET/Socket"</code>. <code>NET/IB</code> = RDMA (good); <code>NET/Socket</code> = TCP fallback (bad). The eugr/spark-vllm-docker stack (Step 1b–1e) sets <code>NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0</code> and passes <code>/dev/infiniband</code> into both containers automatically. If you're on the old hand-built image, migrate — there is no equivalent flag fix.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Confirm the transport with <code>docker logs vllm_node | grep -E "NET/IB|NET/Socket"</code>. <code>NET/IB</code> = RDMA (good); <code>NET/Socket</code> = TCP fallback (bad). The <code>vllm-spark:26.04</code> container (Step 1b–1e) sets <code>NCCL_SOCKET_IFNAME=enp1s0f0np0</code> and passes the infiniband devices into both containers. Verify that the <code>-e NCCL_SOCKET_IFNAME=enp1s0f0np0</code> env var is present in your <code>docker run</code> command.</span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">NVFP4 model stalls silently after worker spawn (37&nbsp;GB allocated, no further progress)</div>
       <div class="issue-sym"><span>Symptom</span><span>An NVFP4 checkpoint (e.g. <code>Sehyo/Qwen3.5-122B-A10B-NVFP4</code>) loads weights to ~37&nbsp;GB on both nodes, the worker registers with Ray, and then everything stops. No errors, no progress, no completion of engine init.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>NVFP4 quantization is currently <strong>single-node only</strong> on DGX Spark. Multi-node NVFP4 fails at cluster launch in both <code>eugr/spark-vllm-docker</code> (the recipe is marked <code>solo_only: true</code>) and <code>vllm/vllm-openai:cu130-nightly</code>. The <code>Sehyo/Qwen3.5-122B-A10B-NVFP4</code> checkpoint additionally has weight-name mismatches with newer vLLM fused Mamba layer names.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use <code>Intel/Qwen3.5-122B-A10B-int4-AutoRound</code> for multi-node inference (Step 01 production model). Do not attempt NVFP4 with TP=2 multi-node until community support is confirmed.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>NVFP4 quantization is currently <strong>single-node only</strong> on DGX Spark. Multi-node NVFP4 fails at cluster launch with <code>vllm-spark:26.04</code> and <code>vllm/vllm-openai:cu130-nightly</code>. The <code>Sehyo/Qwen3.5-122B-A10B-NVFP4</code> checkpoint additionally has weight-name mismatches with newer vLLM fused Mamba layer names.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use <code>Qwen/Qwen3.5-122B-A10B-FP8</code> for multi-node inference (Step 01 production model). Do not attempt NVFP4 with TP=2 multi-node until community support is confirmed.</span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">Ray version mismatch between head and worker</div>
       <div class="issue-sym"><span>Symptom</span><span>Worker fails to join the head with an error referencing incompatible Ray client/server protocol versions, or the head accepts the worker but the engine init aborts with a serialization error.</span></div>
       <div class="issue-sym"><span>Cause</span><span>The two containers were built from different base images (e.g. you rebuilt on <code>spark-01</code> but the older image is still on <code>spark-02</code>) or one node is running an out-of-date image tag.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Always start the head container first, wait for <code>Ray runtime started</code> in <code>docker logs vllm_node</code>, then start the worker. Both nodes must run identical images — the <code>./build-and-copy.sh --tf5 --copy-to YOUR_NODE2_DAC_IP</code> step in Step 1b is what guarantees that; re-run it whenever you bump the image on either side.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Always start the head container first (on <code>spark-01</code>), wait for <code>Ray runtime started</code> in <code>docker logs vllm_node</code>, then start the worker on <code>spark-02</code>. Both nodes must run identical images — use <code>docker save vllm-spark:26.04 | ssh -b YOUR_NODE1_DAC_IP YOUR_NODE2_DAC_IP docker load</code> (Step 1c) to guarantee this; re-run whenever you update the image.</span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">Placement group allocation failed / <code>node:192.0.2.x not found</code></div>
       <div class="issue-sym"><span>Symptom</span><span>vLLM logs show an indefinite placement-group allocation failure or a Ray placement spec referencing a node IP Ray doesn't recognize. The cluster has 2 GPUs registered, but vLLM only sees one.</span></div>
       <div class="issue-sym"><span>Cause</span><span><code>VLLM_HOST_IP</code> is unset, so vLLM resolves the node's hostname to the mgmt IP (<code>192.0.2.x</code>) — but Ray registered each node on its DAC IP (<code>198.51.100.x</code>). The placement group spec then targets a node Ray has never seen.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Set <code>VLLM_HOST_IP</code> to <em>each container's own DAC IP</em>: on spark-01's head container, <code>VLLM_HOST_IP=YOUR_NODE1_DAC_IP</code>; on spark-02's worker container, <code>VLLM_HOST_IP=YOUR_NODE2_DAC_IP</code>. The eugr launcher's <code>./run-recipe.sh --discover</code> (Step 1c) sets <code>LOCAL_IP</code> in <code>.env</code> per node and the cluster launcher exports it as <code>VLLM_HOST_IP</code> into each container.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Set <code>VLLM_HOST_IP</code> to <em>each container's own DAC IP</em>: <code>-e VLLM_HOST_IP=YOUR_NODE1_DAC_IP</code> on spark-01's head container; <code>-e VLLM_HOST_IP=YOUR_NODE2_DAC_IP</code> on spark-02's worker container. The docker run commands in Step 1e set this explicitly — confirm both are present.</span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">"Tensor parallel size exceeds available GPUs (1)" warning</div>
       <div class="issue-sym"><span>Symptom</span><span>vLLM head logs print a warning that TP=2 exceeds the locally visible GPU count (1) before Ray finishes registering the second node.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Expected and harmless on a 2-node 1-GPU-per-node setup. vLLM spreads TP workers across nodes via Ray. The warning fires before Ray confirms the second node's GPU is part of the cluster — not an error if the worker is up and joining.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Ignore. Confirm <code>docker exec vllm_node ray status</code> reports <code>2.0/2.0 GPU</code> after the worker container's join completes. The eugr <code>run-recipe.sh</code> launcher blocks <code>vllm serve</code> behind this check, so under normal operation you won't see it.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Ignore. Confirm <code>docker exec vllm_node ray status</code> reports <code>2.0/2.0 GPU</code> after the worker container's join completes. vLLM blocks model loading until both TP ranks are registered — the warning fires before Ray confirms the second GPU, not an error if the worker is up and connecting.</span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">Worker can't reach head — Ray GCS connection refused</div>
-      <div class="issue-sym"><span>Symptom</span><span>Worker logs (<code>docker logs vllm_node</code> on spark-02) print "ConnectionError: ... 198.51.100.1:6379" continuously and never advance.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span>Worker logs (<code>docker logs vllm_node</code> on spark-02) print "ConnectionError: ... 10.100.100.1:6379" continuously and never advance.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the head container hasn't started, (b) <code>LOCAL_IP</code> on the head's <code>.env</code> isn't the DAC IP so Ray bound to the wrong interface, or (c) a firewall blocks port 6379 over the DAC.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>On spark-01: <code>docker exec vllm_node ray status</code> — if Ray isn't running, restart with <code>./run-recipe.sh qwen3.5-122b-int4-autoround -d -- …</code>. Confirm <code>LOCAL_IP=YOUR_NODE1_DAC_IP</code> in <code>~/spark-vllm-docker/.env</code> on the head. From spark-02: <code>nc -zv YOUR_NODE1_DAC_IP 6379</code> should connect; if not, check firewall rules on the DAC interface.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>On spark-01: <code>docker exec vllm_node ray status</code> — if Ray isn't running, restart with <code>docker restart vllm_node</code> or re-run the Step 1e head container command. Confirm <code>VLLM_HOST_IP=YOUR_NODE1_DAC_IP</code> is set in the container (<code>docker inspect vllm_node | grep VLLM_HOST_IP</code>). From spark-02: <code>nc -zv YOUR_NODE1_DAC_IP 6379</code> should connect; if not, check the DAC link and firewall rules on the DAC interface.</span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">NCCL traffic on the wrong interface (mgmt LAN instead of DAC)</div>
       <div class="issue-sym"><span>Symptom</span><span>Tensor-parallel inference works but is slow. <code>nload enp1s0f0np0</code> stays idle; mgmt LAN sees Gb/s spikes instead.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) <code>NCCL_IB_HCA</code> wasn't set so NCCL couldn't find the RoCE devices and fell back to TCP auto-detect, picking the first interface it saw (often mgmt), or (b) only one of the two RoCE twins is listed in <code>NCCL_IB_HCA</code> and NCCL silently went to TCP rather than use one twin.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Confirm <code>IB_IF=rocep1s0f0,roceP2p1s0f0</code> in <code>~/spark-vllm-docker/.env</code> (both twins, comma-separated). The launcher exports this as <code>NCCL_IB_HCA</code> into both containers. Verify with <code>docker logs vllm_node | grep "NCCL INFO NET/IB"</code> — you should see both <code>rocep1s0f0</code> and <code>roceP2p1s0f0</code> listed. Also confirm <code>ETH_IF=enp1s0f0np0</code> matches on both nodes.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Confirm <code>-e NCCL_SOCKET_IFNAME=enp1s0f0np0</code> is set in the <code>docker run</code> command on both nodes (<code>docker inspect vllm_node | grep NCCL</code>). Verify with <code>docker logs vllm_node | grep "NCCL INFO NET/IB"</code> — you should see the RoCE interfaces listed. If NCCL fell back to TCP, restart both containers with the correct <code>NCCL_SOCKET_IFNAME</code> env var.</span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title"><code>nvidia-smi memory.used</code> returns <code>[N/A]</code> on GB10</div>
       <div class="issue-sym"><span>Symptom</span><span><code>nvidia-smi --query-gpu=memory.used,memory.total --format=csv</code> returns <code>[N/A]</code> in both fields. Memory monitoring scripts that depend on these fields silently report nothing.</span></div>
       <div class="issue-sym"><span>Cause</span><span>GB10 (Grace Blackwell) uses unified memory. The classic <code>memory.used</code> / <code>memory.total</code> NVML fields are not populated on this hardware.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section. With the 122B AutoRound INT4 model loaded, you should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process at roughly <strong>~37&nbsp;GB</strong> per node — leaving ~91&nbsp;GB free per node for KV cache. The 35B FP8 bootstrap model lands closer to <strong>~97&nbsp;GB</strong>.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section. With the 122B FP8 model loaded, you should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process at roughly <strong>~57&nbsp;GB</strong> per node — leaving ~71&nbsp;GB free per node for KV cache. The 35B FP8 bootstrap model lands closer to <strong>~18&nbsp;GB</strong> per node.</span></div>
     </div>
 
     <div class="issue">
@@ -2012,7 +2131,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <div class="issue">
       <div class="issue-title"><code>docker: permission denied</code> on spark-02</div>
       <div class="issue-sym"><span>Symptom</span><span>Any docker command on spark-02 fails with <code>permission denied while trying to connect to the Docker daemon socket</code>. Common on a freshly-imaged worker node where docker installed cleanly but the operator account isn't in the <code>docker</code> group yet.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Add the operator account to the <code>docker</code> group. On a fresh spark-02: <code>sudo usermod -aG docker cameron &amp;&amp; newgrp docker</code> (substitute your actual username). The new group only takes effect after re-logging or running <code>newgrp docker</code> in the current shell. The Step 01 worker script will not run until this is done.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Add the operator account to the <code>docker</code> group. On a fresh spark-02: <code>sudo usermod -aG docker YOUR_USERNAME &amp;&amp; newgrp docker</code>. The new group only takes effect after re-logging or running <code>newgrp docker</code> in the current shell. The Step 01 worker script will not run until this is done.</span></div>
     </div>
 
     <div class="issue">
@@ -2024,7 +2143,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
     <div class="issue">
       <div class="issue-title">Client LiteLLM can't reach vLLM</div>
-      <div class="issue-sym"><span>Symptom</span><span>Client LiteLLM on spark-02 returns <code>connection refused</code> or <code>connect timeout</code> on every request. <code>~/sparky-ai-stack/logs/litellm.log</code> on spark-02 shows <code>httpx.ConnectError</code> against <code>198.51.100.1:8000</code>.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span>Client LiteLLM on spark-02 returns <code>connection refused</code> or <code>connect timeout</code> on every request. <code>~/spark-ai-stack/logs/litellm.log</code> on spark-02 shows <code>httpx.ConnectError</code> against <code>10.100.100.1:8000</code>.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the DAC link is down, (b) the vLLM head container on spark-01 is not running, or (c) the host firewall on spark-01 is blocking the DAC peer from reaching port 8000.</span></div>
       <div class="issue-fix"><span>Fix</span><span>From spark-02: <code>ping -c 3 YOUR_NODE1_DAC_IP</code> (DAC reachable?), then <code>nc -zv YOUR_NODE1_DAC_IP 8000</code>. From spark-01: <code>docker ps | grep vllm_node</code> (running?) and <code>sudo ufw status | grep 8000</code>. The Step 06 ufw rule should explicitly allow <code>YOUR_NODE2_DAC_IP</code> on port 8000 over <code>enp1s0f0np0</code>.</span></div>
     </div>
@@ -2045,7 +2164,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
     <div class="issue">
       <div class="issue-title">Client can see your LiteLLM logs (or vice versa)</div>
-      <div class="issue-sym"><span>Symptom</span><span>You find an entry in <code>~/sparky-ai-stack/logs/litellm.log</code> on spark-01 that you didn't make. Or the client reports a request in their log that they didn't send.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span>You find an entry in <code>~/spark-ai-stack/logs/litellm.log</code> on spark-01 that you didn't make. Or the client reports a request in their log that they didn't send.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Almost always: someone reused a master key across the two LiteLLMs, or the Open WebUI on one side is misconfigured to point at the other side's LiteLLM.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Confirm <code>master_key</code> values are unique on each node — they should never match. Then check each Open WebUI's API base URL: yours should be <code>http://host.docker.internal:8001/v1</code> (your local LiteLLM); client's should be the same hostname (their local LiteLLM, not your tailnet IP). If you find cross-pointing, fix it and rotate both master keys.</span></div>
     </div>
@@ -2054,7 +2173,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">235B FP8 model OOM on the 256&nbsp;GB cluster</div>
       <div class="issue-sym"><span>Symptom</span><span>Loading <code>Qwen/Qwen3-235B-A22B-FP8</code> at TP=2 fails. Ray kills the worker with an <code>OutOfMemoryError</code> at the ~95% memory threshold during weight loading; the head logs report a placement-group failure shortly after.</span></div>
       <div class="issue-sym"><span>Cause</span><span>235B at FP8 is ~235&nbsp;GB of weights total. Split across TP=2 that's ~117.5&nbsp;GB per node — and only ~121&nbsp;GB is usable per node, leaving no room for KV cache or OS overhead.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use a 4-bit quantization instead. A 235B INT4 model is ~117&nbsp;GB total ≈ ~58&nbsp;GB per node and fits with comfortable headroom. Or use a smaller model — the 122B AutoRound INT4 above is the recommended production choice.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use a lower-bit quantization. A 235B INT4 model is ~117&nbsp;GB total ≈ ~58&nbsp;GB per node and fits with comfortable headroom. Or use a smaller model — the 122B FP8 above is the recommended production choice.</span></div>
     </div>
 
     <div class="issue">
@@ -2066,7 +2185,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <div class="issue">
       <div class="issue-title"><code>permission denied</code> when downloading to the HF cache</div>
       <div class="issue-sym"><span>Symptom</span><span><code>hf download</code> (or <code>huggingface-cli download</code>) fails with <code>PermissionError: [Errno 13] Permission denied</code> on a path under <code>~/.cache/huggingface/hub/</code>.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>A previous download was run with <code>sudo</code> or as <code>root</code>, which left the target directory root-owned. The current shell (running as <code>cameron</code> or your normal user) cannot write into it.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>A previous download was run with <code>sudo</code> or as <code>root</code>, which left the target directory root-owned. The current shell (running as your normal user) cannot write into it.</span></div>
       <div class="issue-fix"><span>Fix</span><span><code>sudo rm -rf &lt;target_dir&gt;</code>, then recreate the directory and rerun the <code>hf download</code> command as your normal user (<strong>not</strong> root). All <code>hf download</code> commands in this guide assume the non-root user.</span></div>
     </div>
 
@@ -2074,7 +2193,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">Model "thinks" out loud / verbose deliberation in Open WebUI</div>
       <div class="issue-sym"><span>Symptom</span><span>Conversational queries cause the model to produce long deliberative preambles ("Let me think about this..." or visible chain-of-thought). Latency climbs and token usage balloons. Sometimes the model loops in its own reasoning trace.</span></div>
       <div class="issue-sym"><span>Cause</span><span>The chat template was rendered with <code>preserve_thinking: true</code> (or any other flag that exposes the visible CoT track). The Qwen3.5 family produces extended reasoning whenever thinking is enabled at template time, and conversational queries trigger excessive deliberation under that setting.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Pass <code>--default-chat-template-kwargs '{"enable_thinking": false}'</code> as a vLLM flag after the <code>--</code> separator on the <code>run-recipe.sh</code> launch command (the Step 1e launch line does this). Users can opt into extended reasoning per-message by prefixing a prompt with <code>/think</code>. This matches the behavior the recommended Open WebUI system prompt (Step 05) is calibrated for.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>The <code>vllm-head.sh</code> script (Step 1b) does not pass <code>--default-chat-template-kwargs</code> — thinking mode is controlled per-request via Open WebUI's system prompt instead. Users opt into extended reasoning per-message by prefixing a prompt with <code>/think</code>. This matches the behavior the recommended Open WebUI system prompt (Step 05) is calibrated for.</span></div>
     </div>
 
     <div class="issue">
@@ -2103,8 +2222,8 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <div class="step-header"><span class="step-num">REF</span><h2>Other known issues</h2></div>
     <div class="issue">
       <div class="issue-title">NVFP4 quantization is single-node only on DGX Spark</div>
-      <div class="issue-sym"><span>Limitation</span><span>NVFP4 multi-node cluster mode is not supported as of vLLM <code>cu130-nightly</code> / eugr <code>spark-vllm-docker</code>. The NVFP4 recipe is marked <code>solo_only: true</code> in <code>eugr/spark-vllm-docker</code>, and <code>vllm/vllm-openai:cu130-nightly</code> fails at cluster launch when NVFP4 is selected with TP=2 multi-node.</span></div>
-      <div class="issue-fix"><span>Workaround</span><span>Do not attempt NVFP4 with TP=2 multi-node until community support is confirmed. Use <code>Intel/Qwen3.5-122B-A10B-int4-AutoRound</code> for multi-node inference — the Step 01 production recipe is built around this. See the NVFP4 stall entry in <a href="#issues">Cluster issues</a> for the symptom on the bad path.</span></div>
+      <div class="issue-sym"><span>Limitation</span><span>NVFP4 multi-node cluster mode is not supported as of <code>vllm-spark:26.04</code> / <code>vllm/vllm-openai:cu130-nightly</code>. NVFP4 fails at cluster launch when selected with TP=2 multi-node on DGX Spark.</span></div>
+      <div class="issue-fix"><span>Workaround</span><span>Do not attempt NVFP4 with TP=2 multi-node until community support is confirmed. Use <code>Qwen/Qwen3.5-122B-A10B-FP8</code> for multi-node inference — the Step 01 production recipe is built around this. See the NVFP4 stall entry in <a href="#issues">Cluster issues</a> for the symptom on the bad path.</span></div>
     </div>
     <div class="issue">
       <div class="issue-title">LiteLLM port already in use</div>
@@ -2562,7 +2681,7 @@ sudo apt install -y nodejs</code></pre>
     <p>The LiteLLM proxy ships with a built-in web UI at <code>/ui</code>. It requires a master key and a PostgreSQL database — SQLite is not supported for the UI auth layer. The following documents every error encountered during setup, in order.</p>
 
     <h3>Step 1 — Set a master key</h3>
-    <p>All commands below run on <strong><code>spark-01</code></strong> (where LiteLLM lives). Add to <code>~/sparky-ai-stack/litellm-config.yaml</code>:</p>
+    <p>All commands below run on <strong><code>spark-01</code></strong> (where LiteLLM lives). Add to <code>~/spark-ai-stack/litellm-config.yaml</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>general_settings:
@@ -2576,7 +2695,7 @@ sudo apt install -y nodejs</code></pre>
     </div>
 
     <h3>Step 2 — Add PostgreSQL to a compose file on spark-01</h3>
-    <p>Run Postgres on the same node as LiteLLM. Putting it on <code>spark-02</code> would re-introduce the very latency-disturbance pattern this architecture is designed to avoid. Add to a new <code>~/sparky-ai-stack/litellm-db.yml</code> on <code>spark-01</code>:</p>
+    <p>Run Postgres on the same node as LiteLLM. Putting it on <code>spark-02</code> would re-introduce the very latency-disturbance pattern this architecture is designed to avoid. Add to a new <code>~/spark-ai-stack/litellm-db.yml</code> on <code>spark-01</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>  litellm-db:
@@ -2655,7 +2774,7 @@ sudo systemctl status litellm</code></pre>
 </div>
 
 <footer>
-  <span>NVIDIA DGX: At-Home AI Stack · split-trust shared compute · arm64 · Ubuntu 24.04 · v3.0</span>
+  <span>NVIDIA DGX: At-Home AI Stack · split-trust shared compute · arm64 · Ubuntu 24.04 · v4.0</span>
   <span>vLLM TP=2 · Ray · 2× LiteLLM · 2× Open WebUI · 2× n8n · 2× Tailscale · Hermes Agent</span>
 </footer>
 

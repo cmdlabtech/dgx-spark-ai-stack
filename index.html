@@ -1258,7 +1258,29 @@ curl -s http://localhost:8001/health/readiness | head</code></pre>
 cd ~/sparky-ai-stack
 
 pip3 install litellm[proxy] --break-system-packages
-echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc</code></pre>
+echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc
+
+# ARM64 fix 1 — remove litellm-proxy-extras before it causes DB migration failures
+# This package ships with LiteLLM and runs `prisma migrate deploy` on startup.
+# On a fresh ARM64 database the migrations conflict and leave the schema
+# incomplete, breaking the Admin UI and all virtual-key management.
+pip uninstall litellm-proxy-extras -y --break-system-packages
+
+# ARM64 fix 2 — fetch the ARM64 prisma query engine binary
+# LiteLLM's startup routine does not detect the correct binary target on
+# aarch64 Ubuntu 24.04. Without this, prisma connects, prints a false
+# "prisma package not found" warning, and then fails silently to
+# build the DB schema. Run this once after every litellm upgrade.
+cd ~/.local/lib/python3.12/site-packages/litellm/proxy/
+DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
+  PRISMA_BINARY_TARGET=linux-arm64-openssl-3.0.x prisma py fetch
+DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
+  prisma generate --schema schema.prisma
+cd ~/sparky-ai-stack</code></pre>
+    </div>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <div>On x86 the prisma binary is auto-detected. On ARM64 (GB10/Grace CPU) it is not downloaded during <code>litellm[proxy]</code> installation. Without it, the prisma query engine process spawns but immediately exits, LiteLLM logs <code>prisma-query-engine PID N is dead; reconnecting</code> in a loop, and the Admin UI shows <code>No connected db</code>. Re-run the <code>prisma py fetch</code> and <code>prisma generate</code> commands after every <code>pip install --upgrade litellm</code>.</div>
     </div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — generate the client master key</h4>
@@ -1323,9 +1345,17 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+# Create the systemd drop-in with DATABASE_URL
+# The prisma query engine subprocess reads DATABASE_URL from its own
+# environment — the value in litellm-config.yaml alone is not enough.
+sudo mkdir -p /etc/systemd/system/litellm.service.d
+sudo bash -c 'cat &gt; /etc/systemd/system/litellm.service.d/override.conf &lt;&lt; EOF
+[Service]
+Environment="DATABASE_URL=postgresql://litellm:litellm@localhost:5432/litellm"
+EOF'
 sudo systemctl daemon-reload
 sudo systemctl enable litellm
-sudo systemctl start litellm
+sudo systemctl restart litellm.service
 sudo systemctl status litellm --no-pager</code></pre>
     </div>
 
@@ -1347,31 +1377,40 @@ sudo systemctl status litellm --no-pager</code></pre>
     </div>
     <div class="verify">On spark-01, <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm_node</code> on spark-01 — you should see the new request reach the vLLM head.</div>
 
-    <h3>Step 3d — PostgreSQL for the client Admin UI and virtual keys (required)</h3>
-    <p>Same constraint as Step 02: the LiteLLM Admin UI and virtual-key generation require PostgreSQL — SQLite is not supported because LiteLLM's Prisma schema is hardcoded for PostgreSQL. spark-02 doesn't run a docker-compose stack, so we use a standalone postgres container.</p>
+    <h3>Step 3d — PostgreSQL and Prisma schema (spark-02)</h3>
+    <p>The client LiteLLM needs its own independent Postgres database. Do not share spark-01's database — each side must have completely separate spend tracking, virtual keys, and Admin UI.</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — standalone postgres container</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — bring up the litellm-db container</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>docker run -d --name litellm-db --restart unless-stopped \
+      <pre><code>docker run -d \
+  --name litellm-db \
+  --restart unless-stopped \
+  -e POSTGRES_DB=litellm \
   -e POSTGRES_USER=litellm \
   -e POSTGRES_PASSWORD=litellm \
-  -e POSTGRES_DB=litellm \
-  -p 5432:5432 \
-  -v litellm_db:/var/lib/postgresql/data \
-  postgres:16</code></pre>
+  -v litellm-db:/var/lib/postgresql/data \
+  --network host \
+  postgres:16
+
+# Wait for postgres to finish initialising
+sleep 5
+docker exec litellm-db pg_isready -U litellm</code></pre>
+    </div>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <div><strong>Why <code>--network host</code>:</strong> The LiteLLM systemd service runs on the host network. Using host networking on the Postgres container means <code>localhost:5432</code> resolves correctly from the service without extra bridge network configuration.</div>
     </div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — apply the Prisma schema</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — push the Prisma schema</h4>
+    <p>Do <strong>not</strong> run <code>prisma migrate deploy</code> — <code>litellm-proxy-extras</code> (now uninstalled) was responsible for that command, and its migration history conflicts on a fresh database. Use <code>db push --force-reset</code> instead, which creates the full schema in one shot with no migration history to conflict:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>pip install prisma --break-system-packages
-
+      <pre><code>cd ~/.local/lib/python3.12/site-packages/litellm/proxy/
 DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
-  prisma db push \
-  --schema /home/YOUR_USERNAME/.local/lib/python3.12/site-packages/litellm/proxy/schema.prisma</code></pre>
+  prisma db push --schema schema.prisma --force-reset --skip-generate</code></pre>
     </div>
-    <div class="verify">Expected: <code>Your database is now in sync with your Prisma schema.</code></div>
+    <div class="verify">Expected: <code>🚀 Your database is now in sync with your Prisma schema.</code></div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — wire the database into the client litellm-config.yaml</h4>
     <p><code>database_url</code> goes under <code>general_settings</code>, alongside the existing <code>master_key</code>. Add <code>store_model_in_db: true</code> under <code>litellm_settings</code>:</p>
@@ -1384,12 +1423,30 @@ DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
 litellm_settings:
   store_model_in_db: true</code></pre>
     </div>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — restart LiteLLM and verify</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>sudo systemctl restart litellm
-sudo systemctl status litellm --no-pager</code></pre>
+      <pre><code>sudo systemctl restart litellm.service
+sleep 5
+sudo journalctl -u litellm.service -n 20 --no-pager | grep -iE 'startup|prisma|error'</code></pre>
+    </div>
+    <div class="verify">Expected: <code>INFO: Application startup complete.</code> with no <code>TableNotFoundError</code> lines. A <code>Unable to connect to DB. DATABASE_URL found in environment, but prisma package not found.</code> warning may still appear on ARM64 — this is a <strong>false negative</strong> and does not prevent the proxy from functioning.</div>
+
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — confirm the Admin UI has database access</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>curl -s http://localhost:8001/ui 2&gt;/dev/null | head -5
+# Navigate to http://SPARK02_IP:8001/ui in a browser
+# Virtual Keys page should show "Loading keys..." then display the table
+# (not "No connected db")</code></pre>
     </div>
     <div class="verify">Client UI is at <code>http://spark-02:8001/ui</code> — log in with <code>admin</code> and the client master key. The client generates their own per-app virtual keys from the <strong>Virtual Keys</strong> tab; you never see them.</div>
+
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <div><strong>After upgrading LiteLLM</strong> on spark-02, re-run the <code>prisma py fetch</code> and <code>prisma generate</code> commands from Step 3a, then re-run the <code>prisma db push --force-reset</code> from this step, before restarting the service. Upgrades may change the schema; <code>--force-reset</code> is safe on the client node since no production data accumulates between upgrades.</div>
+    </div>
+
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
       <div>If a virtual key was generated <em>before</em> the schema was fully applied (e.g. you generated a key, then re-ran <code>prisma db push</code>), the old key will appear in the UI but lookups will fail with <code>Virtual key not found in LiteLLM_VerificationTokenTable</code>. Delete it in the UI, restart LiteLLM, then generate a new one.</div>
@@ -1437,6 +1494,18 @@ docker run -d \
     <div class="step-header"><span class="step-num">STEP 05</span><h2>Client Open WebUI on spark-02</h2></div>
     <p>The client's daily-driver chat interface, owned by the client, on the client's node. It points at the <strong>client's</strong> LiteLLM at <code>http://localhost:8001/v1</code> — which in turn calls the shared vLLM head on <code>spark-01:8000</code> over the DAC.</p>
     <p><strong>The client's data lives on the client's node.</strong> Their Open WebUI database, knowledge bases, RAG document store, embedding indexes, conversation history, attached files, and account list — all of it is in the <code>open-webui</code> Docker volume on <code>spark-02</code>. None of it is replicated to <code>spark-01</code>. If you spin <code>spark-02</code> down, the client's UI state goes with it; if you image <code>spark-01</code>, the client's state is not in your image.</p>
+
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <div>The <code>OPENAI_API_KEY</code> value must <strong>exactly match</strong> the <code>master_key</code> in spark-02's <code>litellm-config.yaml</code>. These two values are set independently — if they were ever different (for example, if Open WebUI was launched before the LiteLLM master key was set, or if it was copied from spark-01's config), every Open WebUI request will return <code>401 Unauthorized</code> and chat will appear broken. To check:
+        <div class="code-block" style="margin:8px 0 0;">
+          <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+          <pre><code>grep master_key ~/sparky-ai-stack/litellm-config.yaml
+docker inspect open-webui | grep -i api_key</code></pre>
+        </div>
+        Both values must be identical. If they differ, stop and recreate the container with the correct key.
+      </div>
+    </div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — directory and run</h4>
     <div class="code-block">
@@ -2161,6 +2230,34 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
           </div>
         </span>
       </div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">ARM64: <code>litellm-proxy-extras</code> breaks fresh database migrations (spark-02 only)</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>TableNotFoundError: The table public.LiteLLM_Config does not exist</code> in logs, "No connected db" in the Admin UI.</span></div>
+      <div class="issue-sym"><span>Cause</span><span><code>litellm-proxy-extras</code> is a companion package that ships with <code>litellm[proxy]</code> and intercepts the Prisma schema setup on startup, replacing the default <code>db push</code> path with <code>prisma migrate deploy</code>. On ARM64 Ubuntu 24.04 with a fresh database the migration history conflicts (type and column errors in migrations <code>20250329084805</code> and <code>20260224203854</code>), leaving the schema incomplete.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Uninstall the package immediately after installing litellm (see Step 03 install). The default <code>db push</code> path works correctly without it.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">ARM64: prisma query engine binary not auto-downloaded (spark-02 only)</div>
+      <div class="issue-sym"><span>Symptom</span><span>LiteLLM logs <code>prisma-query-engine PID N is dead; reconnecting</code> in a tight loop and the Admin UI shows <code>No connected db</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>On aarch64 (GB10/Grace CPU) the prisma query engine binary for <code>linux-arm64-openssl-3.0.x</code> is not downloaded automatically when <code>litellm[proxy]</code> is installed. The binary can be run directly and works correctly — the issue is only with LiteLLM's internal discovery of its location.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Run <code>prisma py fetch</code> with <code>PRISMA_BINARY_TARGET=linux-arm64-openssl-3.0.x</code> explicitly (see Step 03 install). Re-run after every <code>pip install --upgrade litellm</code>.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">ARM64: <code>DATABASE_URL</code> must be in the systemd service environment (spark-02 only)</div>
+      <div class="issue-sym"><span>Symptom</span><span>The prisma query engine connects briefly then exits with <code>engine_process_death</code> reconnect loops.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>LiteLLM spawns the prisma query engine as a <strong>child process</strong>, and that child process reads <code>DATABASE_URL</code> from its own environment — not from <code>litellm-config.yaml</code>. On x86 this is typically set via Docker, but on bare-metal systemd the variable must be explicitly injected via a drop-in override.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Set <code>DATABASE_URL</code> in <code>/etc/systemd/system/litellm.service.d/override.conf</code> (see Step 03 systemd service).</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Open WebUI <code>OPENAI_API_KEY</code> must match LiteLLM <code>master_key</code> exactly (spark-02)</div>
+      <div class="issue-sym"><span>Symptom</span><span>Every chat request returns <code>401 Unauthorized</code> and chat appears broken.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>If Open WebUI on spark-02 was launched before <code>master_key</code> was set in LiteLLM's config, or if the key was copied from spark-01's config, the two values drift. They are set independently in separate commands and are easy to let diverge.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Stop and recreate the Open WebUI container with the correct key matching <code>master_key</code> in <code>~/sparky-ai-stack/litellm-config.yaml</code> (see Step 05 callout).</span></div>
     </div>
   </div>
 

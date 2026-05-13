@@ -1112,26 +1112,62 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>cat &gt; ~/sparky-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
 model_list:
-  - model_name: qwen3.5-122b
+  # Default — thinking off. Used by all clients unless they explicitly select the reasoning model.
+  - model_name: Qwen3.5-122B-Non-Reasoning
     litellm_params:
       model: openai/qwen3.5-122b
       api_base: http://localhost:8000/v1
       api_key: "not-needed"
+      max_tokens: 32768
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+      max_context_window: 131072
+      max_input_tokens: 98304
+      max_output_tokens: 32768
+
+  # Opt-in reasoning — user selects this model explicitly for complex tasks.
+  - model_name: Qwen3.5-122B-Reasoning
+    litellm_params:
+      model: openai/qwen3.5-122b
+      api_base: http://localhost:8000/v1
+      api_key: "not-needed"
+      max_tokens: 32768
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: true
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+      max_context_window: 131072
+      max_input_tokens: 98304
+      max_output_tokens: 32768
 
 litellm_settings:
   verbose: true
-  database:
-    type: sqlite
-    path: /home/YOUR_USERNAME/sparky-ai-stack/logs/litellm.db
-  log_config:
-    level: INFO
-    format: json
-    filepath: /home/YOUR_USERNAME/sparky-ai-stack/logs/litellm.log
+  store_model_in_db: true
+  default_system_message: "You are a highly capable AI assistant. Be direct,
+    accurate, and concise. Answer immediately without preamble. Never deliberate
+    out loud about whether or how to answer. For coding: produce complete,
+    working code. State definitive answers first then explain."
 
 router_settings:
   num_retries: 0
   timeout: 600
+
+general_settings:
+  master_key: YOUR_MASTER_KEY
+  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
+  mcp_settings:
+    allow_all_keys: true
 EOF</code></pre>
+    </div>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <div>The two model entries point at the same vLLM backend. Thinking is disabled by default via <code>extra_body</code> — the vLLM-level <code>--default-chat-template-kwargs</code> flag already defaults it off at the container, and LiteLLM's <code>extra_body</code> reinforces this per-entry. The Reasoning model overrides <code>enable_thinking: true</code> so users can explicitly select it in Open WebUI, n8n, or any other frontend for complex tasks.</div>
     </div>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
@@ -2186,18 +2222,9 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
   <div class="step" id="obsidian-vault-sync">
     <div class="step-header"><span class="step-num">OBSIDIAN VAULT SYNC + MCP</span><h2>Architecture</h2></div>
-    <p>Desktop and mobile clients run Obsidian with Syncthing for bidirectional vault sync. The vault syncs to a dedicated Proxmox LXC over the local network. When traveling, Tailscale bridges the connection — clients queue changes offline and sync when Tailscale is enabled on both ends.</p>
+    <p>Obsidian vault sync runs on a dedicated Ubuntu 24.04 LXC (hostname: <code>syncthing-obsidian-mcp</code>, IP: <code>10.10.15.10</code>) on the Proxmox homelab. Syncthing syncs the vault from Mac/Android to <code>/vault</code> on the LXC. The obsidian-mcp MCP server (<a href="https://github.com/StevenStavrakis/obsidian-mcp" target="_blank">StevenStavrakis/obsidian-mcp</a>) runs inside the LXC, exposed via supergateway on port 3000 using streamableHttp transport. LiteLLM on spark-01 connects to it at <code>http://10.10.15.10:3000/mcp</code>.</p>
     <div class="diagram-wrap" style="margin-top:12px;">
-      <pre style="background:transparent;padding:0;"><code>Desktop Client (Obsidian + Syncthing) ─┐
-Mobile Client  (Obsidian + Syncthing) ─┼─→ Syncthing ─→ LXC /vault
-                                       ┘         ↓
-                                          obsidian-mcp (stdio)
-                                                 ↓
-                                          supergateway (streamableHttp, port 3000)
-                                                 ↓
-                                          LiteLLM ([YOUR-AI-SERVER-HOSTNAME])
-                                                 ↓
-                                    Chat clients / API consumers</code></pre>
+      <pre style="background:transparent;padding:0;"><code>Obsidian (Mac/Android) &lt;-&gt; Syncthing &lt;-&gt; /vault on LXC &lt;-&gt; obsidian-mcp &lt;-&gt; supergateway :3000 &lt;-&gt; LiteLLM MCP client</code></pre>
     </div>
 
     <h3>LXC setup</h3>
@@ -2206,8 +2233,8 @@ Mobile Client  (Obsidian + Syncthing) ─┼─→ Syncthing ─→ LXC /vault
         <thead><tr><th>Setting</th><th>Value</th></tr></thead>
         <tbody>
           <tr><td>OS</td><td>Ubuntu 24.04 LTS</td></tr>
-          <tr><td>Hostname</td><td><code>[YOUR-LXC-HOSTNAME]</code></td></tr>
-          <tr><td>IP</td><td><code>[YOUR-LXC-IP]</code> on VLAN <code>[YOUR-VLAN-ID]</code></td></tr>
+          <tr><td>Hostname</td><td><code>syncthing-obsidian-mcp</code></td></tr>
+          <tr><td>IP</td><td><code>10.10.15.10</code></td></tr>
           <tr><td>Vault path</td><td><code>/vault</code> with <code>.obsidian/app.json</code> stub (required for MCP server vault validation)</td></tr>
           <tr><td>Services</td><td><code>syncthing@root</code> and <code>obsidian-mcp</code> — both enabled as systemd services</td></tr>
         </tbody>
@@ -2216,50 +2243,46 @@ Mobile Client  (Obsidian + Syncthing) ─┼─→ Syncthing ─→ LXC /vault
   </div>
 
   <div class="step" id="obsidian-vault-setup">
-    <div class="step-header"><span class="step-num">OBSIDIAN VAULT SYNC + MCP</span><h2>Setup script</h2></div>
-    <p>A single script provisions the full stack from a fresh Ubuntu 24.04 LXC.</p>
+    <div class="step-header"><span class="step-num">OBSIDIAN VAULT SYNC + MCP</span><h2>LXC setup script</h2></div>
+    <p>Run as root on a fresh Ubuntu 24.04 LXC.</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>#!/bin/bash
 set -e
-# ── Configuration ─────────────────────────────────────────────
-SYNCTHING_USER="root"   # Change if running as non-root user
-# ──────────────────────────────────────────────────────────────
 
-# 1. Install dependencies
 apt update
 apt install -y curl gpg apt-transport-https
 
-# 2. Install Node.js 22 + npm
+# Node.js 22
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs
 
-# 3. Install Syncthing
-curl -fsSL https://syncthing.net/release-key.gpg | gpg --dearmor -o /usr/share/keyrings/syncthing-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/syncthing-archive-keyring.gpg] https://apt.syncthing.net/ syncthing stable" &gt; /etc/apt/sources.list.d/syncthing.list
-apt update
-apt install -y syncthing
+# Syncthing
+curl -fsSL https://syncthing.net/release-key.gpg | \
+  gpg --dearmor -o /usr/share/keyrings/syncthing-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/syncthing-archive-keyring.gpg] \
+  https://apt.syncthing.net/ syncthing stable" \
+  &gt; /etc/apt/sources.list.d/syncthing.list
+apt update &amp;&amp; apt install -y syncthing
 
-# 4. Create vault directory with Obsidian config
+# Vault directory — obsidian-mcp requires .obsidian to exist
 mkdir -p /vault/.obsidian
 echo '{}' &gt; /vault/.obsidian/app.json
 
-# 5. Enable and start Syncthing
-systemctl enable syncthing@${SYNCTHING_USER}
-systemctl start syncthing@${SYNCTHING_USER}
-
-# 6. Wait for Syncthing config to generate
+# Syncthing
+systemctl enable syncthing@root
+systemctl start syncthing@root
 sleep 8
 
-# 7. Expose Syncthing GUI on all interfaces
+# Expose Syncthing GUI on all interfaces
 CONFIG_PATH=$(find /root -name "config.xml" 2&gt;/dev/null | grep syncthing | head -1)
 sed -i 's|&lt;address&gt;127.0.0.1:8384&lt;/address&gt;|&lt;address&gt;0.0.0.0:8384&lt;/address&gt;|' "$CONFIG_PATH"
-systemctl restart syncthing@${SYNCTHING_USER}
+systemctl restart syncthing@root
 
-# 8. Install obsidian-mcp and supergateway
+# obsidian-mcp + supergateway
 npm install -g obsidian-mcp supergateway
 
-# 9. Create obsidian-mcp systemd service
+# systemd service — streamableHttp transport (required for LiteLLM v1.80.18+)
 cat &gt; /etc/systemd/system/obsidian-mcp.service &lt;&lt; 'EOF'
 [Unit]
 Description=Obsidian MCP Server
@@ -2268,10 +2291,13 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=supergateway --stdio "obsidian-mcp /vault" --port 3000 --outputTransport streamableHttp --stateful --protocolVersion 2025-11-25
+ExecStart=supergateway --stdio "obsidian-mcp /vault" \
+  --port 3000 \
+  --outputTransport streamableHttp \
+  --stateful \
+  --protocolVersion 2025-11-25
 Restart=on-failure
 RestartSec=10
-MemoryMax=512M
 
 [Install]
 WantedBy=multi-user.target
@@ -2279,153 +2305,59 @@ EOF
 
 systemctl daemon-reload
 systemctl enable obsidian-mcp
-systemctl start obsidian-mcp
-
-echo "Syncthing UI: http://$(hostname -I | awk '{print $1}'):8384"
-echo "MCP endpoint: http://$(hostname -I | awk '{print $1}'):3000/mcp"</code></pre>
+systemctl start obsidian-mcp</code></pre>
     </div>
 
-    <h3>Manual steps after script</h3>
-    <ol style="font-size:13.5px;color:var(--text2);line-height:1.75;margin-bottom:14px;padding-left:20px;display:flex;flex-direction:column;gap:8px;">
-      <li>Open Syncthing UI at <code>http://[YOUR-LXC-IP]:8384</code></li>
-      <li>Remove the default folder, add <code>/vault</code>, set a GUI password</li>
-      <li>Pair each client device — add LXC device ID in client Syncthing UI, accept the incoming request on the LXC side, share the vault folder</li>
-      <li>In LiteLLM UI → MCP Servers → Add: URL <code>http://[YOUR-LXC-IP]:3000/mcp</code>, transport <code>http</code>, auth <code>None</code></li>
-      <li>In Hermes <code>~/.hermes/config.yaml</code>, add under <code>mcp_servers</code>: <code>obsidian: url: http://[YOUR-LXC-IP]:3000/mcp</code> and <code>transport: streamableHttp</code></li>
-      <li>
-        <strong>Mandatory verification</strong> — run this before proceeding. If it fails, the MCP server is not reachable and the next steps will not work:
-        <div class="code-block" style="margin:8px 0;">
-          <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-          <pre><code>hermes mcp test obsidian</code></pre>
-        </div>
-        Expected output: <code>✓ Connected</code> and <code>✓ Tools discovered: 11</code>. If this fails, check that the obsidian-mcp systemd service is running on the LXC (<code>systemctl status obsidian-mcp</code>), that port 3000 is reachable from the DGX, and that the URL in config.yaml is correct.
-      </li>
-      <li>
-        Update <code>~/.hermes/skills/note-taking/obsidian/SKILL.md</code> with the correct MCP tool names (create the directory if it doesn't exist). The built-in Hermes obsidian skill will use filesystem commands unless this file explicitly names the MCP tools:
-        <div class="code-block" style="margin:8px 0;">
-          <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-          <pre><code>mkdir -p ~/.hermes/skills/note-taking/obsidian
-cat > ~/.hermes/skills/note-taking/obsidian/SKILL.md &lt;&lt; 'EOF'
-# Obsidian Vault Skill
+    <h3>After the LXC is running</h3>
+    <ul style="font-size:13.5px;color:var(--text2);line-height:1.75;margin-bottom:14px;padding-left:20px;display:flex;flex-direction:column;gap:8px;">
+      <li>Configure Syncthing on the LXC (port 8384) to accept a share from your Mac/Android</li>
+      <li>Set the shared folder path to <code>/vault</code></li>
+      <li>Connect Mac Obsidian Syncthing client to the LXC Syncthing device</li>
+    </ul>
 
-Always use MCP tools for all vault operations. Never use filesystem commands.
-
-## Required: discover vault name first
-Always call `list-available-vaults` before any other tool to discover the vault name.
-Do not assume a vault name — always look it up.
-
-## Available MCP tools
-- list-available-vaults   — discover vault name (call first, every time)
-- search-vault            — full-text search across all notes
-- read-note               — read a specific note by path
-- create-note             — create a new note
-- edit-note               — edit an existing note
-- move-note               — move or rename a note
-- delete-note             — delete a note
-- create-directory        — create a folder in the vault
-- add-tags                — add tags to a note
-- remove-tags             — remove tags from a note
-- rename-tag              — rename a tag across all notes
-EOF</code></pre>
-        </div>
-      </li>
-      <li>Add <code>mcp</code> to the <code>telegram</code> platform toolset in <code>~/.hermes/config.yaml</code> and restart <code>hermes-gateway</code></li>
-    </ol>
-
-    <h3>Services reference</h3>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Service</th><th>Command</th><th>Port</th></tr></thead>
-        <tbody>
-          <tr><td>Syncthing</td><td><code>systemctl status syncthing@root</code></td><td>8384</td></tr>
-          <tr><td>Obsidian MCP</td><td><code>systemctl status obsidian-mcp</code></td><td>3000</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h3>LiteLLM MCP configuration</h3>
+    <h3>LiteLLM connection</h3>
+    <p>In the LiteLLM UI on spark-01 (<code>http://spark-01:8001/ui</code>), add an MCP server:</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Field</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td>MCP Server URL</td><td><code>http://[YOUR-LXC-IP]:3000/mcp</code></td></tr>
-          <tr><td>Transport</td><td><code>http</code></td></tr>
-          <tr><td>Auth</td><td>None</td></tr>
+          <tr><td>URL</td><td><code>http://10.10.15.10:3000/mcp</code></td></tr>
+          <tr><td>Transport</td><td><code>streamableHttp</code> (not SSE)</td></tr>
         </tbody>
       </table>
+    </div>
+    <p style="margin-top:10px;">Or via <code>litellm-config.yaml</code> at the top level (not nested under <code>litellm_settings</code>):</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>mcp_servers:
+  - name: obsidian
+    url: http://10.10.15.10:3000/mcp
+    transport: streamableHttp</code></pre>
     </div>
   </div>
 
   <div class="step" id="obsidian-vault-bugs">
-    <div class="step-header"><span class="step-num">OBSIDIAN VAULT SYNC + MCP</span><h2>Bugs &amp; fixes encountered</h2></div>
+    <div class="step-header"><span class="step-num">OBSIDIAN VAULT SYNC + MCP</span><h2>Known issues</h2></div>
 
     <div class="issue">
-      <div class="issue-title">1 — Syncthing config path changed on Ubuntu 24.04</div>
-      <div class="issue-sym"><span>Symptom</span><span>Script using <code>/root/.local/share/syncthing/config.xml</code> path fails — file not found.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>On Ubuntu 24.04, config is at <code>/root/.local/state/syncthing/config.xml</code>, not <code>/root/.local/share/syncthing/config.xml</code> as documented elsewhere. The setup script uses <code>find</code> to locate the actual path dynamically.</span></div>
+      <div class="issue-title">1 — SSE transport fails with LiteLLM v1.80.18+</div>
+      <div class="issue-fix"><span>Fix</span><span>Use <code>streamableHttp</code> transport only.</span></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">2 — obsidian-mcp vault validation requires <code>.obsidian/app.json</code></div>
-      <div class="issue-sym"><span>Symptom</span><span><code>Error: Not a valid Obsidian vault</code> when starting <code>obsidian-mcp</code> against an empty directory.</span></div>
-      <div class="issue-fix"><span>Fix</span><span><code>obsidian-mcp</code> requires a <code>.obsidian</code> directory with <code>app.json</code> present to consider a directory a valid vault. An empty directory fails. Fix: <code>mkdir -p /vault/.obsidian &amp;&amp; echo '{}' &gt; /vault/.obsidian/app.json</code>.</span></div>
+      <div class="issue-title">2 — obsidian-mcp fails to start if <code>/vault/.obsidian/app.json</code> does not exist</div>
+      <div class="issue-fix"><span>Fix</span><span><code>mkdir -p /vault/.obsidian &amp;&amp; echo '{}' &gt; /vault/.obsidian/app.json</code></span></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">3 — SSE transport incompatible with LiteLLM v1.80.18+</div>
-      <div class="issue-sym"><span>Symptom</span><span><code>Connection closed</code> errors when LiteLLM tries to connect to the MCP server using SSE transport.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>LiteLLM's MCP client uses protocol version <code>2025-11-25</code>. SSE transport is incompatible with this version.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use <code>--outputTransport streamableHttp</code> in the supergateway command and set transport to <code>http</code> in the LiteLLM UI.</span></div>
+      <div class="issue-title">3 — <code>--stateful</code> and <code>--protocolVersion 2025-11-25</code> flags required for LiteLLM v1.80.18+</div>
+      <div class="issue-sym"><span>Symptom</span><span>MCP tool calls silently fail without these flags.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Both flags are included in the setup script above and are required for protocol compatibility. Without <code>--stateful</code>, supergateway spawns a new child process per request and exhausts thread limits under load. Without <code>--protocolVersion 2025-11-25</code>, the handshake version mismatches and LiteLLM sends SIGTERM.</span></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">4 — supergateway stateless mode process explosion</div>
-      <div class="issue-sym"><span>Symptom</span><span><code>obsidian-mcp</code> child processes accumulate under load, hitting <code>pthread_create: Resource temporarily unavailable</code> and crashing the server.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>In default stateless mode, supergateway spawns a new <code>obsidian-mcp</code> child process per HTTP request. Under load these accumulate and exhaust thread limits.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Add <code>--stateful</code> flag to keep one persistent child process instead of spawning per request.</span></div>
-    </div>
-
-    <div class="issue">
-      <div class="issue-title">5 — Protocol version mismatch causes SIGTERM</div>
-      <div class="issue-sym"><span>Symptom</span><span>LiteLLM connects, sends <code>protocolVersion: 2025-11-25</code>, server responds with <code>2024-11-05</code>, then LiteLLM sends SIGTERM and closes the session.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Add <code>--protocolVersion 2025-11-25</code> to the supergateway command so the handshake version matches what LiteLLM expects.</span></div>
-    </div>
-
-    <div class="issue">
-      <div class="issue-title">6 — LXC disk corruption on network-backed storage</div>
-      <div class="issue-sym"><span>Symptom</span><span>EXT4 I/O errors and disk corruption under write load when LXC root disk is stored on a CIFS/SMB network share.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use local storage or a reliable block storage backend for LXC root disks. Network-backed storage is not suitable for ext4 journaling under concurrent write load.</span></div>
-    </div>
-
-    <div class="issue">
-      <div class="issue-title">7 — Syncthing folder path special characters</div>
-      <div class="issue-sym"><span>Symptom</span><span>Syncthing folder fails to start or reports an incorrect path after pasting from a file manager.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Copying a folder path from a file manager may add escape characters. Set the Syncthing folder path manually in the config UI instead of pasting from the file manager.</span></div>
-    </div>
-
-    <div class="issue">
-      <div class="issue-title">8 — MCP not available in Telegram via Hermes</div>
-      <div class="issue-sym"><span>Symptom</span><span>Vault queries work in Hermes WebUI but MCP tools are not available in Telegram sessions.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>Hermes <code>platform_toolsets</code> for <code>telegram</code> only includes <code>hermes-telegram</code> by default — MCP tools are not loaded for Telegram sessions.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Add <code>mcp</code> to the <code>telegram</code> list in <code>~/.hermes/config.yaml</code> and restart <code>hermes-gateway</code>.</span></div>
-    </div>
-
-    <div class="issue">
-      <div class="issue-title">9 — YAML syntax error after config edit</div>
-      <div class="issue-sym"><span>Symptom</span><span>Hermes fails to start with a YAML parser error after editing <code>~/.hermes/config.yaml</code>. Or worse — Hermes starts but silently falls back to <code>.env</code> values, breaking MCP and provider config with no obvious error.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>Incorrect indentation or a syntax error when editing the config file. A parse failure causes Hermes to silently ignore the config and fall back to defaults.</span></div>
-      <div class="code-block" style="margin-top:8px;margin-bottom:8px;">
-        <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-        <pre><code>python3 -c "import yaml; yaml.safe_load(open('/home/YOUR_USERNAME/.hermes/config.yaml')); print('YAML valid')"</code></pre>
-      </div>
-      <div class="issue-fix"><span>Fix</span><span>Always validate YAML after editing using the command above. Expected output: <code>YAML valid</code>. If an exception is raised instead, fix the indentation and re-run until the validation passes before restarting any service.</span></div>
-    </div>
-
-    <div class="issue">
-      <div class="issue-title">15 — Hermes obsidian skill uses filesystem commands instead of MCP tools</div>
-      <div class="issue-sym"><span>Symptom</span><span>Vault queries sent via Telegram return filesystem errors or empty results, even though the MCP server is running and LiteLLM can reach it successfully.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>The built-in Hermes obsidian skill will attempt to use filesystem commands (e.g. <code>cat</code>, <code>find</code>) to read vault files unless the <code>SKILL.md</code> explicitly references the correct MCP tool names. Adding the MCP server to <code>config.yaml</code> alone is not sufficient — the skill must also be rewritten to use the MCP tools exposed by <code>obsidian-mcp</code>.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Run <code>hermes mcp test obsidian</code> first to confirm connectivity and discover the exact tool names. Then update <code>~/.hermes/skills/note-taking/obsidian/SKILL.md</code> to explicitly list the MCP tool names: <code>list-available-vaults</code>, <code>search-vault</code>, <code>read-note</code>, <code>create-note</code>, <code>edit-note</code>, <code>move-note</code>, <code>delete-note</code>, <code>create-directory</code>, <code>add-tags</code>, <code>remove-tags</code>, <code>rename-tag</code>. The SKILL.md must instruct Hermes to always call <code>list-available-vaults</code> first before any other tool call. See the setup steps above for the full SKILL.md content.</span></div>
+      <div class="issue-title">4 — Node.js v18 causes segfaults in obsidian-mcp</div>
+      <div class="issue-fix"><span>Fix</span><span>Use Node.js v20 or v22. The setup script installs v22 via NodeSource.</span></div>
     </div>
   </div>
 

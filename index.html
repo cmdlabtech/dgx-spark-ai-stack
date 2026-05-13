@@ -1167,7 +1167,7 @@ EOF</code></pre>
     </div>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
-      <div>The two model entries point at the same vLLM backend. Thinking is disabled by default via <code>extra_body</code> — the vLLM-level <code>--default-chat-template-kwargs</code> flag already defaults it off at the container, and LiteLLM's <code>extra_body</code> reinforces this per-entry. The Reasoning model overrides <code>enable_thinking: true</code> so users can explicitly select it in Open WebUI, n8n, or any other frontend for complex tasks.</div>
+      <div>Both LiteLLM proxies — yours on spark-01 and the client's on spark-02 — use the same two-model split. Both expose <code>Qwen3.5-122B-Non-Reasoning</code> and <code>Qwen3.5-122B-Reasoning</code> to their respective frontend stacks. Both entries point at the same vLLM backend (<code>localhost:8000</code> on spark-01; <code>YOUR_NODE1_DAC_IP:8000</code> on spark-02 over the DAC). Thinking is disabled by default via <code>extra_body</code> — the vLLM-level <code>--default-chat-template-kwargs</code> flag already defaults it off at the container, and LiteLLM's <code>extra_body</code> reinforces this per-entry. Users on either side select <code>Qwen3.5-122B-Reasoning</code> in their Open WebUI model picker when they need extended reasoning; <code>Qwen3.5-122B-Non-Reasoning</code> is the default for all other requests.</div>
     </div>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
@@ -1309,11 +1309,31 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>cat &gt; ~/sparky-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
 model_list:
-  - model_name: qwen3.5-122b
+  - model_name: Qwen3.5-122B-Non-Reasoning
     litellm_params:
       model: openai/qwen3.5-122b
-      api_base: http://YOUR_NODE1_DAC_IP:8000/v1   # shared vLLM, over DAC
+      api_base: http://YOUR_NODE1_DAC_IP:8000/v1
       api_key: "not-needed"
+      max_tokens: 8192
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+
+  - model_name: Qwen3.5-122B-Reasoning
+    litellm_params:
+      model: openai/qwen3.5-122b
+      api_base: http://YOUR_NODE1_DAC_IP:8000/v1
+      api_key: "not-needed"
+      max_tokens: 8192
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: true
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
 
 litellm_settings:
   verbose: true

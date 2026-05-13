@@ -853,6 +853,26 @@ ssh spark-02 hostname    # from spark-01</code></pre>
       <span class="callout-icon">⚠</span>
       <div>If you skip the <code>/etc/hosts</code> step, the rsync of the Hugging Face cache between nodes (Step 01) and any later <code>ssh spark-0X</code> command will silently target the DAC interface — which won't have <code>sshd</code> bound to it unless you've changed defaults. The symptom is a "connection refused" or hang.</div>
     </div>
+    <h3 style="margin-top:18px;">Disable the desktop environment — both nodes</h3>
+    <p style="font-size:13px;color:var(--text2);margin:0 0 6px;">The DGX Spark ships with Ubuntu Desktop. Both nodes operate as headless servers with no monitor connected — stop and disable the display stack before running any workloads. This frees GPU memory and eliminates background display scheduling noise. The multi-user target persists across reboots. To start the GUI temporarily if needed: <code>sudo systemctl start graphical.target</code></p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:10px 0 4px;">Pre-step — verify SSH access to both nodes before disabling the GUI</h4>
+    <p style="font-size:13px;color:var(--text2);margin:0 0 6px;">Run from your Mac or any external machine on the same network. Both commands must return successfully before continuing. If either fails, resolve SSH access before proceeding — once the display manager is stopped you will have no local GUI fallback.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>ssh YOUR_USERNAME@YOUR_NODE1_MGMT_IP "echo spark-01 SSH OK"
+ssh YOUR_USERNAME@YOUR_NODE2_MGMT_IP "echo spark-02 SSH OK"</code></pre>
+    </div>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:10px 0 4px;">#### Run on BOTH spark-01 and spark-02</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo systemctl stop gdm
+sudo systemctl set-default multi-user.target
+sudo systemctl stop gnome-remote-desktop
+sudo systemctl disable gnome-remote-desktop
+
+# Verify — should return no output
+ps aux | grep -E "Xorg|gnome" | grep -v grep</code></pre>
+    </div>
   </div>
 
   <div class="step" id="step1">
@@ -867,7 +887,7 @@ ssh spark-02 hostname    # from spark-01</code></pre>
           <tr>
             <td><strong>Production (default)</strong></td>
             <td><code>Intel/Qwen3.5-122B-A10B-int4-AutoRound</code></td>
-            <td>The intended daily driver — 122B / A10B MoE quantized with Intel AutoRound INT4. ~37&nbsp;GB resident per node, leaving ~91&nbsp;GB headroom per node for KV cache. Steady-state throughput ~45&nbsp;tok/s at TP=2. 262K context window. Requires the <code>--tf5</code> build flag (adds AutoRound support).</td>
+            <td>The intended daily driver — 122B / A10B MoE quantized with Intel AutoRound INT4. ~37&nbsp;GB resident per node, leaving ~34,720 tokens of KV cache capacity at gpu_memory_utilization=0.75. Steady-state throughput ~45&nbsp;tok/s at TP=2. 262K context window. Requires the <code>--tf5</code> build flag (adds AutoRound support).</td>
           </tr>
           <tr>
             <td>Bootstrap fallback</td>
@@ -897,11 +917,8 @@ ls /dev/infiniband/</code></pre>
       <code>roceP2p1s0f0 → enP2p1s0f0np0  (Up)</code> &nbsp;← active, port 0 twin<br>
       <code>rocep1s0f1   → enp1s0f1np1    (Down)</code> &nbsp;← DAC only uses port 0<br>
       <code>roceP2p1s0f1 → enP2p1s0f1np1  (Down)</code><br>
-      Expected from <code>ls /dev/infiniband/</code>: <code>rdma_cm umad0 umad1 umad2 umad3 uverbs0 uverbs1 uverbs2 uverbs3</code>
-    </div>
-    <div class="callout warning">
-      <span class="callout-icon">⚠</span>
-      <div>If <code>/dev/infiniband</code> doesn't exist or both port-0 devices aren't Up, NCCL will silently fall back to TCP and you will see 2–3&nbsp;tok/s instead of 45&nbsp;tok/s. Fix the RoCE plumbing on the host before continuing — RDMA passthrough into the container can only work if the devices are present and Up on the host.</div>
+      Expected from <code>ls /dev/infiniband/</code>: <code>rdma_cm umad0 umad1 umad2 umad3 uverbs0 uverbs1 uverbs2 uverbs3</code><br>
+      If <code>/dev/infiniband</code> is missing or either port-0 device is Down, fix the RoCE plumbing on the host before continuing — RDMA passthrough into the container can only work if the devices are present and Up. A working NCCL RDMA path gives ~45&nbsp;tok/s; TCP fallback gives ~2–3&nbsp;tok/s.
     </div>
 
     <h3>Step 1b — Clone and build the image (spark-01)</h3>
@@ -942,7 +959,7 @@ CONTAINER_HF_TOKEN=&lt;your_hf_token&gt;</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code># Run as your normal user (e.g. cameron) — NOT root. See callout below.
+      <pre><code># Run as YOUR_USERNAME — not root
 HF_TOKEN=YOUR_HF_TOKEN hf download Intel/Qwen3.5-122B-A10B-int4-AutoRound \
   --local-dir ~/.cache/huggingface/hub/models--Intel--Qwen3.5-122B-A10B-int4-AutoRound/
 
@@ -956,10 +973,6 @@ rsync -avP \
       <span class="callout-icon">ℹ</span>
       <div>Verify the transfer ran across the DAC with <code>nload enp1s0f0np0</code> on <code>spark-02</code> in another shell during the rsync.</div>
     </div>
-    <div class="callout warning">
-      <span class="callout-icon">⚠</span>
-      <div><strong>Run <code>hf download</code> as your normal user, not <code>root</code>.</strong> If a previous download was run as root, the target directory is root-owned and subsequent runs as a normal user fail with <code>permission denied</code>. Fix: <code>sudo rm -rf ~/.cache/huggingface/hub/models--Intel--Qwen3.5-122B-A10B-int4-AutoRound</code>, then re-run the download as your user.</div>
-    </div>
 
     <h3>Step 1e — Launch the cluster</h3>
     <p>The launch script reads <code>.env</code>, starts the head container on <code>spark-01</code>, SSHes into <code>spark-02</code> to start the worker container, and forms the Ray cluster. Both containers are started from the same image, so Ray versions are guaranteed to match.</p>
@@ -968,8 +981,10 @@ rsync -avP \
       <pre><code>cd ~/spark-vllm-docker
 ./run-recipe.sh qwen3.5-122b-int4-autoround -d -- \
   --served-model-name qwen3.5-122b \
+  --gpu-memory-utilization 0.75 \
   --default-chat-template-kwargs '{"enable_thinking": false}'</code></pre>
     </div>
+    <p>The script starts the Ray head on <code>spark-01</code>, then SSHes into <code>spark-02</code> to start the worker. It waits until both GPUs register with the Ray cluster before starting <code>vllm serve</code>. Do not interrupt between head start and cluster formation — if you need to restart, stop both containers first (<code>docker stop vllm_node</code> on each node), then re-run the launch command on spark-01.</p>
     <p>What <code>run-recipe.sh</code> does automatically:</p>
     <ul style="font-size:13px;color:var(--text2);line-height:1.7;padding-left:20px;display:flex;flex-direction:column;gap:4px;">
       <li>Sets <code>NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0</code> so NCCL pins to both RoCE twins.</li>
@@ -981,10 +996,6 @@ rsync -avP \
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>docker logs -f vllm_node</code></pre>
-    </div>
-    <div class="callout note">
-      <span class="callout-icon">ℹ</span>
-      <div>The container name from the eugr stack is <code>vllm_node</code> (not <code>vllm-qwen-122b</code>) on both head and worker. Update any older scripts or aliases.</div>
     </div>
 
     <h3>Step 1f — Verification</h3>
@@ -1021,7 +1032,7 @@ curl http://localhost:8000/v1/chat/completions \
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>nvidia-smi   # run on each node</code></pre>
     </div>
-    <p>You should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process on each node with roughly <strong>~37&nbsp;GB</strong> resident at the AutoRound INT4 weight footprint — leaving ~91&nbsp;GB free per node for KV cache.</p>
+    <p>You should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process on each node with roughly <strong>~37&nbsp;GB</strong> resident at the AutoRound INT4 weight footprint — leaving roughly ~34,720 tokens of KV cache capacity at gpu_memory_utilization=0.75 (2,170 blocks × 16 tokens).</p>
 
     <h3>Step 1g — Systemd auto-start</h3>
     <p>Run only on <code>spark-01</code> — the cluster launcher SSHes into <code>spark-02</code> to bring up the worker. The 30-second <code>ExecStartPre</code> sleep gives <code>spark-02</code> time to finish booting and have Docker running before the head SSHes in.</p>
@@ -1043,6 +1054,7 @@ ExecStartPre=/bin/sleep 30
 ExecStart=/home/YOUR_USERNAME/spark-vllm-docker/run-recipe.sh \
   qwen3.5-122b-int4-autoround -d -- \
   --served-model-name qwen3.5-122b \
+  --gpu-memory-utilization 0.75 \
   --default-chat-template-kwargs '{"enable_thinking": false}'
 ExecStop=/home/YOUR_USERNAME/spark-vllm-docker/launch-cluster.sh stop
 TimeoutStartSec=300
@@ -1069,7 +1081,8 @@ sudo systemctl enable vllm-cluster.service</code></pre>
           <tr><td>First request (CUDA-graph warmup)</td><td>~20&nbsp;s</td><td>One-time cost per cold start</td></tr>
           <tr><td><strong>Steady-state throughput</strong></td><td><strong>~45&nbsp;tok/s</strong></td><td>Single-stream decode</td></tr>
           <tr><td>Context window</td><td>262,144 tokens</td><td>Full Qwen3.5 context retained</td></tr>
-          <tr><td>Memory per node</td><td>~37&nbsp;GB resident</td><td>Leaves ~91&nbsp;GB free per node for KV cache</td></tr>
+          <tr><td>Memory per node</td><td>~37&nbsp;GB resident</td><td>Leaves ~91&nbsp;GB free per node for overhead</td></tr>
+          <tr><td>KV cache capacity</td><td>34,720 tokens</td><td>2,170 blocks × 16 tokens, gpu_memory_utilization=0.75</td></tr>
           <tr><td>Previous (hand-built, NCCL over TCP)</td><td>~2–3&nbsp;tok/s</td><td>Same hardware, wrong transport</td></tr>
           <tr><td><strong>Improvement</strong></td><td><strong>~18×</strong></td><td>From correct NCCL RoCE configuration alone</td></tr>
         </tbody>
@@ -1167,11 +1180,7 @@ EOF</code></pre>
     </div>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
-      <div>Both LiteLLM proxies — yours on spark-01 and the client's on spark-02 — use the same two-model split. Both expose <code>Qwen3.5-122B-Non-Reasoning</code> and <code>Qwen3.5-122B-Reasoning</code> to their respective frontend stacks. Both entries point at the same vLLM backend (<code>localhost:8000</code> on spark-01; <code>YOUR_NODE1_DAC_IP:8000</code> on spark-02 over the DAC). Thinking is disabled by default via <code>extra_body</code> — the vLLM-level <code>--default-chat-template-kwargs</code> flag already defaults it off at the container, and LiteLLM's <code>extra_body</code> reinforces this per-entry. Users on either side select <code>Qwen3.5-122B-Reasoning</code> in their Open WebUI model picker when they need extended reasoning; <code>Qwen3.5-122B-Non-Reasoning</code> is the default for all other requests.</div>
-    </div>
-    <div class="callout warning">
-      <span class="callout-icon">⚠</span>
-      <div><strong>Remove old dual-model entries.</strong> If this LiteLLM was previously configured with a second backend (e.g. <code>localhost:8002</code> for an "expert" model), delete every model and fallback entry that points at a port no longer running. LiteLLM will throw <code>httpx.ConnectError</code> on startup if any configured backend is unreachable.</div>
+      <div>Two model entries point at the same vLLM backend. Thinking is disabled by default — vLLM disables it at the container level via <code>--default-chat-template-kwargs</code>, and LiteLLM reinforces this per-entry via <code>extra_body</code>. Users select <code>Qwen3.5-122B-Reasoning</code> in Open WebUI, n8n, or any frontend when they need extended reasoning. All other requests use <code>Qwen3.5-122B-Non-Reasoning</code>.</div>
     </div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — systemd service</h4>
@@ -1200,25 +1209,11 @@ sudo systemctl enable litellm
 sudo systemctl start litellm</code></pre>
     </div>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — clean stale override.conf (only if upgrading from a previous setup)</h4>
-    <p>If LiteLLM was previously run with <code>STORE_MODEL_IN_DB=True</code> and a <code>DATABASE_URL</code> in a systemd drop-in, those env vars persist even after you remove them from <code>litellm-config.yaml</code>. LiteLLM will fail to start with <code>httpx.ConnectError</code> against a Postgres that may no longer exist. Reset the drop-in:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>sudo mkdir -p /etc/systemd/system/litellm.service.d
-sudo bash -c 'cat &gt; /etc/systemd/system/litellm.service.d/override.conf &lt;&lt; EOF
-[Service]
-Environment=PYTHONPATH=/home/YOUR_USERNAME/.local/lib/python3.12/site-packages
-EOF'
-
-sudo systemctl daemon-reload
-sudo systemctl restart litellm
-sudo systemctl status litellm --no-pager</code></pre>
-    </div>
     <div class="verify">Verify from spark-01: <code>curl http://localhost:8001/v1/models</code> (no key needed if you didn't set <code>master_key</code> yet, otherwise use <code>-H "Authorization: Bearer YOUR_MASTER_KEY"</code>)</div>
     <div class="callout note"><span class="callout-icon">ℹ</span><span>Your LiteLLM should NOT be reachable from <code>spark-02</code>. If you are using Tailscale ACLs (Step 06), only your tailnet should reach <code>spark-01:8001</code>. The client uses their own LiteLLM (Step 03) — they never call yours.</span></div>
 
     <h3>Step 2d — PostgreSQL for the Admin UI and virtual keys (required)</h3>
-    <p>The LiteLLM Admin UI and virtual-key generation both require PostgreSQL. <strong>SQLite is not supported</strong> — LiteLLM's Prisma schema is hardcoded for PostgreSQL, and the UI route returns <code>table public.LiteLLM_UserTable does not exist</code> if you try to point it at SQLite. The SQLite block in the config above is fine for request logging; it is <em>not</em> a substitute for the metadata DB.</p>
+    <p>The LiteLLM Admin UI and virtual key system require PostgreSQL — this is why the step exists. LiteLLM's Prisma schema is hardcoded for PostgreSQL, and the Admin UI, virtual key generation, and model management all write to the PostgreSQL metadata database.</p>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — bring up the litellm-db postgres container</h4>
     <p>On spark-01 the postgres container lives in <code>~/sparky-ai-stack/docker-compose.yml</code> alongside <code>n8n</code> and <code>hermes-webui</code>:</p>
@@ -1314,7 +1309,7 @@ model_list:
       model: openai/qwen3.5-122b
       api_base: http://YOUR_NODE1_DAC_IP:8000/v1
       api_key: "not-needed"
-      max_tokens: 8192
+      max_tokens: 32768
       extra_body:
         chat_template_kwargs:
           enable_thinking: false
@@ -1327,7 +1322,7 @@ model_list:
       model: openai/qwen3.5-122b
       api_base: http://YOUR_NODE1_DAC_IP:8000/v1
       api_key: "not-needed"
-      max_tokens: 8192
+      max_tokens: 32768
       extra_body:
         chat_template_kwargs:
           enable_thinking: true
@@ -1404,7 +1399,7 @@ sudo systemctl status litellm --no-pager</code></pre>
     <div class="verify">On spark-01, <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm_node</code> on spark-01 — you should see the new request reach the vLLM head.</div>
 
     <h3>Step 3d — PostgreSQL for the client Admin UI and virtual keys (required)</h3>
-    <p>Same constraint as Step 02: the LiteLLM Admin UI and virtual-key generation require PostgreSQL — SQLite is not supported because LiteLLM's Prisma schema is hardcoded for PostgreSQL. spark-02 doesn't run a docker-compose stack, so we use a standalone postgres container.</p>
+    <p>The LiteLLM Admin UI and virtual key system require PostgreSQL — same requirement as Step 02. Set up PostgreSQL on spark-02 so the client's Admin UI, virtual key generation, and model management work correctly. spark-02 doesn't run a docker-compose stack, so we use a standalone postgres container.</p>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — standalone postgres container</h4>
     <div class="code-block">
@@ -2055,7 +2050,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title"><code>nvidia-smi memory.used</code> returns <code>[N/A]</code> on GB10</div>
       <div class="issue-sym"><span>Symptom</span><span><code>nvidia-smi --query-gpu=memory.used,memory.total --format=csv</code> returns <code>[N/A]</code> in both fields. Memory monitoring scripts that depend on these fields silently report nothing.</span></div>
       <div class="issue-sym"><span>Cause</span><span>GB10 (Grace Blackwell) uses unified memory. The classic <code>memory.used</code> / <code>memory.total</code> NVML fields are not populated on this hardware.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section. With the 122B AutoRound INT4 model loaded, you should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process at roughly <strong>~37&nbsp;GB</strong> per node — leaving ~91&nbsp;GB free per node for KV cache. The 35B FP8 bootstrap model lands closer to <strong>~97&nbsp;GB</strong>.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section. With the 122B AutoRound INT4 model loaded, you should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process at roughly <strong>~37&nbsp;GB</strong> per node — leaving roughly ~34,720 tokens of KV cache capacity at gpu_memory_utilization=0.75. The 35B FP8 bootstrap model lands closer to <strong>~97&nbsp;GB</strong>.</span></div>
     </div>
 
     <div class="issue">
@@ -2117,13 +2112,6 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title"><code>huggingface-cli</code> is deprecated</div>
       <div class="issue-sym"><span>Symptom</span><span>Running <code>huggingface-cli download …</code> prints a deprecation notice, or the command is missing on a fresh install of <code>huggingface_hub</code>.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Use the new CLI: <code>hf download &lt;model&gt; --local-dir &lt;path&gt;</code>. Step 01 has been updated to use <code>hf</code>; if you have an older snippet around, swap the binary name and the flags map cleanly.</span></div>
-    </div>
-
-    <div class="issue">
-      <div class="issue-title"><code>permission denied</code> when downloading to the HF cache</div>
-      <div class="issue-sym"><span>Symptom</span><span><code>hf download</code> (or <code>huggingface-cli download</code>) fails with <code>PermissionError: [Errno 13] Permission denied</code> on a path under <code>~/.cache/huggingface/hub/</code>.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>A previous download was run with <code>sudo</code> or as <code>root</code>, which left the target directory root-owned. The current shell (running as <code>cameron</code> or your normal user) cannot write into it.</span></div>
-      <div class="issue-fix"><span>Fix</span><span><code>sudo rm -rf &lt;target_dir&gt;</code>, then recreate the directory and rerun the <code>hf download</code> command as your normal user (<strong>not</strong> root). All <code>hf download</code> commands in this guide assume the non-root user.</span></div>
     </div>
 
     <div class="issue">

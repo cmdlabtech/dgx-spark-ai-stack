@@ -828,6 +828,14 @@
           <label for="ws-tailnet">Tailnet hostname</label>
           <input type="text" id="ws-tailnet" data-key="YOUR_TAILNET_HOSTNAME" placeholder="e.g. spark-01.tailnet-1234.ts.net" autocomplete="off"/>
         </div>
+        <div class="worksheet-row" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
+          <label for="ws-lxc-ip">Obsidian LXC IP</label>
+          <input type="text" id="ws-lxc-ip" data-key="YOUR_LXC_IP" placeholder="e.g. 10.10.1.50" autocomplete="off"/>
+        </div>
+        <div class="worksheet-row">
+          <label for="ws-lxc-hostname">Obsidian LXC hostname</label>
+          <input type="text" id="ws-lxc-hostname" data-key="YOUR_LXC_HOSTNAME" placeholder="e.g. obsidian-mcp" autocomplete="off"/>
+        </div>
       </div>
 
       <div class="worksheet-actions">
@@ -855,8 +863,8 @@
       <span class="callout-icon">ℹ</span>
       <div><strong>Tailscale auth-key prerequisites.</strong> Before generating each auth key, in <em>that tailnet's</em> admin console:
         <ol style="margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.6;">
-          <li>Open <strong>Access Controls</strong> and ensure the tag is declared in <code>tagOwners</code> — <code>"tag:owner": ["you@example.com"]</code> for spark-01, <code>"tag:hjp-ai": ["autogroup:admin"]</code> for spark-02. The tag must exist <em>before</em> any device tries to advertise it.</li>
-          <li>Open <strong>Settings → Keys → Generate auth key</strong>. Toggle <strong>Tags</strong> on and select the matching tag from the list. Recommended: <em>Reusable: no</em>, <em>Ephemeral: no</em>, <em>Tags: tag:owner</em> (or <code>tag:hjp-ai</code>).</li>
+          <li>Open <strong>Access Controls</strong> and ensure the tag is declared in <code>tagOwners</code> — <code>"tag:owner": ["you@example.com"]</code> for spark-01, <code>"tag:client-ai": ["autogroup:admin"]</code> for spark-02. The tag must exist <em>before</em> any device tries to advertise it.</li>
+          <li>Open <strong>Settings → Keys → Generate auth key</strong>. Toggle <strong>Tags</strong> on and select the matching tag from the list. Recommended: <em>Reusable: no</em>, <em>Ephemeral: no</em>, <em>Tags: tag:owner</em> (or <code>tag:client-ai</code>).</li>
         </ol>
         Auth keys without a tag selection will be rejected by <code>--advertise-tags</code> at <code>tailscale up</code> time. Tagged devices have key expiry automatically disabled, so the server won't drop off the tailnet on the 90-day timer.</div>
     </div>
@@ -890,7 +898,7 @@
           </div>
           <div class="worksheet-row">
             <label for="ws-client-tailnet">Client tailnet hostname</label>
-            <input type="text" id="ws-client-tailnet" data-secret-key="CLIENT_TAILNET_HOSTNAME" placeholder="sparky-02.tailnet-abcd.ts.net" autocomplete="off"/>
+            <input type="text" id="ws-client-tailnet" data-secret-key="CLIENT_TAILNET_HOSTNAME" placeholder="spark-02.tailnet-abcd.ts.net" autocomplete="off"/>
           </div>
         </div>
       </div>
@@ -1124,10 +1132,10 @@ pip3 install --break-system-packages 'litellm[proxy]' prisma &gt;/dev/null
 grep -q 'HOME/.local/bin' "$HOME/.bashrc" || \
   echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; "$HOME/.bashrc"
 
-# ───── 11. sparky-ai-stack — postgres compose ─────
-log "sparky-ai-stack directory + postgres"
-mkdir -p "$HOME/sparky-ai-stack/logs" "$HOME/workspace"
-cd "$HOME/sparky-ai-stack"
+# ───── 11. spark-ai-stack — postgres compose ─────
+log "spark-ai-stack directory + postgres"
+mkdir -p "$HOME/spark-ai-stack/logs" "$HOME/workspace"
+cd "$HOME/spark-ai-stack"
 
 cat &gt; docker-compose.yml &lt;&lt;'YAML'
 services:
@@ -1157,7 +1165,7 @@ docker exec litellm-db pg_isready -U litellm &gt;/dev/null 2>&amp;1 \
 
 # ───── 12. litellm-config.yaml (owner) ─────
 log "litellm-config.yaml"
-cat &gt; "$HOME/sparky-ai-stack/litellm-config.yaml" &lt;&lt;EOF
+cat &gt; "$HOME/spark-ai-stack/litellm-config.yaml" &lt;&lt;EOF
 model_list:
   - model_name: Qwen3.5-122B-Non-Reasoning
     litellm_params:
@@ -1240,7 +1248,7 @@ Wants=docker.service
 [Service]
 Type=simple
 User=$USERNAME
-WorkingDirectory=/home/$USERNAME/sparky-ai-stack
+WorkingDirectory=/home/$USERNAME/spark-ai-stack
 ExecStart=/home/$USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
 Restart=on-failure
 RestartSec=5
@@ -1277,7 +1285,7 @@ log "n8n compose"
 # Fall back to plain 'spark-01' if the worksheet hostname is blank or unfilled.
 WEBHOOK_HOST="$TAILNET_HOSTNAME"
 [[ -z "$WEBHOOK_HOST" || "$WEBHOOK_HOST" == "YOUR_TAILNET_HOSTNAME" ]] &amp;&amp; WEBHOOK_HOST=spark-01
-cat &gt; "$HOME/sparky-ai-stack/n8n.yml" &lt;&lt;EOF
+cat &gt; "$HOME/spark-ai-stack/n8n.yml" &lt;&lt;EOF
 services:
   n8n:
     image: n8nio/n8n:latest
@@ -1300,7 +1308,7 @@ services:
 volumes:
   n8n_data:
 EOF
-docker compose -f "$HOME/sparky-ai-stack/n8n.yml" up -d
+docker compose -f "$HOME/spark-ai-stack/n8n.yml" up -d
 # <<<OPT:n8n
 
 # >>>OPT:hermes
@@ -1311,7 +1319,7 @@ curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scri
 # Pre-create bind-mount targets so docker doesn't mkdir them as root.
 mkdir -p "$HOME/.hermes" "$HOME/workspace"
 
-cat &gt; "$HOME/sparky-ai-stack/hermes-webui.yml" &lt;&lt;EOF
+cat &gt; "$HOME/spark-ai-stack/hermes-webui.yml" &lt;&lt;EOF
 services:
   hermes-webui:
     image: ghcr.io/nesquena/hermes-webui:latest
@@ -1329,7 +1337,7 @@ services:
     ports:
       - "8787:8787"
 EOF
-docker compose -f "$HOME/sparky-ai-stack/hermes-webui.yml" up -d || true
+docker compose -f "$HOME/spark-ai-stack/hermes-webui.yml" up -d || true
 # <<<OPT:hermes
 
 # >>>OPT:tailscale
@@ -1492,10 +1500,10 @@ grep -q 'HOME/.local/bin' "$HOME/.bashrc" || \
   echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; "$HOME/.bashrc"
 export PATH="$HOME/.local/bin:$PATH"
 
-# ───── 8. sparky-ai-stack + standalone postgres ─────
-log "sparky-ai-stack + postgres"
-mkdir -p "$HOME/sparky-ai-stack/logs"
-cd "$HOME/sparky-ai-stack"
+# ───── 8. spark-ai-stack + standalone postgres ─────
+log "spark-ai-stack + postgres"
+mkdir -p "$HOME/spark-ai-stack/logs"
+cd "$HOME/spark-ai-stack"
 
 docker rm -f litellm-db 2>/dev/null || true
 docker run -d --name litellm-db --restart unless-stopped \
@@ -1515,7 +1523,7 @@ docker exec litellm-db pg_isready -U litellm &gt;/dev/null 2>&amp;1 \
 
 # ───── 9. client litellm-config.yaml (points DAC → vLLM) ─────
 log "client litellm-config.yaml"
-cat &gt; "$HOME/sparky-ai-stack/litellm-config.yaml" &lt;&lt;EOF
+cat &gt; "$HOME/spark-ai-stack/litellm-config.yaml" &lt;&lt;EOF
 model_list:
   - model_name: Qwen3.5-122B-Non-Reasoning
     litellm_params:
@@ -1553,7 +1561,7 @@ litellm_settings:
   log_config:
     level: INFO
     format: json
-    filepath: /home/$USERNAME/sparky-ai-stack/logs/litellm.log
+    filepath: /home/$USERNAME/spark-ai-stack/logs/litellm.log
 router_settings:
   num_retries: 0
   timeout: 600
@@ -1578,7 +1586,7 @@ Wants=docker.service
 [Service]
 Type=simple
 User=$USERNAME
-WorkingDirectory=/home/$USERNAME/sparky-ai-stack
+WorkingDirectory=/home/$USERNAME/spark-ai-stack
 ExecStart=/home/$USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
 Restart=on-failure
 RestartSec=5
@@ -1608,9 +1616,9 @@ docker run -d --name open-webui --restart unless-stopped \
 # >>>OPT:n8n
 # ───── 12. client n8n ─────
 log "client n8n"
-# Fall back to plain 'sparky-02' if the worksheet field is blank or unfilled.
+# Fall back to plain 'spark-02' if the worksheet field is blank or unfilled.
 WEBHOOK_HOST="$CLIENT_TAILNET_HOSTNAME"
-[[ -z "$WEBHOOK_HOST" || "$WEBHOOK_HOST" == "CLIENT_TAILNET_HOSTNAME" ]] &amp;&amp; WEBHOOK_HOST=sparky-02
+[[ -z "$WEBHOOK_HOST" || "$WEBHOOK_HOST" == "CLIENT_TAILNET_HOSTNAME" ]] &amp;&amp; WEBHOOK_HOST=spark-02
 docker rm -f n8n 2>/dev/null || true
 docker run -d --name n8n --restart unless-stopped \
   -p 5678:5678 \
@@ -1628,17 +1636,17 @@ docker run -d --name n8n --restart unless-stopped \
 # >>>OPT:tailscale
 # ───── 13. Tailscale (client tailnet) ─────
 # Prereqs in the CLIENT tailnet:
-#   1. tag:hjp-ai must be declared in tagOwners in the client's policy file.
-#   2. The auth key must be generated WITH tag:hjp-ai selected (Admin → Settings → Keys).
+#   1. tag:client-ai must be declared in tagOwners in the client's policy file.
+#   2. The auth key must be generated WITH tag:client-ai selected (Admin → Settings → Keys).
 # DGX Spark may ship with Tailscale pre-installed and possibly pre-joined; install.sh
 # is idempotent and upgrades in place, and `tailscale logout` ensures a clean re-join.
 log "tailscale install + up (client tailnet)"
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale logout 2>/dev/null || true
 if [[ -n "$TS_AUTHKEY" &amp;&amp; "$TS_AUTHKEY" != "YOUR_NODE2_TS_AUTHKEY" ]]; then
-  sudo tailscale up --auth-key="$TS_AUTHKEY" --hostname=sparky-02 --advertise-tags=tag:hjp-ai
+  sudo tailscale up --auth-key="$TS_AUTHKEY" --hostname=spark-02 --advertise-tags=tag:client-ai
 else
-  echo "  (TS_AUTHKEY blank — run: sudo tailscale up --hostname=sparky-02 --advertise-tags=tag:hjp-ai)"
+  echo "  (TS_AUTHKEY blank — run: sudo tailscale up --hostname=spark-02 --advertise-tags=tag:client-ai)"
 fi
 # <<<OPT:tailscale
 
@@ -1664,8 +1672,8 @@ sudo ufw --force enable
 log "spark-02 setup complete"
 cat &lt;&lt;DONE
 Next manual steps:
-  1. Apply the client Tailscale ACL (Step 06) — restrict tag:hjp-ai to tcp:8001,8080,5678.
-  2. Disable key expiry on sparky-02 in the client's Tailscale admin.
+  1. Apply the client Tailscale ACL (Step 06) — restrict tag:client-ai to tcp:8001,8080,5678.
+  2. Disable key expiry on spark-02 in the client's Tailscale admin.
   3. Verify:
        curl http://localhost:8001/v1/models -H "Authorization: Bearer $CLIENT_MASTER_KEY"
        curl http://localhost:8001/v1/chat/completions \\
@@ -2010,8 +2018,8 @@ docker logs -f vllm_node</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — directories and install</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/sparky-ai-stack/logs
-cd ~/sparky-ai-stack
+      <pre><code>mkdir -p ~/spark-ai-stack/logs
+cd ~/spark-ai-stack
 
 pip3 install litellm[proxy] --break-system-packages
 echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc</code></pre>
@@ -2021,7 +2029,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — config (single backend pointing at the local clustered vLLM)</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/sparky-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
+      <pre><code>cat &gt; ~/spark-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
 model_list:
   # Default — thinking off. Used by all clients unless they explicitly select the reasoning model.
   - model_name: Qwen3.5-122B-Non-Reasoning
@@ -2093,7 +2101,7 @@ Wants=docker.service
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/sparky-ai-stack
+WorkingDirectory=/home/YOUR_USERNAME/spark-ai-stack
 ExecStart=/home/YOUR_USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
 Restart=on-failure
 RestartSec=5
@@ -2114,7 +2122,7 @@ sudo systemctl start litellm</code></pre>
     <p>The LiteLLM Admin UI and virtual key system require PostgreSQL — this is why the step exists. LiteLLM's Prisma schema is hardcoded for PostgreSQL, and the Admin UI, virtual key generation, and model management all write to the PostgreSQL metadata database.</p>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — bring up the litellm-db postgres container</h4>
-    <p>On spark-01 the postgres container lives in <code>~/sparky-ai-stack/docker-compose.yml</code> alongside <code>n8n</code> and <code>hermes-webui</code>:</p>
+    <p>On spark-01 the postgres container lives in <code>~/spark-ai-stack/docker-compose.yml</code> alongside <code>n8n</code> and <code>hermes-webui</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>services:
@@ -2136,7 +2144,7 @@ volumes:
     </div>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cd ~/sparky-ai-stack
+      <pre><code>cd ~/spark-ai-stack
 docker compose up -d litellm-db
 docker compose ps litellm-db</code></pre>
     </div>
@@ -2183,8 +2191,8 @@ curl -s http://localhost:8001/health/readiness | head</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — install</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/sparky-ai-stack/logs
-cd ~/sparky-ai-stack
+      <pre><code>mkdir -p ~/spark-ai-stack/logs
+cd ~/spark-ai-stack
 
 pip3 install litellm[proxy] --break-system-packages
 echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc</code></pre>
@@ -2200,7 +2208,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — config (points at vLLM over the DAC)</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/sparky-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
+      <pre><code>cat &gt; ~/spark-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
 model_list:
   - model_name: Qwen3.5-122B-Non-Reasoning
     litellm_params:
@@ -2238,11 +2246,11 @@ litellm_settings:
   verbose: true
   database:
     type: sqlite
-    path: /home/YOUR_USERNAME/sparky-ai-stack/logs/litellm.db
+    path: /home/YOUR_USERNAME/spark-ai-stack/logs/litellm.db
   log_config:
     level: INFO
     format: json
-    filepath: /home/YOUR_USERNAME/sparky-ai-stack/logs/litellm.log
+    filepath: /home/YOUR_USERNAME/spark-ai-stack/logs/litellm.log
 
 general_settings:
   master_key: YOUR_CLIENT_MASTER_KEY    # set to the sk-client-... value above
@@ -2269,7 +2277,7 @@ Wants=docker.service
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/sparky-ai-stack
+WorkingDirectory=/home/YOUR_USERNAME/spark-ai-stack
 ExecStart=/home/YOUR_USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
 Restart=on-failure
 RestartSec=5
@@ -2300,7 +2308,7 @@ sudo systemctl status litellm --no-pager</code></pre>
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3.5-122b","messages":[{"role":"user","content":"hi from client"}],"max_tokens":16}'</code></pre>
     </div>
-    <div class="verify">On spark-01, <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm_node</code> on spark-01 — you should see the new request reach the vLLM head.</div>
+    <div class="verify">On spark-01, <code>tail -f ~/spark-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm_node</code> on spark-01 — you should see the new request reach the vLLM head.</div>
 
     <h3>Step 3d — PostgreSQL for the client Admin UI and virtual keys (required)</h3>
     <p>The LiteLLM Admin UI and virtual key system require PostgreSQL — same requirement as Step 02. Set up PostgreSQL on spark-02 so the client's Admin UI, virtual key generation, and model management work correctly. spark-02 doesn't run a docker-compose stack, so we use a standalone postgres container.</p>
@@ -2358,8 +2366,8 @@ sudo systemctl status litellm --no-pager</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — directory and run</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/sparky-ai-stack
-cd ~/sparky-ai-stack
+      <pre><code>mkdir -p ~/spark-ai-stack
+cd ~/spark-ai-stack
 
 docker run -d \
   --name open-webui \
@@ -2396,8 +2404,8 @@ docker run -d \
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — directory and run</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/sparky-ai-stack
-cd ~/sparky-ai-stack
+      <pre><code>mkdir -p ~/spark-ai-stack
+cd ~/spark-ai-stack
 
 docker run -d \
   --name open-webui \
@@ -2441,10 +2449,10 @@ Rules:
 - Match response length to question complexity</code></pre>
     </div>
 
-    <h3>Step 5b — All client services on sparky-02 at a glance</h3>
-    <p>Three client-facing services run on <code>sparky-02</code>: <strong>LiteLLM</strong> (Step 03), <strong>Open WebUI</strong> (Step 05 above), and <strong>n8n</strong>. All three are reachable on the client's tailnet via <code>tag:hjp-ai</code> (see Step 06). The n8n container below is not covered elsewhere — bring it up after the client's LiteLLM is healthy:</p>
+    <h3>Step 5b — All client services on spark-02 at a glance</h3>
+    <p>Three client-facing services run on <code>spark-02</code>: <strong>LiteLLM</strong> (Step 03), <strong>Open WebUI</strong> (Step 05 above), and <strong>n8n</strong>. All three are reachable on the client's tailnet via <code>tag:client-ai</code> (see Step 06). The n8n container below is not covered elsewhere — bring it up after the client's LiteLLM is healthy:</p>
 
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### sparky-02 — n8n container</h4>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — n8n container</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>docker run -d --name n8n --restart unless-stopped \
@@ -2452,7 +2460,7 @@ Rules:
   -e N8N_HOST=0.0.0.0 \
   -e N8N_PORT=5678 \
   -e N8N_PROTOCOL=http \
-  -e WEBHOOK_URL=http://sparky-02:5678/ \
+  -e WEBHOOK_URL=http://spark-02:5678/ \
   -e N8N_SECURE_COOKIE=false \
   -e NODE_ENV=production \
   -v n8n_data:/home/node/.n8n \
@@ -2467,22 +2475,22 @@ Rules:
           <tr>
             <td><strong>LiteLLM</strong></td>
             <td><code>8001</code></td>
-            <td>systemd (same structure as sparky-01)</td>
-            <td><code>http://10.100.100.1:8000/v1</code> (DAC link)</td>
-            <td>Client master key at <code>~/.sparky02-litellm-key</code> (<code>chmod 600</code>)</td>
+            <td>systemd (same structure as spark-01)</td>
+            <td><code>http://YOUR_NODE1_DAC_IP:8000/v1</code> (DAC link)</td>
+            <td>Client master key at <code>~/.spark02-litellm-key</code> (<code>chmod 600</code>)</td>
           </tr>
           <tr>
             <td><strong>Open WebUI</strong></td>
             <td><code>8080</code></td>
             <td><code>docker run --restart unless-stopped</code></td>
-            <td><code>OPENAI_API_BASE_URL=http://10.10.86.22:8001/v1</code></td>
+            <td><code>OPENAI_API_BASE_URL=http://host.docker.internal:8001/v1</code></td>
             <td>Client master key (or virtual key)</td>
           </tr>
           <tr>
             <td><strong>n8n</strong></td>
             <td><code>5678</code></td>
             <td><code>docker run --restart unless-stopped</code></td>
-            <td><code>WEBHOOK_URL=http://sparky-02:5678/</code></td>
+            <td><code>WEBHOOK_URL=http://spark-02:5678/</code></td>
             <td>n8n owner account (set on first login)</td>
           </tr>
         </tbody>
@@ -2490,11 +2498,11 @@ Rules:
     </div>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
-      <div>All three services are reachable from the client's tailnet via <code>tag:hjp-ai</code> on TCP 8001 / 8080 / 5678 (see the ACL grants in Step 06). They are <em>not</em> reachable from your tailnet — split-trust by construction.</div>
+      <div>All three services are reachable from the client's tailnet via <code>tag:client-ai</code> on TCP 8001 / 8080 / 5678 (see the ACL grants in Step 06). They are <em>not</em> reachable from your tailnet — split-trust by construction.</div>
     </div>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div>Store the client master key at <code>~/.sparky02-litellm-key</code> with <code>chmod 600</code>. Reference it from the LiteLLM systemd unit via <code>EnvironmentFile=</code> rather than embedding it in <code>litellm-config.yaml</code>, so the file on disk does not contain the secret.</div>
+      <div>Store the client master key at <code>~/.spark02-litellm-key</code> with <code>chmod 600</code>. Reference it from the LiteLLM systemd unit via <code>EnvironmentFile=</code> rather than embedding it in <code>litellm-config.yaml</code>, so the file on disk does not contain the secret.</div>
     </div>
   </div>
 
@@ -2546,8 +2554,8 @@ tailscale ip -4   # note this address — your apps will be reachable here</code
       <pre><code>curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up \
   --authkey=&lt;client-auth-key&gt; \
-  --hostname=sparky-02 \
-  --advertise-tags=tag:hjp-ai
+  --hostname=spark-02 \
+  --advertise-tags=tag:client-ai
 
 tailscale ip -4   # client's apps will be reachable here, only on their tailnet</code></pre>
     </div>
@@ -2555,11 +2563,11 @@ tailscale ip -4   # client's apps will be reachable here, only on their tailnet<
 
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
-      <div><strong>Disable key expiry</strong> for <code>sparky-02</code> in the client's Tailscale admin (Machines → sparky-02 → ⋯ → Disable key expiry). Server nodes shouldn't drop off the tailnet on a 90-day timer; the auth key rotation should be a deliberate action.</div>
+      <div><strong>Disable key expiry</strong> for <code>spark-02</code> in the client's Tailscale admin (Machines → spark-02 → ⋯ → Disable key expiry). Server nodes shouldn't drop off the tailnet on a 90-day timer; the auth key rotation should be a deliberate action.</div>
     </div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### Client tailnet ACL — replace the default allow-all</h4>
-    <p>The default Tailscale policy allows everything between everyone. Replace it with this <code>grants</code>-based policy. It leaves all non-server devices unrestricted (so the client's existing fleet is untouched), keeps <code>tag:hjp-dell-server</code> open (their existing Dell server stays as-is), and restricts <code>tag:hjp-ai</code> (this node) to only the three service ports — 8001 (LiteLLM), 8080 (Open WebUI), 5678 (n8n).</p>
+    <p>The default Tailscale policy allows everything between everyone. Replace it with this <code>grants</code>-based policy. It leaves all non-server devices unrestricted (so the client's existing fleet is untouched), keeps <code>tag:client-server</code> open (their existing Dell server stays as-is), and restricts <code>tag:client-ai</code> (this node) to only the three service ports — 8001 (LiteLLM), 8080 (Open WebUI), 5678 (n8n).</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>{
@@ -2571,25 +2579,25 @@ tailscale ip -4   # client's apps will be reachable here, only on their tailnet<
     },
     {
       "src": ["*"],
-      "dst": ["tag:hjp-dell-server"],
+      "dst": ["tag:client-server"],
       "ip": ["*"]
     },
     {
       "src": ["*"],
-      "dst": ["tag:hjp-ai"],
+      "dst": ["tag:client-ai"],
       "ip": ["tcp:8001", "tcp:8080", "tcp:5678"]
     }
   ],
   "tagOwners": {
-    "tag:hjp-ai":         ["autogroup:admin"],
-    "tag:hjp-dell-server":["autogroup:admin"]
+    "tag:client-ai":         ["autogroup:admin"],
+    "tag:client-server":["autogroup:admin"]
   }
 }</code></pre>
     </div>
-    <div class="verify">After applying, from a client device on the same tailnet: <code>nc -zv sparky-02 8001</code>, <code>nc -zv sparky-02 8080</code>, and <code>nc -zv sparky-02 5678</code> all succeed. <code>nc -zv sparky-02 22</code> (SSH) and <code>nc -zv sparky-02 8000</code> (raw vLLM) both fail — proving the ACL is in effect.</div>
+    <div class="verify">After applying, from a client device on the same tailnet: <code>nc -zv spark-02 8001</code>, <code>nc -zv spark-02 8080</code>, and <code>nc -zv spark-02 5678</code> all succeed. <code>nc -zv spark-02 22</code> (SSH) and <code>nc -zv spark-02 8000</code> (raw vLLM) both fail — proving the ACL is in effect.</div>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div><code>tag:hjp-ai</code> is intentionally not given <code>tcp:8000</code>. Port 8000 is the raw, unauthenticated vLLM head on <code>spark-01</code> reached over the DAC; it must never be exposed onto the client's tailnet. The client only ever calls their own LiteLLM on <code>sparky-02:8001</code>.</div>
+      <div><code>tag:client-ai</code> is intentionally not given <code>tcp:8000</code>. Port 8000 is the raw, unauthenticated vLLM head on <code>spark-01</code> reached over the DAC; it must never be exposed onto the client's tailnet. The client only ever calls their own LiteLLM on <code>spark-02:8001</code>.</div>
     </div>
 
     <h3>Lock down host firewalls</h3>
@@ -2674,7 +2682,7 @@ sudo systemctl status hermes-gateway --no-pager</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — docker-compose for hermes-webui</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/sparky-ai-stack/hermes-webui.yml &lt;&lt; 'EOF'
+      <pre><code>cat &gt; ~/spark-ai-stack/hermes-webui.yml &lt;&lt; 'EOF'
 services:
   hermes-webui:
     image: ghcr.io/nesquena/hermes-webui:latest
@@ -2694,7 +2702,7 @@ services:
 EOF
 
 mkdir -p ~/workspace
-docker compose -f ~/sparky-ai-stack/hermes-webui.yml up -d</code></pre>
+docker compose -f ~/spark-ai-stack/hermes-webui.yml up -d</code></pre>
     </div>
     <div class="verify">Visit <code>http://localhost:8787</code> on spark-01 (or your tailnet hostname).</div>
   </div>
@@ -2706,7 +2714,7 @@ docker compose -f ~/sparky-ai-stack/hermes-webui.yml up -d</code></pre>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — docker-compose for n8n</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/sparky-ai-stack/n8n.yml &lt;&lt; 'EOF'
+      <pre><code>cat &gt; ~/spark-ai-stack/n8n.yml &lt;&lt; 'EOF'
 services:
   n8n:
     image: n8nio/n8n:latest
@@ -2731,7 +2739,7 @@ volumes:
   n8n_data:
 EOF
 
-docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
+docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
     </div>
     <div class="verify">Visit <code>http://localhost:5678</code> on spark-01 (or your tailnet hostname) and create the owner account.</div>
 
@@ -2775,7 +2783,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <ul class="validation-checklist">
       <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY"</code> returns <code>qwen3.5-122b</code> through the client's LiteLLM.</li>
       <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/chat/completions -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY" ...</code> returns a completion.</li>
-      <li><strong>spark-02:</strong> <code>sudo systemctl status litellm</code> — <strong>active (running)</strong>. Logs are written to <code>~/sparky-ai-stack/logs/litellm.log</code> on <code>spark-02</code>, separate from your logs.</li>
+      <li><strong>spark-02:</strong> <code>sudo systemctl status litellm</code> — <strong>active (running)</strong>. Logs are written to <code>~/spark-ai-stack/logs/litellm.log</code> on <code>spark-02</code>, separate from your logs.</li>
       <li><strong>spark-02:</strong> <code>docker ps</code> shows <code>vllm_node</code> (the worker), <code>open-webui</code>, and <code>n8n</code> all <em>Up</em>. (No Hermes container.)</li>
       <li><strong>spark-02:</strong> Open <code>http://localhost:8080</code> (or the client's tailnet hostname), send a chat message — completion streams back. Client's LiteLLM log records the request; your LiteLLM log on spark-01 does <em>not</em>.</li>
     </ul>
@@ -2786,7 +2794,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <li><strong>From client's tailnet:</strong> <code>curl http://YOUR_NODE1_TAILSCALE_IP:8000/v1/models</code> should fail. The unauthenticated vLLM endpoint is not reachable from the client's tailnet.</li>
       <li><strong>From client's tailnet:</strong> <code>curl http://YOUR_NODE1_TAILSCALE_IP:8080</code> should fail. Your Open WebUI is not reachable from the client's tailnet.</li>
       <li><strong>From your tailnet:</strong> <code>curl http://YOUR_NODE2_TAILSCALE_IP:8080</code> should fail. The client's Open WebUI is not reachable from your tailnet.</li>
-      <li><strong>spark-01:</strong> <code>tail -f ~/sparky-ai-stack/logs/litellm.log</code> while the client sends a chat message → your log is silent. Client's traffic does not enter your stack.</li>
+      <li><strong>spark-01:</strong> <code>tail -f ~/spark-ai-stack/logs/litellm.log</code> while the client sends a chat message → your log is silent. Client's traffic does not enter your stack.</li>
     </ul>
 
     <h3>DAC traffic during inference</h3>
@@ -2842,7 +2850,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       ├── build-and-copy.sh           <span class="comment"># builds vllm-node-tf5:latest + copies to spark-02</span><br>
       ├── run-recipe.sh               <span class="comment"># launches Ray + vllm serve from the chosen recipe</span><br>
       └── launch-cluster.sh           <span class="comment"># stop/teardown helper invoked by systemd</span><br><br>
-      <span class="dir">~/sparky-ai-stack/</span><br>
+      <span class="dir">~/spark-ai-stack/</span><br>
       ├── litellm-config.yaml         <span class="comment"># YOUR LiteLLM — your master_key, localhost:8000</span><br>
       ├── hermes-webui.yml            <span class="comment"># compose for your hermes-webui</span><br>
       ├── n8n.yml                     <span class="comment"># compose for your n8n</span><br>
@@ -2865,7 +2873,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <div class="file-tree">
       <span class="dir">~/.cache/huggingface/hub/</span>       <span class="comment"># model weights rsync'd from spark-01 over DAC</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;└── models--Qwen--Qwen3.5-122B-A10B-FP8/<br><br>
-      <span class="dir">~/sparky-ai-stack/</span><br>
+      <span class="dir">~/spark-ai-stack/</span><br>
       ├── litellm-config.yaml         <span class="comment"># CLIENT LiteLLM — client's master_key, points DAC → vLLM</span><br>
       ├── n8n.yml                     <span class="comment"># compose for client's n8n</span><br>
       └── logs/<br>
@@ -2885,10 +2893,10 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <table>
         <thead><tr><th>Node / Owner</th><th>Path</th><th>Contents</th></tr></thead>
         <tbody>
-          <tr><td>spark-01 — you</td><td><code>~/sparky-ai-stack/logs/</code></td><td>Your LiteLLM corpus</td></tr>
+          <tr><td>spark-01 — you</td><td><code>~/spark-ai-stack/logs/</code></td><td>Your LiteLLM corpus</td></tr>
           <tr><td>spark-01 — you</td><td><code>~/.hermes/</code></td><td>Your Hermes memory, sessions, skills</td></tr>
           <tr><td>spark-01 — you</td><td>Docker volumes <code>open-webui</code>, <code>n8n_data</code></td><td>Your UI state — chat history, knowledge bases, flows</td></tr>
-          <tr><td>spark-02 — client</td><td><code>~/sparky-ai-stack/logs/</code></td><td>Client's LiteLLM corpus (their backup, not yours)</td></tr>
+          <tr><td>spark-02 — client</td><td><code>~/spark-ai-stack/logs/</code></td><td>Client's LiteLLM corpus (their backup, not yours)</td></tr>
           <tr><td>spark-02 — client</td><td>Docker volumes <code>open-webui</code>, <code>n8n_data</code></td><td>Client's UI state (their backup, not yours)</td></tr>
         </tbody>
       </table>
@@ -2966,7 +2974,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <div class="issue">
       <div class="issue-title"><code>docker: permission denied</code> on spark-02</div>
       <div class="issue-sym"><span>Symptom</span><span>Any docker command on spark-02 fails with <code>permission denied while trying to connect to the Docker daemon socket</code>. Common on a freshly-imaged worker node where docker installed cleanly but the operator account isn't in the <code>docker</code> group yet.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Add the operator account to the <code>docker</code> group. On a fresh spark-02: <code>sudo usermod -aG docker cameron &amp;&amp; newgrp docker</code> (substitute your actual username). The new group only takes effect after re-logging or running <code>newgrp docker</code> in the current shell. The Step 01 worker script will not run until this is done.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Add the operator account to the <code>docker</code> group. On a fresh spark-02: <code>sudo usermod -aG docker YOUR_USERNAME &amp;&amp; newgrp docker</code> (substitute your actual username). The new group only takes effect after re-logging or running <code>newgrp docker</code> in the current shell. The Step 01 worker script will not run until this is done.</span></div>
     </div>
 
     <div class="issue">
@@ -2978,7 +2986,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
     <div class="issue">
       <div class="issue-title">Client LiteLLM can't reach vLLM</div>
-      <div class="issue-sym"><span>Symptom</span><span>Client LiteLLM on spark-02 returns <code>connection refused</code> or <code>connect timeout</code> on every request. <code>~/sparky-ai-stack/logs/litellm.log</code> on spark-02 shows <code>httpx.ConnectError</code> against <code>198.51.100.1:8000</code>.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span>Client LiteLLM on spark-02 returns <code>connection refused</code> or <code>connect timeout</code> on every request. <code>~/spark-ai-stack/logs/litellm.log</code> on spark-02 shows <code>httpx.ConnectError</code> against <code>198.51.100.1:8000</code>.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the DAC link is down, (b) the vLLM head container on spark-01 is not running, or (c) the host firewall on spark-01 is blocking the DAC peer from reaching port 8000.</span></div>
       <div class="issue-fix"><span>Fix</span><span>From spark-02: <code>ping -c 3 YOUR_NODE1_DAC_IP</code> (DAC reachable?), then <code>nc -zv YOUR_NODE1_DAC_IP 8000</code>. From spark-01: <code>docker ps | grep vllm_node</code> (running?) and <code>sudo ufw status | grep 8000</code>. The Step 06 ufw rule should explicitly allow <code>YOUR_NODE2_DAC_IP</code> on port 8000 over <code>enp1s0f0np0</code>.</span></div>
     </div>
@@ -2999,7 +3007,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
     <div class="issue">
       <div class="issue-title">Client can see your LiteLLM logs (or vice versa)</div>
-      <div class="issue-sym"><span>Symptom</span><span>You find an entry in <code>~/sparky-ai-stack/logs/litellm.log</code> on spark-01 that you didn't make. Or the client reports a request in their log that they didn't send.</span></div>
+      <div class="issue-sym"><span>Symptom</span><span>You find an entry in <code>~/spark-ai-stack/logs/litellm.log</code> on spark-01 that you didn't make. Or the client reports a request in their log that they didn't send.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Almost always: someone reused a master key across the two LiteLLMs, or the Open WebUI on one side is misconfigured to point at the other side's LiteLLM.</span></div>
       <div class="issue-fix"><span>Fix</span><span>Confirm <code>master_key</code> values are unique on each node — they should never match. Then check each Open WebUI's API base URL: yours should be <code>http://host.docker.internal:8001/v1</code> (your local LiteLLM); client's should be the same hostname (their local LiteLLM, not your tailnet IP). If you find cross-pointing, fix it and rotate both master keys.</span></div>
     </div>
@@ -3133,7 +3141,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
 
   <div class="step" id="obsidian-vault-sync">
     <div class="step-header"><span class="step-num">OBSIDIAN VAULT SYNC + MCP</span><h2>Architecture</h2></div>
-    <p>Obsidian vault sync runs on a dedicated Ubuntu 24.04 LXC (hostname: <code>syncthing-obsidian-mcp</code>, IP: <code>10.10.15.10</code>) on the Proxmox homelab. Syncthing syncs the vault from Mac/Android to <code>/vault</code> on the LXC. The obsidian-mcp MCP server (<a href="https://github.com/StevenStavrakis/obsidian-mcp" target="_blank">StevenStavrakis/obsidian-mcp</a>) runs inside the LXC, exposed via supergateway on port 3000 using streamableHttp transport. LiteLLM on spark-01 connects to it at <code>http://10.10.15.10:3000/mcp</code>.</p>
+    <p>Obsidian vault sync runs on a dedicated Ubuntu 24.04 LXC (hostname: <code>YOUR_LXC_HOSTNAME</code>, IP: <code>YOUR_LXC_IP</code>) on the Proxmox homelab. Syncthing syncs the vault from Mac/Android to <code>/vault</code> on the LXC. The obsidian-mcp MCP server (<a href="https://github.com/StevenStavrakis/obsidian-mcp" target="_blank">StevenStavrakis/obsidian-mcp</a>) runs inside the LXC, exposed via supergateway on port 3000 using streamableHttp transport. LiteLLM on spark-01 connects to it at <code>http://YOUR_LXC_IP:3000/mcp</code>.</p>
     <div class="diagram-wrap" style="margin-top:12px;">
       <pre style="background:transparent;padding:0;"><code>Obsidian (Mac/Android) &lt;-&gt; Syncthing &lt;-&gt; /vault on LXC &lt;-&gt; obsidian-mcp &lt;-&gt; supergateway :3000 &lt;-&gt; LiteLLM MCP client</code></pre>
     </div>
@@ -3144,8 +3152,8 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
         <thead><tr><th>Setting</th><th>Value</th></tr></thead>
         <tbody>
           <tr><td>OS</td><td>Ubuntu 24.04 LTS</td></tr>
-          <tr><td>Hostname</td><td><code>syncthing-obsidian-mcp</code></td></tr>
-          <tr><td>IP</td><td><code>10.10.15.10</code></td></tr>
+          <tr><td>Hostname</td><td><code>YOUR_LXC_HOSTNAME</code></td></tr>
+          <tr><td>IP</td><td><code>YOUR_LXC_IP</code></td></tr>
           <tr><td>Vault path</td><td><code>/vault</code> with <code>.obsidian/app.json</code> stub (required for MCP server vault validation)</td></tr>
           <tr><td>Services</td><td><code>syncthing@root</code> and <code>obsidian-mcp</code> — both enabled as systemd services</td></tr>
         </tbody>
@@ -3232,7 +3240,7 @@ systemctl start obsidian-mcp</code></pre>
       <table>
         <thead><tr><th>Field</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td>URL</td><td><code>http://10.10.15.10:3000/mcp</code></td></tr>
+          <tr><td>URL</td><td><code>http://YOUR_LXC_IP:3000/mcp</code></td></tr>
           <tr><td>Transport</td><td><code>streamableHttp</code> (not SSE)</td></tr>
         </tbody>
       </table>
@@ -3242,7 +3250,7 @@ systemctl start obsidian-mcp</code></pre>
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mcp_servers:
   - name: obsidian
-    url: http://10.10.15.10:3000/mcp
+    url: http://YOUR_LXC_IP:3000/mcp
     transport: streamableHttp</code></pre>
     </div>
   </div>
@@ -3405,7 +3413,7 @@ sudo apt install -y nodejs</code></pre>
     <p>The LiteLLM proxy ships with a built-in web UI at <code>/ui</code>. It requires a master key and a PostgreSQL database — SQLite is not supported for the UI auth layer. The following documents every error encountered during setup, in order.</p>
 
     <h3>Step 1 — Set a master key</h3>
-    <p>All commands below run on <strong><code>spark-01</code></strong> (where LiteLLM lives). Add to <code>~/sparky-ai-stack/litellm-config.yaml</code>:</p>
+    <p>All commands below run on <strong><code>spark-01</code></strong> (where LiteLLM lives). Add to <code>~/spark-ai-stack/litellm-config.yaml</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>general_settings:
@@ -3419,7 +3427,7 @@ sudo apt install -y nodejs</code></pre>
     </div>
 
     <h3>Step 2 — Add PostgreSQL to a compose file on spark-01</h3>
-    <p>Run Postgres on the same node as LiteLLM. Putting it on <code>spark-02</code> would re-introduce the very latency-disturbance pattern this architecture is designed to avoid. Add to a new <code>~/sparky-ai-stack/litellm-db.yml</code> on <code>spark-01</code>:</p>
+    <p>Run Postgres on the same node as LiteLLM. Putting it on <code>spark-02</code> would re-introduce the very latency-disturbance pattern this architecture is designed to avoid. Add to a new <code>~/spark-ai-stack/litellm-db.yml</code> on <code>spark-01</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>  litellm-db:
@@ -3530,7 +3538,8 @@ document.querySelectorAll('[id]').forEach(el => observer.observe(el));
   var KEYS = [
     'YOUR_NODE1_MGMT_IP', 'YOUR_NODE1_DAC_IP', 'YOUR_NODE1_TAILSCALE_IP',
     'YOUR_NODE2_MGMT_IP', 'YOUR_NODE2_DAC_IP', 'YOUR_NODE2_TAILSCALE_IP',
-    'YOUR_USERNAME', 'YOUR_TAILNET_HOSTNAME'
+    'YOUR_USERNAME', 'YOUR_TAILNET_HOSTNAME',
+    'YOUR_LXC_IP', 'YOUR_LXC_HOSTNAME'
   ];
   // Map of keys to the SVG <text> element ids that should mirror them
   var SVG_MIRROR = {
@@ -3763,7 +3772,8 @@ document.querySelectorAll('[id]').forEach(el => observer.observe(el));
       'YOUR_NODE2_MGMT_IP','YOUR_NODE2_DAC_IP','YOUR_NODE2_TAILSCALE_IP','YOUR_NODE2_TS_AUTHKEY',
       'YOUR_USERNAME','YOUR_TAILNET_HOSTNAME','YOUR_HF_TOKEN','YOUR_MASTER_KEY','YOUR_CLIENT_MASTER_KEY',
       'CLIENT_TAILNET_HOSTNAME',
-      'HF_MODEL_REPO','HF_MODEL_DIR','MODEL_RECIPE','SERVED_MODEL_NAME'
+      'HF_MODEL_REPO','HF_MODEL_DIR','MODEL_RECIPE','SERVED_MODEL_NAME',
+      'YOUR_LXC_IP','YOUR_LXC_HOSTNAME'
     ];
     allKeys.sort(function(a,b){ return b.length - a.length; });
     return new RegExp('\\b(' + allKeys.join('|') + ')\\b', 'g');

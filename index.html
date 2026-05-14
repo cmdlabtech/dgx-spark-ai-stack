@@ -2912,7 +2912,11 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">vLLM inference is extremely slow (2–3&nbsp;tok/s) on multi-node setup</div>
       <div class="issue-sym"><span>Symptom</span><span>The cluster comes up cleanly, both GPUs register, and completions stream — but throughput sits at 2–3&nbsp;tok/s instead of the expected ~45&nbsp;tok/s. <code>nload</code> on the DAC shows traffic, but only a fraction of link capacity.</span></div>
       <div class="issue-sym"><span>Cause</span><span>NCCL is falling back to TCP/IP sockets instead of using RDMA over RoCE. Either <code>/dev/infiniband</code> wasn't passed into the container, <code>NCCL_IB_HCA</code> wasn't set, or both. The hand-built <code>vllm-spark:26.04</code> image had this problem by design — RDMA passthrough was never plumbed in.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Confirm the transport with <code>docker logs vllm_node | grep -E "NET/IB|NET/Socket"</code>. <code>NET/IB</code> = RDMA (good); <code>NET/Socket</code> = TCP fallback (bad). The eugr/spark-vllm-docker stack (Step 1b–1e) sets <code>NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0</code> and passes <code>/dev/infiniband</code> into both containers automatically. If you're on the old hand-built image, migrate — there is no equivalent flag fix.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>The eugr/spark-vllm-docker stack (Step 1b–1e) sets <code>NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0</code> and passes <code>/dev/infiniband</code> into both containers automatically. If you're on the old hand-built image, migrate — there is no equivalent flag fix. Confirm the transport:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>docker logs vllm_node | grep -E "NET/IB|NET/Socket"
+# NET/IB  = RDMA (good)
+# NET/Socket = TCP fallback (bad)</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
@@ -2926,7 +2930,10 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">Ray version mismatch between head and worker</div>
       <div class="issue-sym"><span>Symptom</span><span>Worker fails to join the head with an error referencing incompatible Ray client/server protocol versions, or the head accepts the worker but the engine init aborts with a serialization error.</span></div>
       <div class="issue-sym"><span>Cause</span><span>The two containers were built from different base images (e.g. you rebuilt on <code>spark-01</code> but the older image is still on <code>spark-02</code>) or one node is running an out-of-date image tag.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Always start the head container first, wait for <code>Ray runtime started</code> in <code>docker logs vllm_node</code>, then start the worker. Both nodes must run identical images — the <code>./build-and-copy.sh --tf5 --copy-to YOUR_NODE2_DAC_IP</code> step in Step 1b is what guarantees that; re-run it whenever you bump the image on either side.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Always start the head container first, wait for <code>Ray runtime started</code> in <code>docker logs vllm_node</code>, then start the worker. Both nodes must run identical images — re-run the copy step whenever you bump the image on either side:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>cd ~/spark-vllm-docker
+./build-and-copy.sh --tf5 --copy-to YOUR_NODE2_DAC_IP</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
@@ -2940,41 +2947,62 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">"Tensor parallel size exceeds available GPUs (1)" warning</div>
       <div class="issue-sym"><span>Symptom</span><span>vLLM head logs print a warning that TP=2 exceeds the locally visible GPU count (1) before Ray finishes registering the second node.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Expected and harmless on a 2-node 1-GPU-per-node setup. vLLM spreads TP workers across nodes via Ray. The warning fires before Ray confirms the second node's GPU is part of the cluster — not an error if the worker is up and joining.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Ignore. Confirm <code>docker exec vllm_node ray status</code> reports <code>2.0/2.0 GPU</code> after the worker container's join completes. The eugr <code>run-recipe.sh</code> launcher blocks <code>vllm serve</code> behind this check, so under normal operation you won't see it.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Ignore. The eugr <code>run-recipe.sh</code> launcher blocks <code>vllm serve</code> behind this check, so under normal operation you won't see it. Confirm once the worker joins:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>docker exec vllm_node ray status
+# Expected: 2.0/2.0 GPU</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">Worker can't reach head — Ray GCS connection refused</div>
       <div class="issue-sym"><span>Symptom</span><span>Worker logs (<code>docker logs vllm_node</code> on spark-02) print "ConnectionError: ... 198.51.100.1:6379" continuously and never advance.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the head container hasn't started, (b) <code>LOCAL_IP</code> on the head's <code>.env</code> isn't the DAC IP so Ray bound to the wrong interface, or (c) a firewall blocks port 6379 over the DAC.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>On spark-01: <code>docker exec vllm_node ray status</code> — if Ray isn't running, restart with <code>./run-recipe.sh qwen3.5-122b-fp8 -d -- …</code>. Confirm <code>LOCAL_IP=YOUR_NODE1_DAC_IP</code> in <code>~/spark-vllm-docker/.env</code> on the head. From spark-02: <code>nc -zv YOUR_NODE1_DAC_IP 6379</code> should connect; if not, check firewall rules on the DAC interface.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Confirm <code>LOCAL_IP=YOUR_NODE1_DAC_IP</code> in <code>~/spark-vllm-docker/.env</code> on the head. Check Ray, restart if needed, then probe port 6379 from the worker:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>docker exec vllm_node ray status
+# if Ray isn't running:
+cd ~/spark-vllm-docker && ./run-recipe.sh qwen3.5-122b-fp8 -d -- --served-model-name qwen3.5-122b --gpu-memory-utilization 0.80</code></pre></div>
+          <div class="code-block" style="margin:6px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-02</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>nc -zv YOUR_NODE1_DAC_IP 6379
+# should print: Connection to YOUR_NODE1_DAC_IP 6379 port [tcp/*] succeeded</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">NCCL traffic on the wrong interface (mgmt LAN instead of DAC)</div>
       <div class="issue-sym"><span>Symptom</span><span>Tensor-parallel inference works but is slow. <code>nload enp1s0f0np0</code> stays idle; mgmt LAN sees Gb/s spikes instead.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) <code>NCCL_IB_HCA</code> wasn't set so NCCL couldn't find the RoCE devices and fell back to TCP auto-detect, picking the first interface it saw (often mgmt), or (b) only one of the two RoCE twins is listed in <code>NCCL_IB_HCA</code> and NCCL silently went to TCP rather than use one twin.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Confirm <code>IB_IF=rocep1s0f0,roceP2p1s0f0</code> in <code>~/spark-vllm-docker/.env</code> (both twins, comma-separated). The launcher exports this as <code>NCCL_IB_HCA</code> into both containers. Verify with <code>docker logs vllm_node | grep "NCCL INFO NET/IB"</code> — you should see both <code>rocep1s0f0</code> and <code>roceP2p1s0f0</code> listed. Also confirm <code>ETH_IF=enp1s0f0np0</code> matches on both nodes.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Confirm <code>IB_IF=rocep1s0f0,roceP2p1s0f0</code> (both twins, comma-separated) and <code>ETH_IF=enp1s0f0np0</code> in <code>~/spark-vllm-docker/.env</code> on both nodes. Verify NCCL picked up the RoCE devices:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · both nodes</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>docker logs vllm_node | grep "NCCL INFO NET/IB"
+# Expected: both rocep1s0f0 and roceP2p1s0f0 listed</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title"><code>nvidia-smi memory.used</code> returns <code>[N/A]</code> on GB10</div>
       <div class="issue-sym"><span>Symptom</span><span><code>nvidia-smi --query-gpu=memory.used,memory.total --format=csv</code> returns <code>[N/A]</code> in both fields. Memory monitoring scripts that depend on these fields silently report nothing.</span></div>
       <div class="issue-sym"><span>Cause</span><span>GB10 (Grace Blackwell) uses unified memory. The classic <code>memory.used</code> / <code>memory.total</code> NVML fields are not populated on this hardware.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section. With the 122B FP8 model loaded, you should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process at roughly <strong>~61&nbsp;GB</strong> per node. The 35B FP8 bootstrap model lands closer to <strong>~97&nbsp;GB</strong>.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section. With the 122B FP8 model loaded you should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process at ~61&nbsp;GB per node; 35B FP8 lands closer to ~97&nbsp;GB.
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · both nodes</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>nvidia-smi
+# Read the Processes section — memory.used / memory.total fields return [N/A] on GB10</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">SSH by hostname hits the DAC instead of mgmt</div>
       <div class="issue-sym"><span>Symptom</span><span><code>ssh spark-02</code> from spark-01 hangs or returns "connection refused", even though both nodes are reachable.</span></div>
       <div class="issue-sym"><span>Cause</span><span>By default, each node's hostname resolves to its DAC IP (<code>198.51.100.x</code>). Unless you've explicitly bound <code>sshd</code> to the DAC interface, SSH only listens on the mgmt LAN — but your client has resolved the hostname to the DAC IP.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Add mgmt-IP entries to <code>/etc/hosts</code> on both nodes (this is in Prerequisites): <code>echo "YOUR_NODE1_MGMT_IP  spark-01" | sudo tee -a /etc/hosts</code> and likewise for spark-02. The HF cache rsync in Step 01b uses the DAC IP explicitly, but every other <code>ssh spark-0X</code> command relies on hostname resolution.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Add mgmt-IP entries to <code>/etc/hosts</code> on both nodes (covered in Prerequisites). The HF cache rsync uses the DAC IP explicitly, but every other <code>ssh spark-0X</code> command relies on hostname resolution.
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · both nodes</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>echo "YOUR_NODE1_MGMT_IP  spark-01" | sudo tee -a /etc/hosts
+echo "YOUR_NODE2_MGMT_IP  spark-02" | sudo tee -a /etc/hosts</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title"><code>docker: permission denied</code> on spark-02</div>
       <div class="issue-sym"><span>Symptom</span><span>Any docker command on spark-02 fails with <code>permission denied while trying to connect to the Docker daemon socket</code>. Common on a freshly-imaged worker node where docker installed cleanly but the operator account isn't in the <code>docker</code> group yet.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Add the operator account to the <code>docker</code> group. On a fresh spark-02: <code>sudo usermod -aG docker YOUR_USERNAME &amp;&amp; newgrp docker</code> (substitute your actual username). The new group only takes effect after re-logging or running <code>newgrp docker</code> in the current shell. The Step 01 worker script will not run until this is done.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Add the operator account to the <code>docker</code> group. The new group only takes effect after re-logging or running <code>newgrp docker</code> in the current shell.
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-02</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo usermod -aG docker YOUR_USERNAME
+newgrp docker</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
@@ -2988,21 +3016,33 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">Client LiteLLM can't reach vLLM</div>
       <div class="issue-sym"><span>Symptom</span><span>Client LiteLLM on spark-02 returns <code>connection refused</code> or <code>connect timeout</code> on every request. <code>~/spark-ai-stack/logs/litellm.log</code> on spark-02 shows <code>httpx.ConnectError</code> against <code>198.51.100.1:8000</code>.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the DAC link is down, (b) the vLLM head container on spark-01 is not running, or (c) the host firewall on spark-01 is blocking the DAC peer from reaching port 8000.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>From spark-02: <code>ping -c 3 YOUR_NODE1_DAC_IP</code> (DAC reachable?), then <code>nc -zv YOUR_NODE1_DAC_IP 8000</code>. From spark-01: <code>docker ps | grep vllm_node</code> (running?) and <code>sudo ufw status | grep 8000</code>. The Step 06 ufw rule should explicitly allow <code>YOUR_NODE2_DAC_IP</code> on port 8000 over <code>enp1s0f0np0</code>.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>The Step 06 ufw rule should explicitly allow <code>YOUR_NODE2_DAC_IP</code> on port 8000 over <code>enp1s0f0np0</code>. Work through the chain:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-02</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>ping -c 3 YOUR_NODE1_DAC_IP          # DAC link reachable?
+nc -zv YOUR_NODE1_DAC_IP 8000        # port open?</code></pre></div>
+          <div class="code-block" style="margin:6px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>docker ps | grep vllm_node           # container running?
+sudo ufw status | grep 8000          # firewall rule present?</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">Client sees spark-01:8000 directly without auth</div>
       <div class="issue-sym"><span>Symptom</span><span>From the client's tailnet, <code>curl http://YOUR_NODE1_TAILSCALE_IP:8000/v1/models</code> succeeds — meaning the client could bypass their LiteLLM and hit the unauthenticated vLLM directly.</span></div>
       <div class="issue-sym"><span>Cause</span><span>vLLM has no auth. Either (a) Tailscale ACLs on spark-01 inadvertently expose port 8000, or (b) the host firewall on spark-01 is allowing inbound on <code>tailscale0</code> for port 8000, or (c) ufw is disabled.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Audit the ACL JSON on spark-01's tailnet — there must be no <code>tag:owner:8000</code> entry anywhere. Then on spark-01: <code>sudo ufw status verbose</code> — <em>no</em> rule should allow port 8000 on <code>tailscale0</code>. Only the explicit DAC-peer rule (<code>enp1s0f0np0 from YOUR_NODE2_DAC_IP to any port 8000</code>) should appear. If you find a leak, fix the ACL and ufw, then re-run the negative tests in the validation checklist.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Audit the ACL JSON on spark-01's tailnet — there must be no <code>tag:owner:8000</code> entry anywhere. Only the explicit DAC-peer rule should appear for port 8000. If you find a leak, fix the ACL and ufw, then re-run the negative tests in the validation checklist.
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo ufw status verbose | grep 8000
+# Only this rule should appear for 8000:
+# ALLOW IN  enp1s0f0np0  from YOUR_NODE2_DAC_IP  to any port 8000</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">Both LiteLLMs collide on port 8001 over the mgmt LAN</div>
       <div class="issue-sym"><span>Symptom</span><span>You expected to <code>curl http://YOUR_NODE2_MGMT_IP:8001/v1/models</code> from spark-01 and get the client's LiteLLM, and it works — leaking the client's API surface to your mgmt LAN.</span></div>
       <div class="issue-sym"><span>Cause</span><span>By design, both LiteLLMs bind to <code>0.0.0.0:8001</code> so each is reachable from its own tailnet. Your firewall must restrict inbound on the mgmt-LAN interface to deny port 8001 cross-node — Tailscale ACLs alone don't help here because the mgmt LAN is not part of any tailnet.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>On both nodes, deny port 8001 inbound on the mgmt-LAN interface explicitly. The Step 06 ufw rules already restrict 8001 to <code>tailscale0</code> only — confirm with <code>sudo ufw status verbose</code> that no rule allows <code>8001</code> on the wildcard interface or on the mgmt iface.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>The Step 06 ufw rules restrict 8001 to <code>tailscale0</code> only. Confirm no rule allows 8001 on the wildcard or mgmt interface:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · both nodes</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo ufw status verbose | grep 8001
+# Should only show: ALLOW IN  tailscale0  to any port 8001</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
@@ -3036,21 +3076,36 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">LiteLLM UI shows: <code>table public.LiteLLM_UserTable does not exist</code></div>
       <div class="issue-sym"><span>Symptom</span><span>The LiteLLM Admin UI loads but every page (Users, Virtual Keys, Models) returns an error referencing a missing <code>LiteLLM_*</code> table in the <code>public</code> schema.</span></div>
       <div class="issue-sym"><span>Cause</span><span>The Postgres database is up and the connection succeeded, but the Prisma schema has not been pushed yet — the database is empty.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Run <code>prisma db push</code> against the LiteLLM Prisma schema:<br><code>DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" prisma db push --schema /home/YOUR_USERNAME/.local/lib/python3.12/site-packages/litellm/proxy/schema.prisma</code> — then restart LiteLLM. See Step 2d / 3d.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Push the Prisma schema, then restart LiteLLM. See Step 2d / 3d.
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
+  prisma db push \
+  --schema /home/YOUR_USERNAME/.local/lib/python3.12/site-packages/litellm/proxy/schema.prisma
+
+sudo systemctl restart litellm</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">LiteLLM UI shows: <code>Not connected to DB</code></div>
       <div class="issue-sym"><span>Symptom</span><span>The Admin UI banner reports "Not connected to DB" even though Postgres is running and reachable on <code>localhost:5432</code>.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) <code>database_url</code> is at the top level of <code>litellm-config.yaml</code> instead of nested under <code>general_settings</code> — LiteLLM only reads it from <code>general_settings</code>, or (b) the config still points at SQLite. SQLite is not supported for the UI; the Prisma schema is hardcoded for PostgreSQL.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Move the entry under <code>general_settings</code>:<br><code>general_settings:<br>&nbsp;&nbsp;database_url: "postgresql://litellm:litellm@localhost:5432/litellm"</code><br>and restart LiteLLM. Confirm with <code>journalctl -u litellm -n 50 --no-pager</code> — startup should report a successful Postgres connection.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Move <code>database_url</code> under <code>general_settings</code> in <code>litellm-config.yaml</code>, then restart and confirm:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>general_settings:
+  master_key: YOUR_MASTER_KEY
+  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"</code></pre></div>
+          <div class="code-block" style="margin:6px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo systemctl restart litellm
+journalctl -u litellm -n 50 --no-pager
+# Look for: Successfully connected to postgres DB</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">Virtual key not found in <code>LiteLLM_VerificationTokenTable</code></div>
       <div class="issue-sym"><span>Symptom</span><span>A virtual key generated from the UI is rejected on use with a <code>VerificationToken not found</code> error, but the key is still visible in the <strong>Virtual Keys</strong> tab.</span></div>
       <div class="issue-sym"><span>Cause</span><span>The key was generated against the database before the schema was fully initialized (e.g. you generated a key, then re-ran <code>prisma db push</code>, which dropped/recreated the verification token table).</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Delete the orphaned key in the UI, restart LiteLLM (<code>sudo systemctl restart litellm</code>), then generate a fresh key. The new key will be inserted into the current schema and will validate correctly.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Delete the orphaned key in the UI, restart LiteLLM, then generate a fresh key. The new key will be inserted into the current schema and will validate correctly.
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo systemctl restart litellm</code></pre></div>
+        </span></div>
     </div>
   </div>
 
@@ -3064,23 +3119,39 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
     <div class="issue">
       <div class="issue-title">LiteLLM port already in use</div>
       <div class="issue-sym"><span>Symptom</span><span>systemd shows <code>[Errno 98] address already in use</code></span></div>
-      <div class="issue-fix"><span>Fix</span><span><code>pkill -f litellm && sudo systemctl restart litellm</code></span></div>
+      <div class="issue-fix"><span>Fix</span><span>Kill the stale process and restart the service:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>pkill -f litellm
+sudo systemctl restart litellm</code></pre></div>
+        </span></div>
     </div>
     <div class="issue">
       <div class="issue-title">hermes: command not found</div>
       <div class="issue-sym"><span>Symptom</span><span>Hermes installed but shell can't find it</span></div>
-      <div class="issue-fix"><span>Fix</span><span><code>source ~/.bashrc</code> or use <code>/home/YOUR_USERNAME/.local/bin/hermes</code></span></div>
+      <div class="issue-fix"><span>Fix</span><span>Reload the shell rc, or invoke with the full path:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>source ~/.bashrc
+# or invoke directly:
+/home/YOUR_USERNAME/.local/bin/hermes --version</code></pre></div>
+        </span></div>
     </div>
     <div class="issue">
       <div class="issue-title">Hermes gateway systemd install fails</div>
       <div class="issue-sym"><span>Symptom</span><span><code>sudo: hermes: command not found</code></span></div>
-      <div class="issue-fix"><span>Fix</span><span><code>sudo /home/YOUR_USERNAME/.local/bin/hermes gateway install --system</code></span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use the absolute path when running the installer as root:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo /home/YOUR_USERNAME/.local/bin/hermes gateway install --system
+sudo systemctl start hermes-gateway
+sudo systemctl status hermes-gateway --no-pager</code></pre></div>
+        </span></div>
     </div>
     <div class="issue">
       <div class="issue-title">MCP stdio servers fail health check — <code>npx</code> not in LiteLLM's PATH</div>
       <div class="issue-sym"><span>Symptom</span><span>Adding a stdio-based MCP server (e.g. Brave Search) via the LiteLLM UI succeeds but the health check after saving fails. No error is shown — the check just doesn't pass.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Node.js was installed via <code>nvm</code> or a user-local installer, which places binaries in <code>~/.local/bin</code> and adds that path to the user's shell rc file (<code>.bashrc</code>). LiteLLM — running as a systemd service — never sources <code>.bashrc</code>, so it gets a clean environment with no <code>~/.local/bin</code> in PATH and cannot find <code>npx</code> when it tries to spawn the stdio MCP server process.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Symlink Node and npx into a system-wide PATH location: <code>sudo ln -s /home/YOUR_USERNAME/.local/bin/node /usr/local/bin/node</code> and <code>sudo ln -s /home/YOUR_USERNAME/.local/bin/npx /usr/local/bin/npx</code>. Alternatively, install Node system-wide via NodeSource: <code>curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - &amp;&amp; sudo apt install -y nodejs</code>. After either fix, retry the health check in the LiteLLM UI — it should pass.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Either symlink the user-local binaries into a system-wide path, or install Node system-wide via NodeSource. After either fix, retry the health check in the LiteLLM UI.
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · option A — symlink existing install</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo ln -sf /home/YOUR_USERNAME/.local/bin/node /usr/local/bin/node
+sudo ln -sf /home/YOUR_USERNAME/.local/bin/npx  /usr/local/bin/npx</code></pre></div>
+          <div class="code-block" style="margin:6px 0 0;"><div class="code-header"><span class="code-lang">bash · option B — install Node system-wide via NodeSource</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs</code></pre></div>
+        </span></div>
     </div>
     <div class="issue">
       <div class="issue-title">Signal on arm64</div>
@@ -3091,13 +3162,18 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">config.yaml YAML error causes silent .env fallback</div>
       <div class="issue-sym"><span>Symptom</span><span>After manually editing <code>~/.hermes/config.yaml</code>, Hermes seems to ignore the changes — MCP is broken and the provider reverts to default. No obvious error in the logs.</span></div>
       <div class="issue-sym"><span>Cause</span><span>A YAML syntax error causes Hermes to silently fall back to <code>.env</code> values. No error is shown at startup, so the misconfiguration is invisible.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Always validate YAML after editing: <code>python3 -c "import yaml; yaml.safe_load(open('/home/YOUR_USERNAME/.hermes/config.yaml')); print('YAML valid')"</code>. If the command prints anything other than <code>YAML valid</code>, fix the syntax before restarting.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Always validate YAML after editing. If the command exits without printing <code>YAML valid</code>, fix the syntax before restarting.
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>python3 -c "import yaml; yaml.safe_load(open('/home/YOUR_USERNAME/.hermes/config.yaml')); print('YAML valid')"</code></pre></div>
+        </span></div>
     </div>
     <div class="issue">
       <div class="issue-title">Hermes crashes on startup — MCP server connection failing</div>
       <div class="issue-sym"><span>Symptom</span><span>Hermes exits during startup with a stack trace mentioning <code>mcp_servers</code> or a failed MCP client handshake. Logs reference an <code>asyncio</code> error or a TCP/stdio connection that never opened.</span></div>
       <div class="issue-sym"><span>Cause</span><span>This stack proxies all MCP traffic through LiteLLM (see Step 02). Hermes does not need a direct <code>mcp_servers</code> block in <code>~/.hermes/config.yaml</code> — it talks to LiteLLM's MCP endpoint over the LiteLLM API. A <code>mcp_servers</code> block in Hermes config is only correct in a <strong>direct-MCP</strong> (non-LiteLLM-proxied) topology, and on this stack it points Hermes at servers it can't reach.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Remove the <code>mcp_servers</code> block from <code>~/.hermes/config.yaml</code> entirely. Validate the YAML, then restart: <code>systemctl --user restart hermes</code> (or whichever supervisor you use). MCP tool calls continue to work because LiteLLM is in the path.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Remove the <code>mcp_servers</code> block from <code>~/.hermes/config.yaml</code> entirely. MCP tool calls continue to work because LiteLLM is in the path. Validate and restart:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>python3 -c "import yaml; yaml.safe_load(open('/home/YOUR_USERNAME/.hermes/config.yaml')); print('YAML valid')"
+systemctl --user restart hermes</code></pre></div>
+        </span></div>
     </div>
 
     <div class="issue">

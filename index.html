@@ -371,6 +371,31 @@
     background: #fee2e2; color: #991b1b; padding: 0 2px; border-radius: 2px;
   }
 
+  /* TL;DR side-by-side scripts */
+  .tldr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0 8px; }
+  .tldr-col { display: flex; flex-direction: column; min-width: 0; }
+  .tldr-col-head { display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; border: 1px solid var(--border); border-bottom: none;
+    border-radius: 6px 6px 0 0; background: var(--bg); }
+  .tldr-col-head.you { border-left: 3px solid #3b82f6; }
+  .tldr-col-head.client { border-left: 3px solid #7c3aed; }
+  .tldr-col-title { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+  .tldr-col-head.you .tldr-col-title { color: #1d4ed8; }
+  .tldr-col-head.client .tldr-col-title { color: #5b21b6; }
+  .tldr-col .code-block { border-radius: 0 0 6px 6px; max-height: 520px; overflow: auto; }
+  .tldr-col pre { margin: 0; }
+  pre code .placeholder-secret {
+    background: #ede9fe; color: #5b21b6; padding: 0 2px; border-radius: 2px; font-weight: 500;
+  }
+  .opt-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 0; cursor: pointer; user-select: none; }
+  .opt-row input[type="checkbox"] { margin: 0; cursor: pointer; }
+  .opt-row span.opt-port { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text3); margin-left: 4px; }
+  .opt-row input:not(:checked) ~ span { color: var(--text3); text-decoration: line-through; text-decoration-color: var(--text3); }
+
+  @media (max-width: 1100px) {
+    .tldr-grid { grid-template-columns: 1fr; }
+  }
+
   @media (max-width: 860px) {
     .worksheet-grid { grid-template-columns: 1fr; }
     .shell { grid-template-columns: 1fr; }
@@ -399,6 +424,7 @@
     <a href="#trust-model" class="nav-item"><span class="num">—</span> Trust model</a>
     <a href="#topology" class="nav-item"><span class="num">—</span> Hardware topology</a>
     <a href="#worksheet" class="nav-item"><span class="num">—</span> Network worksheet</a>
+    <a href="#tldr" class="nav-item"><span class="num">—</span> TL;DR — one-shot scripts</a>
     <a href="#assumptions" class="nav-item"><span class="num">—</span> Prerequisites</a>
   </nav>
   <nav class="nav-section">
@@ -813,6 +839,842 @@
       <div class="callout note" style="margin-top:14px;">
         <span class="callout-icon">ℹ</span>
         <div><strong>Secrets stay manual.</strong> <code>YOUR_MASTER_KEY</code>, <code>YOUR_CLIENT_MASTER_KEY</code>, and <code>YOUR_BRAVE_API_KEY</code> are intentionally not in this worksheet — fill those into the relevant code blocks by hand, and don't paste them into a browser-stored field. The worksheet only handles network identifiers and your username.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="diagram-section" id="tldr">
+    <h2>TL;DR — one-shot setup scripts</h2>
+    <p style="margin:0 0 12px;font-size:13.5px;color:var(--text2);">Fill the table below, then run the matching script on each node. The scripts bundle every step in this guide — packages, Docker, RoCE/DAC checks, vLLM cluster image, model download + DAC rsync, LiteLLM + Postgres + Prisma, Open WebUI, n8n, Hermes, Tailscale, and host firewall — into a single idempotent run per node. <strong>spark-01 must complete through the image-copy/rsync stage before spark-02 can finish</strong>; the spark-02 script will pause and wait for the model weights to arrive.</p>
+
+    <div class="callout warning" style="margin:0 0 14px;">
+      <span class="callout-icon">⚠</span>
+      <div><strong>Secrets are session-only.</strong> Values entered below in the <em>Secrets</em> block (HF token, master keys, Tailscale auth keys) are kept in browser <code>sessionStorage</code> — they vanish when you close the tab and are <em>never</em> written to disk. Generate fresh master keys with <code>openssl rand -hex 24</code>.</div>
+    </div>
+    <div class="callout note" style="margin:0 0 14px;">
+      <span class="callout-icon">ℹ</span>
+      <div><strong>Tailscale auth-key prerequisites.</strong> Before generating each auth key, in <em>that tailnet's</em> admin console:
+        <ol style="margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.6;">
+          <li>Open <strong>Access Controls</strong> and ensure the tag is declared in <code>tagOwners</code> — <code>"tag:owner": ["you@example.com"]</code> for spark-01, <code>"tag:hjp-ai": ["autogroup:admin"]</code> for spark-02. The tag must exist <em>before</em> any device tries to advertise it.</li>
+          <li>Open <strong>Settings → Keys → Generate auth key</strong>. Toggle <strong>Tags</strong> on and select the matching tag from the list. Recommended: <em>Reusable: no</em>, <em>Ephemeral: no</em>, <em>Tags: tag:owner</em> (or <code>tag:hjp-ai</code>).</li>
+        </ol>
+        Auth keys without a tag selection will be rejected by <code>--advertise-tags</code> at <code>tailscale up</code> time. Tagged devices have key expiry automatically disabled, so the server won't drop off the tailnet on the 90-day timer.</div>
+    </div>
+
+    <div class="worksheet">
+      <div class="worksheet-grid">
+        <div class="worksheet-col you">
+          <h4>spark-01 — your node · secrets &amp; choices</h4>
+          <div class="worksheet-row">
+            <label for="ws-hf-token">HF token</label>
+            <input type="password" id="ws-hf-token" data-secret-key="YOUR_HF_TOKEN" placeholder="hf_..." autocomplete="off" spellcheck="false"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-master-key">Owner master key</label>
+            <input type="password" id="ws-master-key" data-secret-key="YOUR_MASTER_KEY" placeholder="sk-owner-..." autocomplete="off" spellcheck="false"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-ts-key1">Tailscale auth key (optional)</label>
+            <input type="password" id="ws-ts-key1" data-secret-key="YOUR_NODE1_TS_AUTHKEY" placeholder="tskey-auth-..." autocomplete="off" spellcheck="false"/>
+          </div>
+        </div>
+        <div class="worksheet-col client">
+          <h4>spark-02 — client node · secrets &amp; choices</h4>
+          <div class="worksheet-row">
+            <label for="ws-client-master">Client master key</label>
+            <input type="password" id="ws-client-master" data-secret-key="YOUR_CLIENT_MASTER_KEY" placeholder="sk-client-..." autocomplete="off" spellcheck="false"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-ts-key2">Client Tailscale auth key (optional)</label>
+            <input type="password" id="ws-ts-key2" data-secret-key="YOUR_NODE2_TS_AUTHKEY" placeholder="tskey-auth-..." autocomplete="off" spellcheck="false"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-client-tailnet">Client tailnet hostname</label>
+            <input type="text" id="ws-client-tailnet" data-secret-key="CLIENT_TAILNET_HOSTNAME" placeholder="sparky-02.tailnet-abcd.ts.net" autocomplete="off"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="worksheet-shared">
+        <h4 style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.06em;text-transform:uppercase;margin:0 0 10px;">Model + recipe (shared)</h4>
+        <div class="worksheet-grid">
+          <div class="worksheet-row">
+            <label for="ws-recipe">vLLM recipe</label>
+            <input type="text" id="ws-recipe" data-secret-key="MODEL_RECIPE" placeholder="qwen3.5-122b-fp8" value="qwen3.5-122b-fp8" autocomplete="off"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-served">Served model name</label>
+            <input type="text" id="ws-served" data-secret-key="SERVED_MODEL_NAME" placeholder="qwen3.5-122b" value="qwen3.5-122b" autocomplete="off"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-model-id">HF model repo</label>
+            <input type="text" id="ws-model-id" data-secret-key="HF_MODEL_REPO" placeholder="Qwen/Qwen3.5-122B-A10B-FP8" value="Qwen/Qwen3.5-122B-A10B-FP8" autocomplete="off"/>
+          </div>
+          <div class="worksheet-row">
+            <label for="ws-model-dir">HF cache dir name</label>
+            <input type="text" id="ws-model-dir" data-secret-key="HF_MODEL_DIR" placeholder="models--Qwen--Qwen3.5-122B-A10B-FP8" value="models--Qwen--Qwen3.5-122B-A10B-FP8" autocomplete="off"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="worksheet-shared">
+        <h4 style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.06em;text-transform:uppercase;margin:0 0 6px;">Optional layers — uncheck to skip</h4>
+        <p style="font-size:12px;color:var(--text3);margin:0 0 10px;line-height:1.5;">Core stack — vLLM cluster, LiteLLM, Postgres, Docker, RoCE check — is always installed. Tailscale ships pre-installed on DGX Spark, so uncheck it if you've already configured it (or want to use your existing config). Unchecking a layer also removes its <code>ufw</code> port rule.</p>
+        <div class="worksheet-grid">
+          <div class="worksheet-col you">
+            <h4>spark-01 layers</h4>
+            <label class="opt-row"><input type="checkbox" data-opt="1.openwebui" checked/> <span>Open WebUI <span class="opt-port">:8080</span></span></label>
+            <label class="opt-row"><input type="checkbox" data-opt="1.n8n" checked/> <span>n8n <span class="opt-port">:5678</span></span></label>
+            <label class="opt-row"><input type="checkbox" data-opt="1.hermes" checked/> <span>Hermes Agent + WebUI <span class="opt-port">:8787</span></span></label>
+            <label class="opt-row"><input type="checkbox" data-opt="1.tailscale" checked/> <span>Tailscale (owner tailnet)</span></label>
+            <label class="opt-row"><input type="checkbox" data-opt="1.ufw" checked/> <span>ufw host firewall</span></label>
+          </div>
+          <div class="worksheet-col client">
+            <h4>spark-02 layers</h4>
+            <label class="opt-row"><input type="checkbox" data-opt="2.openwebui" checked/> <span>Client Open WebUI <span class="opt-port">:8080</span></span></label>
+            <label class="opt-row"><input type="checkbox" data-opt="2.n8n" checked/> <span>Client n8n <span class="opt-port">:5678</span></span></label>
+            <label class="opt-row"><input type="checkbox" data-opt="2.tailscale" checked/> <span>Tailscale (client tailnet)</span></label>
+            <label class="opt-row"><input type="checkbox" data-opt="2.ufw" checked/> <span>ufw host firewall</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="worksheet-actions">
+        <button class="ws-btn" type="button" onclick="tldrDownload('spark-01')">download setup-spark-01.sh</button>
+        <button class="ws-btn" type="button" onclick="tldrDownload('spark-02')">download setup-spark-02.sh</button>
+        <button class="ws-btn reset" type="button" onclick="tldrClearSecrets()">clear secrets</button>
+        <span class="ws-status" id="tldr-status">Network worksheet drives the IP/username substitutions above</span>
+      </div>
+    </div>
+
+    <p style="margin:18px 0 10px;font-size:13px;color:var(--text2);"><strong>Run order</strong> — start both scripts in parallel; the dependencies are baked in as wait loops on each side:</p>
+    <ol style="font-size:13px;color:var(--text2);line-height:1.7;padding-left:20px;margin:0 0 18px;">
+      <li><strong>Start <code>setup-spark-02.sh</code> first</strong> (or simultaneously). spark-01 cannot push the vLLM image until Docker is installed on spark-02; the spark-01 script will wait for it.</li>
+      <li><strong>Then start <code>setup-spark-01.sh</code></strong> on spark-01. It installs packages, waits up to 5 min for spark-02's Docker to come online over the DAC, builds and pushes the ~19 GB vLLM image to spark-02, downloads the model on spark-01, rsyncs the ~60 GB of weights to spark-02 over the DAC, and brings up the rest of your stack.</li>
+      <li>Meanwhile, <code>setup-spark-02.sh</code> waits up to 10 min for the image, then up to 30 min for the weights, then brings up the client LiteLLM, Open WebUI, n8n, Tailscale, and ufw on its side.</li>
+      <li>When both scripts return, run <code>hermes setup</code> interactively on spark-01 — the wizard prompts for the Telegram bot token and user ID, so it can't be safely scripted.</li>
+      <li>Apply the Tailscale ACLs from Step 06 in each owner's admin console.</li>
+    </ol>
+
+    <div class="callout note" style="margin:0 0 14px;">
+      <span class="callout-icon">ℹ</span>
+      <div><strong>Curl-from-gist pattern (optional).</strong> If you'd rather not <code>scp</code> the scripts, click <em>download</em>, push the file to a private gist or your own host, then on each node: <code>curl -fsSL https://&lt;your-host&gt;/setup-spark-01.sh | bash</code>. The downloaded scripts have the worksheet values baked in, so anyone who can read the URL can also read your secrets — use a one-time gist or self-host behind auth, and rotate the master keys after the run.</div>
+    </div>
+
+    <div class="tldr-grid">
+      <div class="tldr-col">
+        <div class="tldr-col-head you">
+          <span class="tldr-col-title">spark-01 — your node (head)</span>
+          <button class="copy-btn" onclick="tldrCopy('spark-01', this)">copy</button>
+        </div>
+        <div class="code-block" style="margin:0;">
+          <div class="code-header"><span class="code-lang">bash · setup-spark-01.sh</span><span style="font-size:11px;color:var(--text3);">substituted live from worksheet</span></div>
+          <pre><code id="tldr-script-1">#!/usr/bin/env bash
+# DGX AI Stack — spark-01 (owner / Ray head) one-shot setup
+# Bundles: bootstrap · GUI disable · RoCE check · vLLM image build + DAC copy ·
+# model download + rsync · LiteLLM + Postgres + Prisma · Open WebUI · n8n ·
+# Hermes install · Hermes WebUI · Tailscale · ufw.
+# Re-running is safe: every step is guarded.
+set -euo pipefail
+
+# ───── worksheet-substituted config ─────
+NODE1_MGMT_IP="YOUR_NODE1_MGMT_IP"
+NODE1_DAC_IP="YOUR_NODE1_DAC_IP"
+NODE2_MGMT_IP="YOUR_NODE2_MGMT_IP"
+NODE2_DAC_IP="YOUR_NODE2_DAC_IP"
+USERNAME="YOUR_USERNAME"
+TAILNET_HOSTNAME="YOUR_TAILNET_HOSTNAME"
+HF_TOKEN="YOUR_HF_TOKEN"
+MASTER_KEY="YOUR_MASTER_KEY"
+TS_AUTHKEY="YOUR_NODE1_TS_AUTHKEY"
+MODEL_RECIPE="MODEL_RECIPE"
+SERVED_MODEL_NAME="SERVED_MODEL_NAME"
+HF_MODEL_REPO="HF_MODEL_REPO"
+HF_MODEL_DIR="HF_MODEL_DIR"
+
+log() { echo -e "\n\033[1;34m▶ $*\033[0m"; }
+die() { echo "✗ $*" &gt;&amp;2; exit 1; }
+
+[[ "$EUID" -ne 0 ]] || die "do not run as root — run as $USERNAME"
+[[ "$(whoami)" == "$USERNAME" ]] || die "expected user $USERNAME, got $(whoami)"
+
+# Fail-fast if critical worksheet placeholders weren't filled.
+[[ "$MASTER_KEY" != "YOUR_MASTER_KEY" &amp;&amp; -n "$MASTER_KEY" ]] || die "MASTER_KEY not set — fill the TL;DR secrets block in the guide"
+[[ "$HF_TOKEN"   != "YOUR_HF_TOKEN"   &amp;&amp; -n "$HF_TOKEN"   ]] || die "HF_TOKEN not set — fill the TL;DR secrets block in the guide"
+[[ "$NODE1_DAC_IP" != "YOUR_NODE1_DAC_IP" &amp;&amp; "$NODE2_DAC_IP" != "YOUR_NODE2_DAC_IP" ]] || die "fill the DAC IPs in the network worksheet"
+[[ "$USERNAME" != "YOUR_USERNAME" ]] || die "fill USERNAME in the network worksheet"
+
+# ───── 1. base packages + docker ─────
+log "apt — base packages"
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg lsb-release git rsync ufw \
+  nload jq python3-pip python3-venv openssh-client openssl
+
+if ! command -v docker &gt;/dev/null 2>&amp;1; then
+  curl -fsSL https://get.docker.com | sudo sh
+fi
+sudo systemctl enable --now docker
+id -nG "$USERNAME" | grep -qw docker || sudo usermod -aG docker "$USERNAME"
+
+# Re-exec under the docker group if this shell doesn't have it yet
+if ! id -nG | grep -qw docker; then
+  log "re-execing under docker group"
+  SCRIPT="$(readlink -f "$0")"
+  exec sg docker -c "bash '$SCRIPT' $*"
+fi
+
+# ───── 2. /etc/hosts — anchor hostnames to mgmt IPs ─────
+log "/etc/hosts entries"
+sudo sed -i '/[[:space:]]spark-01$/d;/[[:space:]]spark-02$/d' /etc/hosts
+echo "$NODE1_MGMT_IP  spark-01" | sudo tee -a /etc/hosts &gt;/dev/null
+echo "$NODE2_MGMT_IP  spark-02" | sudo tee -a /etc/hosts &gt;/dev/null
+
+# ───── 3. headless: stop and disable GDM ─────
+log "disable desktop"
+sudo systemctl set-default multi-user.target
+sudo systemctl stop gdm 2>/dev/null || true
+sudo systemctl stop gnome-remote-desktop 2>/dev/null || true
+sudo systemctl disable gnome-remote-desktop 2>/dev/null || true
+
+# ───── 4. RoCE / DAC sanity ─────
+log "RoCE check"
+ibdev2netdev || die "ibdev2netdev failed — RoCE drivers missing"
+ls /dev/infiniband/ &gt;/dev/null || die "/dev/infiniband missing — fix RoCE plumbing first"
+
+# ───── 5. passwordless SSH to spark-02 ─────
+log "SSH access to spark-02 (mgmt + DAC)"
+[[ -f "$HOME/.ssh/id_ed25519" ]] || ssh-keygen -t ed25519 -N "" -f "$HOME/.ssh/id_ed25519"
+
+# Probe with BatchMode — succeeds silently if a key is already authorized.
+probe_ssh() {
+  ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new \
+      "$USERNAME@$1" 'exit 0' &gt;/dev/null 2>&amp;1
+}
+
+# Deploy the key to one target, but only if probing fails.
+# Reads password from /dev/tty so this works even when stdin is a pipe
+# (e.g. `curl ... | bash`). Falls through with a warning if the user
+# skips or if password auth is disabled on spark-02.
+deploy_key() {
+  local host="$1" label="$2"
+  if probe_ssh "$host"; then
+    echo "  ✓ $label ($host) — key already authorized, no password needed"
+    return 0
+  fi
+  echo
+  echo "  → $label ($host) — SSH key not yet authorized."
+  echo "    ssh-copy-id will prompt for $USERNAME's password on spark-02."
+  echo "    Press Ctrl-D to skip if password auth is disabled there (you will then"
+  echo "    need to deploy ~/.ssh/id_ed25519.pub to spark-02 manually before re-running)."
+  if [[ -r /dev/tty ]]; then
+    ssh-copy-id -o StrictHostKeyChecking=accept-new "$USERNAME@$host" &lt;/dev/tty \
+      || echo "  (ssh-copy-id failed or was skipped for $label)"
+  else
+    echo "  (no controlling terminal — cannot prompt for password; deploy key manually)"
+  fi
+  if probe_ssh "$host"; then
+    echo "  ✓ $label ($host) — key now authorized"
+  else
+    echo "  ✗ $label ($host) — still no passwordless SSH (will retry in step 6)"
+  fi
+}
+
+deploy_key "$NODE2_MGMT_IP" "spark-02 mgmt"
+deploy_key "$NODE2_DAC_IP"  "spark-02 DAC"
+
+# ───── 6. wait for spark-02 to have Docker (build-and-copy.sh needs `docker load` there) ─────
+log "waiting for spark-02 Docker over DAC ($NODE2_DAC_IP)"
+SSH2="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new $USERNAME@$NODE2_DAC_IP"
+for i in {1..60}; do  # 5 min cap
+  $SSH2 'command -v docker' &gt;/dev/null 2>&amp;1 &amp;&amp; break
+  [[ $((i % 6)) -eq 0 ]] &amp;&amp; echo "  …spark-02 not ready (${i}/60) — start setup-spark-02.sh there if you haven't"
+  sleep 5
+done
+$SSH2 'command -v docker' &gt;/dev/null 2>&amp;1 || die "spark-02 unreachable or Docker missing — run setup-spark-02.sh on the other node first"
+
+# ───── 7. vLLM image — clone + build + copy to spark-02 over DAC ─────
+log "spark-vllm-docker"
+cd "$HOME"
+[[ -d spark-vllm-docker ]] || git clone https://github.com/eugr/spark-vllm-docker.git
+cd spark-vllm-docker
+./build-and-copy.sh --tf5 --copy-to "$NODE2_DAC_IP"
+
+# ───── 8. autodiscovery → .env (accept defaults) ─────
+log "discovery"
+# Feed blank answers to all prompts; trailing `|| true` survives SIGPIPE under pipefail.
+{ printf '\n%.0s' {1..20} | ./run-recipe.sh --discover; } || true
+grep -q '^CONTAINER_HF_TOKEN=' .env || echo "CONTAINER_HF_TOKEN=$HF_TOKEN" &gt;&gt; .env
+
+# ───── 9. model weights — download then rsync to spark-02 over DAC ─────
+log "huggingface download"
+pip3 install --break-system-packages 'huggingface_hub[cli]' &gt;/dev/null
+export PATH="$HOME/.local/bin:$PATH"  # so `hf` resolves on this run
+HF_TOKEN="$HF_TOKEN" hf download "$HF_MODEL_REPO" \
+  --local-dir "$HOME/.cache/huggingface/hub/$HF_MODEL_DIR/"
+
+log "rsync model → spark-02 over DAC ($NODE1_DAC_IP → $NODE2_DAC_IP)"
+$SSH2 "mkdir -p ~/.cache/huggingface/hub/$HF_MODEL_DIR"
+rsync -avP -e "ssh -b $NODE1_DAC_IP" \
+  "$HOME/.cache/huggingface/hub/$HF_MODEL_DIR/" \
+  "$NODE2_DAC_IP:.cache/huggingface/hub/$HF_MODEL_DIR/"
+
+# ───── 10. LiteLLM + Prisma ─────
+log "pip — litellm[proxy] + prisma"
+pip3 install --break-system-packages 'litellm[proxy]' prisma &gt;/dev/null
+grep -q 'HOME/.local/bin' "$HOME/.bashrc" || \
+  echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; "$HOME/.bashrc"
+
+# ───── 11. sparky-ai-stack — postgres compose ─────
+log "sparky-ai-stack directory + postgres"
+mkdir -p "$HOME/sparky-ai-stack/logs" "$HOME/workspace"
+cd "$HOME/sparky-ai-stack"
+
+cat &gt; docker-compose.yml &lt;&lt;'YAML'
+services:
+  litellm-db:
+    image: postgres:16
+    container_name: litellm-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=litellm
+      - POSTGRES_DB=litellm
+    volumes:
+      - litellm_db:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+volumes:
+  litellm_db:
+YAML
+
+docker compose up -d litellm-db
+for i in {1..40}; do
+  docker exec litellm-db pg_isready -U litellm &gt;/dev/null 2>&amp;1 &amp;&amp; break
+  sleep 2
+done
+docker exec litellm-db pg_isready -U litellm &gt;/dev/null 2>&amp;1 \
+  || die "postgres (litellm-db) never became ready — check 'docker logs litellm-db'"
+
+# ───── 12. litellm-config.yaml (owner) ─────
+log "litellm-config.yaml"
+cat &gt; "$HOME/sparky-ai-stack/litellm-config.yaml" &lt;&lt;EOF
+model_list:
+  - model_name: Qwen3.5-122B-Non-Reasoning
+    litellm_params:
+      model: openai/$SERVED_MODEL_NAME
+      api_base: http://localhost:8000/v1
+      api_key: "not-needed"
+      max_tokens: 8192
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+      max_context_window: 262144
+      max_input_tokens: 229376
+      max_output_tokens: 8192
+  - model_name: Qwen3.5-122B-Reasoning
+    litellm_params:
+      model: openai/$SERVED_MODEL_NAME
+      api_base: http://localhost:8000/v1
+      api_key: "not-needed"
+      max_tokens: 32768
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: true
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+      max_context_window: 262144
+      max_input_tokens: 229376
+      max_output_tokens: 32768
+litellm_settings:
+  verbose: true
+  store_model_in_db: true
+  default_system_message: "You are a highly capable AI assistant. Be direct, accurate, and concise. Answer immediately without preamble. For coding: produce complete, working code. State definitive answers first then explain."
+router_settings:
+  num_retries: 0
+  timeout: 600
+general_settings:
+  master_key: $MASTER_KEY
+  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
+  mcp_settings:
+    allow_all_keys: true
+EOF
+
+log "prisma db push"
+PRISMA_SCHEMA="$(python3 -c 'import litellm,os;print(os.path.join(os.path.dirname(litellm.__file__),"proxy","schema.prisma"))')"
+DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
+  "$HOME/.local/bin/prisma" db push --schema "$PRISMA_SCHEMA"
+
+# ───── 13. systemd — vllm-cluster + litellm ─────
+log "systemd units"
+sudo tee /etc/systemd/system/vllm-cluster.service &gt;/dev/null &lt;&lt;EOF
+[Unit]
+Description=vLLM Cluster - $SERVED_MODEL_NAME
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=$USERNAME
+WorkingDirectory=/home/$USERNAME/spark-vllm-docker
+ExecStartPre=/bin/sleep 30
+ExecStart=/home/$USERNAME/spark-vllm-docker/run-recipe.sh $MODEL_RECIPE -d -- --served-model-name $SERVED_MODEL_NAME --gpu-memory-utilization 0.80
+TimeoutStartSec=600
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee /etc/systemd/system/litellm.service &gt;/dev/null &lt;&lt;EOF
+[Unit]
+Description=LiteLLM Proxy (owner)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=$USERNAME
+WorkingDirectory=/home/$USERNAME/sparky-ai-stack
+ExecStart=/home/$USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable vllm-cluster litellm
+# --no-block: oneshot units block on ExecStart; model load takes minutes.
+sudo systemctl start --no-block vllm-cluster
+sleep 10
+sudo systemctl start litellm
+
+# >>>OPT:openwebui
+# ───── 14. Open WebUI ─────
+log "open-webui container"
+docker rm -f open-webui 2>/dev/null || true
+docker run -d --name open-webui --restart unless-stopped \
+  -p 8080:8080 \
+  -v open-webui:/app/backend/data \
+  -e OPENAI_API_BASE_URL="http://host.docker.internal:8001/v1" \
+  -e OPENAI_API_KEY="$MASTER_KEY" \
+  -e WEBUI_AUTH=True \
+  -e ENABLE_OLLAMA_API=False \
+  --add-host=host.docker.internal:host-gateway \
+  ghcr.io/open-webui/open-webui:main
+# <<<OPT:openwebui
+
+# >>>OPT:n8n
+# ───── 15. n8n compose ─────
+log "n8n compose"
+# Fall back to plain 'spark-01' if the worksheet hostname is blank or unfilled.
+WEBHOOK_HOST="$TAILNET_HOSTNAME"
+[[ -z "$WEBHOOK_HOST" || "$WEBHOOK_HOST" == "YOUR_TAILNET_HOSTNAME" ]] &amp;&amp; WEBHOOK_HOST=spark-01
+cat &gt; "$HOME/sparky-ai-stack/n8n.yml" &lt;&lt;EOF
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://$WEBHOOK_HOST:5678/
+      - N8N_SECURE_COOKIE=false
+      - NODE_ENV=production
+      - GENERIC_TIMEZONE=America/Los_Angeles
+    volumes:
+      - n8n_data:/home/node/.n8n
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+volumes:
+  n8n_data:
+EOF
+docker compose -f "$HOME/sparky-ai-stack/n8n.yml" up -d
+# <<<OPT:n8n
+
+# >>>OPT:hermes
+# ───── 16. Hermes Agent + WebUI ─────
+log "hermes install (run 'hermes setup' interactively after this script)"
+curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash || true
+
+# Pre-create bind-mount targets so docker doesn't mkdir them as root.
+mkdir -p "$HOME/.hermes" "$HOME/workspace"
+
+cat &gt; "$HOME/sparky-ai-stack/hermes-webui.yml" &lt;&lt;EOF
+services:
+  hermes-webui:
+    image: ghcr.io/nesquena/hermes-webui:latest
+    container_name: hermes-webui
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - WANTED_UID=1000
+      - WANTED_GID=1000
+      - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui-mvp
+    volumes:
+      - /home/$USERNAME/.hermes:/home/hermeswebui/.hermes
+      - /home/$USERNAME/workspace:/workspace
+    ports:
+      - "8787:8787"
+EOF
+docker compose -f "$HOME/sparky-ai-stack/hermes-webui.yml" up -d || true
+# <<<OPT:hermes
+
+# >>>OPT:tailscale
+# ───── 17. Tailscale (owner tailnet) ─────
+# Prereqs in the OWNER tailnet:
+#   1. tag:owner must be declared in tagOwners in the policy file.
+#   2. The auth key must be generated WITH tag:owner selected (Admin → Settings → Keys).
+# DGX Spark may ship with Tailscale pre-installed and possibly pre-joined; install.sh
+# is idempotent and upgrades in place, and `tailscale logout` ensures a clean re-join.
+log "tailscale install + up"
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale logout 2>/dev/null || true
+if [[ -n "$TS_AUTHKEY" &amp;&amp; "$TS_AUTHKEY" != "YOUR_NODE1_TS_AUTHKEY" ]]; then
+  sudo tailscale up --auth-key="$TS_AUTHKEY" --hostname=spark-01 --advertise-tags=tag:owner
+else
+  echo "  (TS_AUTHKEY blank — run: sudo tailscale up --hostname=spark-01 --advertise-tags=tag:owner)"
+fi
+# <<<OPT:tailscale
+
+# >>>OPT:ufw
+# ───── 18. host firewall ─────
+log "ufw"
+sudo ufw --force default deny incoming
+sudo ufw default allow outgoing
+# >>>OPT:tailscale
+sudo ufw allow in on tailscale0 to any port 8001 proto tcp
+# >>>OPT:openwebui
+sudo ufw allow in on tailscale0 to any port 8080 proto tcp
+# <<<OPT:openwebui
+# >>>OPT:n8n
+sudo ufw allow in on tailscale0 to any port 5678 proto tcp
+# <<<OPT:n8n
+# >>>OPT:hermes
+sudo ufw allow in on tailscale0 to any port 8787 proto tcp
+# <<<OPT:hermes
+# <<<OPT:tailscale
+sudo ufw allow in on enp1s0f0np0 from "$NODE2_DAC_IP" to any port 8000 proto tcp
+sudo ufw allow in on enp1s0f0np0 from "$NODE2_DAC_IP" to any port 6379 proto tcp
+sudo ufw allow ssh
+sudo ufw --force enable
+# <<<OPT:ufw
+
+log "spark-01 setup complete"
+cat &lt;&lt;DONE
+Next manual steps:
+  1. Run 'hermes setup' interactively to wire up the agent (Telegram bot token + user ID).
+  2. Apply the owner Tailscale ACL from Step 06 in the admin console.
+  3. Verify:
+       curl http://localhost:8001/v1/models -H "Authorization: Bearer $MASTER_KEY"
+       docker exec vllm_node ray status     # expect 2 nodes, 2.0/2.0 GPU
+DONE
+</code></pre>
+        </div>
+      </div>
+
+      <div class="tldr-col">
+        <div class="tldr-col-head client">
+          <span class="tldr-col-title">spark-02 — client node (worker)</span>
+          <button class="copy-btn" onclick="tldrCopy('spark-02', this)">copy</button>
+        </div>
+        <div class="code-block" style="margin:0;">
+          <div class="code-header"><span class="code-lang">bash · setup-spark-02.sh</span><span style="font-size:11px;color:var(--text3);">substituted live from worksheet</span></div>
+          <pre><code id="tldr-script-2">#!/usr/bin/env bash
+# DGX AI Stack — spark-02 (client / Ray worker) one-shot setup
+# Bundles: bootstrap · GUI disable · RoCE check · wait-for-image · wait-for-weights ·
+# client LiteLLM + Postgres + Prisma · client Open WebUI · client n8n ·
+# Tailscale (client tailnet) · ufw.
+# Re-running is safe: every step is guarded.
+set -euo pipefail
+
+# ───── worksheet-substituted config ─────
+NODE1_MGMT_IP="YOUR_NODE1_MGMT_IP"
+NODE1_DAC_IP="YOUR_NODE1_DAC_IP"
+NODE2_MGMT_IP="YOUR_NODE2_MGMT_IP"
+NODE2_DAC_IP="YOUR_NODE2_DAC_IP"
+USERNAME="YOUR_USERNAME"
+CLIENT_TAILNET_HOSTNAME="CLIENT_TAILNET_HOSTNAME"
+CLIENT_MASTER_KEY="YOUR_CLIENT_MASTER_KEY"
+TS_AUTHKEY="YOUR_NODE2_TS_AUTHKEY"
+SERVED_MODEL_NAME="SERVED_MODEL_NAME"
+HF_MODEL_DIR="HF_MODEL_DIR"
+
+log() { echo -e "\n\033[1;35m▶ $*\033[0m"; }
+die() { echo "✗ $*" &gt;&amp;2; exit 1; }
+
+[[ "$EUID" -ne 0 ]] || die "do not run as root — run as $USERNAME"
+[[ "$(whoami)" == "$USERNAME" ]] || die "expected user $USERNAME, got $(whoami)"
+
+# Fail-fast if critical worksheet placeholders weren't filled.
+[[ "$CLIENT_MASTER_KEY" != "YOUR_CLIENT_MASTER_KEY" &amp;&amp; -n "$CLIENT_MASTER_KEY" ]] || die "CLIENT_MASTER_KEY not set — fill the TL;DR secrets block in the guide"
+[[ "$NODE1_DAC_IP" != "YOUR_NODE1_DAC_IP" &amp;&amp; "$NODE2_DAC_IP" != "YOUR_NODE2_DAC_IP" ]] || die "fill the DAC IPs in the network worksheet"
+[[ "$USERNAME" != "YOUR_USERNAME" ]] || die "fill USERNAME in the network worksheet"
+
+# ───── 1. base packages + docker ─────
+log "apt — base packages"
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg lsb-release git rsync ufw \
+  nload jq python3-pip python3-venv openssh-server openssl netcat-openbsd
+
+if ! command -v docker &gt;/dev/null 2>&amp;1; then
+  curl -fsSL https://get.docker.com | sudo sh
+fi
+sudo systemctl enable --now docker ssh
+id -nG "$USERNAME" | grep -qw docker || sudo usermod -aG docker "$USERNAME"
+
+# Re-exec under the docker group if this shell doesn't have it yet
+if ! id -nG | grep -qw docker; then
+  log "re-execing under docker group"
+  SCRIPT="$(readlink -f "$0")"
+  exec sg docker -c "bash '$SCRIPT' $*"
+fi
+
+# ───── 2. /etc/hosts ─────
+log "/etc/hosts"
+sudo sed -i '/[[:space:]]spark-01$/d;/[[:space:]]spark-02$/d' /etc/hosts
+echo "$NODE1_MGMT_IP  spark-01" | sudo tee -a /etc/hosts &gt;/dev/null
+echo "$NODE2_MGMT_IP  spark-02" | sudo tee -a /etc/hosts &gt;/dev/null
+
+# ───── 3. headless ─────
+log "disable desktop"
+sudo systemctl set-default multi-user.target
+sudo systemctl stop gdm 2>/dev/null || true
+sudo systemctl stop gnome-remote-desktop 2>/dev/null || true
+sudo systemctl disable gnome-remote-desktop 2>/dev/null || true
+
+# ───── 4. RoCE / DAC sanity ─────
+log "RoCE check"
+ibdev2netdev || die "ibdev2netdev failed — RoCE drivers missing"
+ls /dev/infiniband/ &gt;/dev/null || die "/dev/infiniband missing"
+
+# ───── 5. wait for spark-01 to push the vLLM image (~19 GB over 200 Gb/s DAC ≈ 1–2 min) ─────
+log "waiting for vllm-node-tf5 image (pushed from spark-01 by build-and-copy.sh)"
+for i in {1..120}; do  # 120 × 5s = 10 min cap
+  docker images --format '{{.Repository}}:{{.Tag}}' | grep -q '^vllm-node-tf5:latest$' &amp;&amp; break
+  [[ $((i % 12)) -eq 0 ]] &amp;&amp; echo "  …still waiting (${i}/120)"
+  sleep 5
+done
+docker images | grep -q vllm-node-tf5 || die "vllm-node-tf5 image never arrived from spark-01 — re-run build-and-copy.sh there"
+
+# ───── 6. wait for model weights via rsync from spark-01 (~60 GB over DAC ≈ 4–8 min) ─────
+log "waiting for HF model weights at ~/.cache/huggingface/hub/$HF_MODEL_DIR"
+mkdir -p "$HOME/.cache/huggingface/hub"
+for i in {1..180}; do  # 180 × 10s = 30 min cap
+  if [[ -d "$HOME/.cache/huggingface/hub/$HF_MODEL_DIR" ]] &amp;&amp; \
+     [[ -n "$(ls -A "$HOME/.cache/huggingface/hub/$HF_MODEL_DIR" 2>/dev/null)" ]]; then
+    # let rsync settle: same size across two samples 10s apart
+    sz1=$(du -sb "$HOME/.cache/huggingface/hub/$HF_MODEL_DIR" 2>/dev/null | awk '{print $1}')
+    sleep 10
+    sz2=$(du -sb "$HOME/.cache/huggingface/hub/$HF_MODEL_DIR" 2>/dev/null | awk '{print $1}')
+    [[ "$sz1" == "$sz2" &amp;&amp; "$sz1" -gt 1000000000 ]] &amp;&amp; break
+  fi
+  [[ $((i % 6)) -eq 0 ]] &amp;&amp; echo "  …still waiting (${i}/180, size so far: $(du -sh "$HOME/.cache/huggingface/hub/$HF_MODEL_DIR" 2>/dev/null | awk '{print $1}'))"
+  sleep 10
+done
+
+# ───── 7. LiteLLM + Prisma ─────
+log "pip — litellm[proxy] + prisma"
+pip3 install --break-system-packages 'litellm[proxy]' prisma &gt;/dev/null
+grep -q 'HOME/.local/bin' "$HOME/.bashrc" || \
+  echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; "$HOME/.bashrc"
+export PATH="$HOME/.local/bin:$PATH"
+
+# ───── 8. sparky-ai-stack + standalone postgres ─────
+log "sparky-ai-stack + postgres"
+mkdir -p "$HOME/sparky-ai-stack/logs"
+cd "$HOME/sparky-ai-stack"
+
+docker rm -f litellm-db 2>/dev/null || true
+docker run -d --name litellm-db --restart unless-stopped \
+  -e POSTGRES_USER=litellm \
+  -e POSTGRES_PASSWORD=litellm \
+  -e POSTGRES_DB=litellm \
+  -p 5432:5432 \
+  -v litellm_db:/var/lib/postgresql/data \
+  postgres:16
+
+for i in {1..40}; do
+  docker exec litellm-db pg_isready -U litellm &gt;/dev/null 2>&amp;1 &amp;&amp; break
+  sleep 2
+done
+docker exec litellm-db pg_isready -U litellm &gt;/dev/null 2>&amp;1 \
+  || die "postgres (litellm-db) never became ready — check 'docker logs litellm-db'"
+
+# ───── 9. client litellm-config.yaml (points DAC → vLLM) ─────
+log "client litellm-config.yaml"
+cat &gt; "$HOME/sparky-ai-stack/litellm-config.yaml" &lt;&lt;EOF
+model_list:
+  - model_name: Qwen3.5-122B-Non-Reasoning
+    litellm_params:
+      model: openai/$SERVED_MODEL_NAME
+      api_base: http://$NODE1_DAC_IP:8000/v1
+      api_key: "not-needed"
+      max_tokens: 8192
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+      max_context_window: 262144
+      max_input_tokens: 229376
+      max_output_tokens: 8192
+  - model_name: Qwen3.5-122B-Reasoning
+    litellm_params:
+      model: openai/$SERVED_MODEL_NAME
+      api_base: http://$NODE1_DAC_IP:8000/v1
+      api_key: "not-needed"
+      max_tokens: 32768
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: true
+    model_info:
+      supports_function_calling: true
+      supports_tool_choice: true
+      max_context_window: 262144
+      max_input_tokens: 229376
+      max_output_tokens: 32768
+litellm_settings:
+  verbose: true
+  store_model_in_db: true
+  log_config:
+    level: INFO
+    format: json
+    filepath: /home/$USERNAME/sparky-ai-stack/logs/litellm.log
+router_settings:
+  num_retries: 0
+  timeout: 600
+general_settings:
+  master_key: $CLIENT_MASTER_KEY
+  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
+EOF
+
+log "prisma db push"
+PRISMA_SCHEMA="$(python3 -c 'import litellm,os;print(os.path.join(os.path.dirname(litellm.__file__),"proxy","schema.prisma"))')"
+DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
+  "$HOME/.local/bin/prisma" db push --schema "$PRISMA_SCHEMA"
+
+# ───── 10. client litellm systemd ─────
+log "systemd — litellm (client)"
+sudo tee /etc/systemd/system/litellm.service &gt;/dev/null &lt;&lt;EOF
+[Unit]
+Description=LiteLLM Proxy (client)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=$USERNAME
+WorkingDirectory=/home/$USERNAME/sparky-ai-stack
+ExecStart=/home/$USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now litellm
+
+# >>>OPT:openwebui
+# ───── 11. client Open WebUI ─────
+log "client open-webui"
+docker rm -f open-webui 2>/dev/null || true
+docker run -d --name open-webui --restart unless-stopped \
+  -p 8080:8080 \
+  -v open-webui:/app/backend/data \
+  -e OPENAI_API_BASE_URL="http://host.docker.internal:8001/v1" \
+  -e OPENAI_API_KEY="$CLIENT_MASTER_KEY" \
+  -e WEBUI_AUTH=True \
+  -e ENABLE_OLLAMA_API=False \
+  --add-host=host.docker.internal:host-gateway \
+  ghcr.io/open-webui/open-webui:main
+# <<<OPT:openwebui
+
+# >>>OPT:n8n
+# ───── 12. client n8n ─────
+log "client n8n"
+# Fall back to plain 'sparky-02' if the worksheet field is blank or unfilled.
+WEBHOOK_HOST="$CLIENT_TAILNET_HOSTNAME"
+[[ -z "$WEBHOOK_HOST" || "$WEBHOOK_HOST" == "CLIENT_TAILNET_HOSTNAME" ]] &amp;&amp; WEBHOOK_HOST=sparky-02
+docker rm -f n8n 2>/dev/null || true
+docker run -d --name n8n --restart unless-stopped \
+  -p 5678:5678 \
+  -e N8N_HOST=0.0.0.0 \
+  -e N8N_PORT=5678 \
+  -e N8N_PROTOCOL=http \
+  -e WEBHOOK_URL="http://$WEBHOOK_HOST:5678/" \
+  -e N8N_SECURE_COOKIE=false \
+  -e NODE_ENV=production \
+  -v n8n_data:/home/node/.n8n \
+  --add-host=host.docker.internal:host-gateway \
+  n8nio/n8n:latest
+# <<<OPT:n8n
+
+# >>>OPT:tailscale
+# ───── 13. Tailscale (client tailnet) ─────
+# Prereqs in the CLIENT tailnet:
+#   1. tag:hjp-ai must be declared in tagOwners in the client's policy file.
+#   2. The auth key must be generated WITH tag:hjp-ai selected (Admin → Settings → Keys).
+# DGX Spark may ship with Tailscale pre-installed and possibly pre-joined; install.sh
+# is idempotent and upgrades in place, and `tailscale logout` ensures a clean re-join.
+log "tailscale install + up (client tailnet)"
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale logout 2>/dev/null || true
+if [[ -n "$TS_AUTHKEY" &amp;&amp; "$TS_AUTHKEY" != "YOUR_NODE2_TS_AUTHKEY" ]]; then
+  sudo tailscale up --auth-key="$TS_AUTHKEY" --hostname=sparky-02 --advertise-tags=tag:hjp-ai
+else
+  echo "  (TS_AUTHKEY blank — run: sudo tailscale up --hostname=sparky-02 --advertise-tags=tag:hjp-ai)"
+fi
+# <<<OPT:tailscale
+
+# >>>OPT:ufw
+# ───── 14. host firewall ─────
+log "ufw"
+sudo ufw --force default deny incoming
+sudo ufw default allow outgoing
+# >>>OPT:tailscale
+sudo ufw allow in on tailscale0 to any port 8001 proto tcp
+# >>>OPT:openwebui
+sudo ufw allow in on tailscale0 to any port 8080 proto tcp
+# <<<OPT:openwebui
+# >>>OPT:n8n
+sudo ufw allow in on tailscale0 to any port 5678 proto tcp
+# <<<OPT:n8n
+# <<<OPT:tailscale
+sudo ufw allow in on enp1s0f0np0 from "$NODE1_DAC_IP"
+sudo ufw allow ssh
+sudo ufw --force enable
+# <<<OPT:ufw
+
+log "spark-02 setup complete"
+cat &lt;&lt;DONE
+Next manual steps:
+  1. Apply the client Tailscale ACL (Step 06) — restrict tag:hjp-ai to tcp:8001,8080,5678.
+  2. Disable key expiry on sparky-02 in the client's Tailscale admin.
+  3. Verify:
+       curl http://localhost:8001/v1/models -H "Authorization: Bearer $CLIENT_MASTER_KEY"
+       curl http://localhost:8001/v1/chat/completions \\
+         -H "Authorization: Bearer $CLIENT_MASTER_KEY" \\
+         -H 'Content-Type: application/json' \\
+         -d '{"model":"Qwen3.5-122B-Non-Reasoning","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
+DONE
+</code></pre>
+        </div>
       </div>
     </div>
   </div>
@@ -2807,6 +3669,236 @@ document.querySelectorAll('[id]').forEach(el => observer.observe(el));
         setTimeout(function() { status.textContent = prev; status.className = prevClass; }, 1500);
       }
     });
+  };
+})();
+
+// ============ TL;DR scripts: session-only secrets + download ============
+(function() {
+  var SESSION_KEY = 'dgx-ai-stack-tldr-secrets';
+  var OPT_KEY = 'dgx-ai-stack-tldr-opts';
+  // Keys live in sessionStorage only (cleared on tab close); some have safe defaults.
+  var SECRET_KEYS = [
+    'YOUR_HF_TOKEN', 'YOUR_MASTER_KEY', 'YOUR_CLIENT_MASTER_KEY',
+    'YOUR_NODE1_TS_AUTHKEY', 'YOUR_NODE2_TS_AUTHKEY',
+    'CLIENT_TAILNET_HOSTNAME',
+    'MODEL_RECIPE', 'SERVED_MODEL_NAME', 'HF_MODEL_REPO', 'HF_MODEL_DIR'
+  ];
+  // Optional layer toggles, keyed as "<node>.<component>". All default ON.
+  var DEFAULT_OPTS = {
+    '1.openwebui': true, '1.n8n': true, '1.hermes': true, '1.tailscale': true, '1.ufw': true,
+    '2.openwebui': true, '2.n8n': true,                    '2.tailscale': true, '2.ufw': true
+  };
+  var COMPONENTS = ['openwebui', 'n8n', 'hermes', 'tailscale', 'ufw'];
+
+  var script1 = document.getElementById('tldr-script-1');
+  var script2 = document.getElementById('tldr-script-2');
+  if (!script1 || !script2) return;
+  var origScript1 = script1.textContent;
+  var origScript2 = script2.textContent;
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function loadSecrets() {
+    try {
+      var raw = window.sessionStorage.getItem(SESSION_KEY);
+      return raw ? (JSON.parse(raw) || {}) : {};
+    } catch (e) { return {}; }
+  }
+  function saveSecrets(v) {
+    try { window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch (e) {}
+  }
+
+  function loadOpts() {
+    try {
+      var raw = window.sessionStorage.getItem(OPT_KEY);
+      var saved = raw ? (JSON.parse(raw) || {}) : {};
+      var out = {};
+      Object.keys(DEFAULT_OPTS).forEach(function(k) {
+        out[k] = (typeof saved[k] === 'boolean') ? saved[k] : DEFAULT_OPTS[k];
+      });
+      return out;
+    } catch (e) { return Object.assign({}, DEFAULT_OPTS); }
+  }
+  function saveOpts(v) {
+    try { window.sessionStorage.setItem(OPT_KEY, JSON.stringify(v)); } catch (e) {}
+  }
+
+  // Strip lines bracketed by `# >>>OPT:NAME` / `# <<<OPT:NAME` for each disabled component on the
+  // given node ('1' or '2'). Then strip any remaining marker lines. Non-greedy match handles
+  // nested wrappers; running every component covers both layers without depending on iteration order.
+  function applyOpts(text, nodeNum, opts) {
+    COMPONENTS.forEach(function(name) {
+      var key = nodeNum + '.' + name;
+      if (opts.hasOwnProperty(key) && opts[key] === false) {
+        var re = new RegExp('^# >>>OPT:' + name + '[^\\n]*\\n[\\s\\S]*?^# <<<OPT:' + name + '[^\\n]*\\n', 'gm');
+        text = text.replace(re, '');
+      }
+    });
+    return text.replace(/^# (?:>>>|<<<)OPT:[a-zA-Z0-9_]+[^\n]*\n/gm, '');
+  }
+
+  // Pull worksheet values from localStorage (same key the network worksheet uses)
+  function loadWorksheet() {
+    try {
+      var raw = window.localStorage.getItem('dgx-ai-stack-worksheet');
+      return raw ? (JSON.parse(raw) || {}) : {};
+    } catch (e) { return {}; }
+  }
+
+  function allValues() {
+    var v = {};
+    var ws = loadWorksheet();
+    var sec = loadSecrets();
+    Object.keys(ws).forEach(function(k) { v[k] = ws[k]; });
+    Object.keys(sec).forEach(function(k) { v[k] = sec[k]; });
+    return v;
+  }
+
+  function buildPattern(values) {
+    // include every key we know about, longest first
+    var allKeys = [
+      'YOUR_NODE1_MGMT_IP','YOUR_NODE1_DAC_IP','YOUR_NODE1_TAILSCALE_IP','YOUR_NODE1_TS_AUTHKEY',
+      'YOUR_NODE2_MGMT_IP','YOUR_NODE2_DAC_IP','YOUR_NODE2_TAILSCALE_IP','YOUR_NODE2_TS_AUTHKEY',
+      'YOUR_USERNAME','YOUR_TAILNET_HOSTNAME','YOUR_HF_TOKEN','YOUR_MASTER_KEY','YOUR_CLIENT_MASTER_KEY',
+      'CLIENT_TAILNET_HOSTNAME',
+      'HF_MODEL_REPO','HF_MODEL_DIR','MODEL_RECIPE','SERVED_MODEL_NAME'
+    ];
+    allKeys.sort(function(a,b){ return b.length - a.length; });
+    return new RegExp('\\b(' + allKeys.join('|') + ')\\b', 'g');
+  }
+
+  function substituteText(orig, values) {
+    var pat = buildPattern(values);
+    return orig.replace(pat, function(m) {
+      var v = values[m];
+      return (v && v.trim()) ? v : m;
+    });
+  }
+
+  function renderScripts() {
+    var values = allValues();
+    var opts = loadOpts();
+    var pat = buildPattern(values);
+    var secretSet = {};
+    SECRET_KEYS.forEach(function(k){ secretSet[k] = true; });
+
+    [[script1, origScript1, '1'], [script2, origScript2, '2']].forEach(function(triple) {
+      var el = triple[0], orig = triple[1], nodeNum = triple[2];
+      var stripped = applyOpts(orig, nodeNum, opts);
+      var html = escapeHtml(stripped).replace(pat, function(m) {
+        var v = values[m];
+        if (v && v.trim()) {
+          var cls = secretSet[m] ? 'placeholder-secret' : 'placeholder-filled';
+          return '<span class="' + cls + '" title="from worksheet (was ' + m + ')">' + escapeHtml(v) + '</span>';
+        }
+        return '<span class="placeholder-unfilled" title="not set in worksheet">' + m + '</span>';
+      });
+      el.innerHTML = html;
+      el.dataset.substituted = substituteText(stripped, values);
+    });
+
+    var status = document.getElementById('tldr-status');
+    if (status) {
+      var sec = loadSecrets();
+      var filled = SECRET_KEYS.filter(function(k){ return sec[k] && sec[k].trim(); }).length;
+      var enabled = Object.keys(DEFAULT_OPTS).filter(function(k){ return opts[k]; }).length;
+      status.textContent = 'Secrets ' + filled + '/' + SECRET_KEYS.length + ' · layers ' + enabled + '/' + Object.keys(DEFAULT_OPTS).length + ' enabled';
+      status.classList.toggle('saved', filled > 0);
+    }
+  }
+
+  function readOptForm() {
+    var v = {};
+    document.querySelectorAll('input[data-opt]').forEach(function(input) {
+      v[input.dataset.opt] = input.checked;
+    });
+    return v;
+  }
+
+  function writeOptForm(opts) {
+    document.querySelectorAll('input[data-opt]').forEach(function(input) {
+      if (typeof opts[input.dataset.opt] === 'boolean') input.checked = opts[input.dataset.opt];
+    });
+  }
+
+  function readSecretForm() {
+    var v = {};
+    document.querySelectorAll('input[data-secret-key]').forEach(function(input) {
+      v[input.dataset.secretKey] = input.value;
+    });
+    return v;
+  }
+
+  function writeSecretForm(values) {
+    document.querySelectorAll('input[data-secret-key]').forEach(function(input) {
+      var v = values[input.dataset.secretKey];
+      if (typeof v === 'string' && v) input.value = v;
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    writeSecretForm(loadSecrets());
+    writeOptForm(loadOpts());
+    renderScripts();
+
+    document.querySelectorAll('input[data-secret-key]').forEach(function(input) {
+      input.addEventListener('input', function() {
+        saveSecrets(readSecretForm());
+        renderScripts();
+      });
+    });
+
+    document.querySelectorAll('input[data-opt]').forEach(function(input) {
+      input.addEventListener('change', function() {
+        saveOpts(readOptForm());
+        renderScripts();
+      });
+    });
+
+    // Re-render the TL;DR scripts whenever the network worksheet inputs change
+    document.querySelectorAll('.worksheet input[data-key]').forEach(function(input) {
+      input.addEventListener('input', function() { setTimeout(renderScripts, 0); });
+    });
+  });
+
+  window.tldrCopy = function(which, btn) {
+    var el = which === 'spark-01' ? script1 : script2;
+    var text = el.dataset.substituted || el.textContent;
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = 'copied!';
+      btn.classList.add('copied');
+      setTimeout(function() { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  };
+
+  window.tldrDownload = function(which) {
+    var el = which === 'spark-01' ? script1 : script2;
+    var text = el.dataset.substituted || el.textContent;
+    var blob = new Blob([text], { type: 'text/x-shellscript' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'setup-' + which + '.sh';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function() {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 0);
+  };
+
+  window.tldrClearSecrets = function() {
+    if (!confirm('Clear the TL;DR secrets from this browser session? Network worksheet values are kept.')) return;
+    try { window.sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
+    document.querySelectorAll('input[data-secret-key]').forEach(function(input) {
+      // keep the default-valued model/recipe inputs
+      if (input.defaultValue) { input.value = input.defaultValue; }
+      else { input.value = ''; }
+    });
+    saveSecrets(readSecretForm());
+    renderScripts();
   };
 })();
 

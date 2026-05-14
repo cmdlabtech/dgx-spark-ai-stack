@@ -1174,8 +1174,8 @@ model_list:
     model_info:
       supports_function_calling: true
       supports_tool_choice: true
-      max_context_window: 131072
-      max_input_tokens: 98304
+      max_context_window: 262144
+      max_input_tokens: 229376
       max_output_tokens: 8192
 
   # Opt-in reasoning — user selects this model explicitly for complex tasks.
@@ -1184,16 +1184,16 @@ model_list:
       model: openai/qwen3.5-122b
       api_base: http://localhost:8000/v1
       api_key: "not-needed"
-      max_tokens: 8192
+      max_tokens: 32768
       extra_body:
         chat_template_kwargs:
           enable_thinking: true
     model_info:
       supports_function_calling: true
       supports_tool_choice: true
-      max_context_window: 131072
-      max_input_tokens: 98304
-      max_output_tokens: 8192
+      max_context_window: 262144
+      max_input_tokens: 229376
+      max_output_tokens: 32768
 
 litellm_settings:
   verbose: true
@@ -1352,19 +1352,25 @@ model_list:
     model_info:
       supports_function_calling: true
       supports_tool_choice: true
+      max_context_window: 262144
+      max_input_tokens: 229376
+      max_output_tokens: 8192
 
   - model_name: Qwen3.5-122B-Reasoning
     litellm_params:
       model: openai/qwen3.5-122b
       api_base: http://YOUR_NODE1_DAC_IP:8000/v1
       api_key: "not-needed"
-      max_tokens: 8192
+      max_tokens: 32768
       extra_body:
         chat_template_kwargs:
           enable_thinking: true
     model_info:
       supports_function_calling: true
       supports_tool_choice: true
+      max_context_window: 262144
+      max_input_tokens: 229376
+      max_output_tokens: 32768
 
 litellm_settings:
   verbose: true
@@ -1512,7 +1518,7 @@ docker run -d \
         <tbody>
           <tr><td>API Base URL</td><td><code>http://host.docker.internal:8001/v1</code></td></tr>
           <tr><td>API Key</td><td>your master_key</td></tr>
-          <tr><td>Default model</td><td><code>qwen3.5-122b</code></td></tr>
+          <tr><td>Default model</td><td><code>Qwen3.5-122B-Non-Reasoning</code></td></tr>
           <tr><td>Memory</td><td>Toggle ON (Settings → Personalization)</td></tr>
         </tbody>
       </table>
@@ -1550,7 +1556,7 @@ docker run -d \
         <tbody>
           <tr><td>API Base URL</td><td><code>http://host.docker.internal:8001/v1</code> (client's LiteLLM)</td></tr>
           <tr><td>API Key</td><td>client's master_key</td></tr>
-          <tr><td>Default model</td><td><code>qwen3.5-122b</code></td></tr>
+          <tr><td>Default model</td><td><code>Qwen3.5-122B-Non-Reasoning</code></td></tr>
         </tbody>
       </table>
     </div>
@@ -1570,8 +1576,7 @@ Rules:
 - For coding: produce complete, working code — no placeholders or omissions
 - For reasoning: show your work clearly but efficiently — no repetition
 - If a question has a definitive answer, state it first then explain
-- Match response length to question complexity
-- To enable extended reasoning on a specific query, prefix with /think</code></pre>
+- Match response length to question complexity</code></pre>
     </div>
 
     <h3>Step 5b — All client services on sparky-02 at a glance</h3>

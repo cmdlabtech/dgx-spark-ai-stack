@@ -443,7 +443,7 @@
     <div class="stack-pills">
       <span class="pill blue">2× DGX Spark</span>
       <span class="pill blue">vLLM TP=2 · Ray</span>
-      <span class="pill blue">Qwen3.5-122B-A10B-int4-AutoRound</span>
+      <span class="pill blue">Qwen3.5-122B-A10B-FP8</span>
       <span class="pill">LiteLLM × 2</span>
       <span class="pill">Open WebUI × 2</span>
       <span class="pill">n8n × 2</span>
@@ -603,7 +603,7 @@
 
         <!-- Model -->
         <rect x="60" y="762" width="980" height="56" rx="6" class="vllm-rect" fill="#fffaf0"/>
-        <text class="title-text" x="550" y="782" text-anchor="middle" dominant-baseline="central">Intel/Qwen3.5-122B-A10B-int4-AutoRound — 256 GB unified memory pool</text>
+        <text class="title-text" x="550" y="782" text-anchor="middle" dominant-baseline="central">Qwen/Qwen3.5-122B-A10B-FP8 — 256 GB unified memory pool</text>
         <text class="sub-text" x="550" y="800" text-anchor="middle" dominant-baseline="central">bootstrap fallback: Qwen/Qwen3.6-35B-A3B-FP8</text>
 
         <!-- DAC link bar -->
@@ -825,7 +825,7 @@
       <li>Both parties have read and accepted the <a href="#trust-model">Trust model</a> section above</li>
       <li>Docker installed and enabled on both nodes: <code>sudo systemctl enable docker</code></li>
       <li>Your Linux user added to the <code>docker</code> group on both nodes: <code>sudo usermod -aG docker YOUR_USERNAME &amp;&amp; newgrp docker</code></li>
-      <li>200&nbsp;Gb/s DAC link between the two nodes (interface <code>enp1s0f0np0</code> on both, MTU 9216, point-to-point /30)</li>
+      <li>200GbE DAC cable between the two nodes (included in the dual-node DGX Spark bundle) — interface <code>enp1s0f0np0</code>, MTU 9216, point-to-point /30. NCCL is configured to use this interface for all tensor parallel all-reduce communication.</li>
       <li>Mgmt LAN reachability between both nodes (1&nbsp;GbE RJ45 with default routes)</li>
       <li>Passwordless SSH both directions (<code>spark-01 ↔ spark-02</code>) — required for the HF cache rsync in Step 01</li>
       <li>Mgmt-IP entries in <code>/etc/hosts</code> on both nodes so hostnames resolve to mgmt addresses, not the DAC IP (commands below)</li>
@@ -886,8 +886,8 @@ ps aux | grep -E "Xorg|gnome" | grep -v grep</code></pre>
         <tbody>
           <tr>
             <td><strong>Production (default)</strong></td>
-            <td><code>Intel/Qwen3.5-122B-A10B-int4-AutoRound</code></td>
-            <td>The intended daily driver — 122B / A10B MoE quantized with Intel AutoRound INT4. ~37&nbsp;GB resident per node, leaving ~34,720 tokens of KV cache capacity at gpu_memory_utilization=0.75. Steady-state throughput ~45&nbsp;tok/s at TP=2. 262K context window. Requires the <code>--tf5</code> build flag (adds AutoRound support).</td>
+            <td><code>Qwen/Qwen3.5-122B-A10B-FP8</code></td>
+            <td>The intended daily driver — 122B / A10B MoE, official Qwen FP8. ~61&nbsp;GB resident per node. Includes the Multi-Token Prediction (MTP) head used for speculative decoding. Steady-state throughput ~45&nbsp;tok/s at TP=2. 262K context window. Recipe: <code>qwen3.5-122b-fp8</code>.</td>
           </tr>
           <tr>
             <td>Bootstrap fallback</td>
@@ -922,7 +922,7 @@ ls /dev/infiniband/</code></pre>
     </div>
 
     <h3>Step 1b — Clone and build the image (spark-01)</h3>
-    <p>The build pulls the pre-built SM121a (Blackwell) wheels — no compilation required — and the helper script auto-copies the resulting image to <code>spark-02</code> over the DAC. The <code>--tf5</code> flag adds the AutoRound INT4 support that the production recipe needs. Total build time ~30 minutes (mostly image pull + cross-node copy).</p>
+    <p>The build pulls the pre-built SM121a (Blackwell) wheels — no compilation required — and the helper script auto-copies the resulting image to <code>spark-02</code> over the DAC. The <code>--tf5</code> flag is required for the container variant used by the production recipe. Total build time ~30 minutes (mostly image pull + cross-node copy).</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>git clone https://github.com/eugr/spark-vllm-docker.git
@@ -960,14 +960,14 @@ CONTAINER_HF_TOKEN=&lt;your_hf_token&gt;</code></pre>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code># Run as YOUR_USERNAME — not root
-HF_TOKEN=YOUR_HF_TOKEN hf download Intel/Qwen3.5-122B-A10B-int4-AutoRound \
-  --local-dir ~/.cache/huggingface/hub/models--Intel--Qwen3.5-122B-A10B-int4-AutoRound/
+HF_TOKEN=YOUR_HF_TOKEN hf download Qwen/Qwen3.5-122B-A10B-FP8 \
+  --local-dir ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-122B-A10B-FP8/
 
 # Bind explicitly to the local DAC IP so the rsync runs over enp1s0f0np0
 rsync -avP \
   -e "ssh -b YOUR_NODE1_DAC_IP" \
-  ~/.cache/huggingface/hub/models--Intel--Qwen3.5-122B-A10B-int4-AutoRound/ \
-  YOUR_NODE2_DAC_IP:~/.cache/huggingface/hub/models--Intel--Qwen3.5-122B-A10B-int4-AutoRound/</code></pre>
+  ~/.cache/huggingface/hub/models--Qwen--Qwen3.5-122B-A10B-FP8/ \
+  YOUR_NODE2_DAC_IP:~/.cache/huggingface/hub/models--Qwen--Qwen3.5-122B-A10B-FP8/</code></pre>
     </div>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
@@ -976,13 +976,32 @@ rsync -avP \
 
     <h3>Step 1e — Launch the cluster</h3>
     <p>The launch script reads <code>.env</code>, starts the head container on <code>spark-01</code>, SSHes into <code>spark-02</code> to start the worker container, and forms the Ray cluster. Both containers are started from the same image, so Ray versions are guaranteed to match.</p>
+    <p>The production recipe is at <code>~/spark-vllm-docker/recipes/qwen3.5-122b-fp8.yaml</code>. Key parameters baked into the recipe:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>model: Qwen/Qwen3.5-122B-A10B-FP8
+container: vllm-node-tf5
+max_model_len: 262144
+max_num_batched_tokens: 8192
+mods: mods/fix-qwen3.5-chat-template</code></pre>
+    </div>
+    <p>Additional flags passed to <code>vllm serve</code> by the recipe:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">text</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>--load-format fastsafetensors --enable-prefix-caching --enable-auto-tool-choice \
+--tool-call-parser qwen3_coder --reasoning-parser qwen3 --chat-template unsloth.jinja \
+-tp 2 --distributed-executor-backend ray \
+--speculative-config '{"method": "qwen3_next_mtp", "num_speculative_tokens": 1}' \
+--max-num-batched-tokens 8192 \
+--default-chat-template-kwargs '{"enable_thinking": false}'</code></pre>
+    </div>
+    <p>Launch with <code>gpu_memory_utilization</code> passed as a CLI override (the recipe default is overridden here):</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>cd ~/spark-vllm-docker
-./run-recipe.sh qwen3.5-122b-int4-autoround -d -- \
+./run-recipe.sh qwen3.5-122b-fp8 -d -- \
   --served-model-name qwen3.5-122b \
-  --gpu-memory-utilization 0.75 \
-  --default-chat-template-kwargs '{"enable_thinking": false}'</code></pre>
+  --gpu-memory-utilization 0.80</code></pre>
     </div>
     <p>The script starts the Ray head on <code>spark-01</code>, then SSHes into <code>spark-02</code> to start the worker. It waits until both GPUs register with the Ray cluster before starting <code>vllm serve</code>. Do not interrupt between head start and cluster formation — if you need to restart, stop both containers first (<code>docker stop vllm_node</code> on each node), then re-run the launch command on spark-01.</p>
     <p>What <code>run-recipe.sh</code> does automatically:</p>
@@ -990,8 +1009,12 @@ rsync -avP \
       <li>Sets <code>NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0</code> so NCCL pins to both RoCE twins.</li>
       <li>Passes <code>/dev/infiniband</code> devices into both containers (RDMA verbs + CM).</li>
       <li>Forms the Ray cluster (head on <code>spark-01</code>, worker on <code>spark-02</code>) and waits until both GPUs are registered before starting <code>vllm serve</code>.</li>
-      <li>Applies the <code>fix-qwen3.5-chat-template</code> mod and uses <code>fastsafetensors</code> for fast loader I/O.</li>
+      <li>Applies the <code>mods/fix-qwen3.5-chat-template</code> mod and uses <code>fastsafetensors</code> for fast loader I/O.</li>
     </ul>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <div><strong>Multi-Token Prediction (MTP) speculative decoding:</strong> The FP8 model includes an MTP head, which vLLM uses for speculative decoding. With <code>num_speculative_tokens: 1</code>, the model proposes one additional token per step and verifies it in the same forward pass. This reduces per-token latency noticeably during interactive use — particularly visible during reasoning/thinking phases. This capability is specific to the FP8 weights; it is not available with INT4 quantized variants of this model.</div>
+    </div>
     <p>Watch the launch:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
@@ -1032,7 +1055,7 @@ curl http://localhost:8000/v1/chat/completions \
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>nvidia-smi   # run on each node</code></pre>
     </div>
-    <p>You should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process on each node with roughly <strong>~37&nbsp;GB</strong> resident at the AutoRound INT4 weight footprint — leaving roughly ~34,720 tokens of KV cache capacity at gpu_memory_utilization=0.75 (2,170 blocks × 16 tokens).</p>
+    <p>You should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process on each node with roughly <strong>~61&nbsp;GB</strong> resident at the FP8 weight footprint — leaving headroom for KV cache at gpu_memory_utilization=0.80.</p>
 
     <h3>Step 1g — Systemd auto-start</h3>
     <p>Run only on <code>spark-01</code> — the cluster launcher SSHes into <code>spark-02</code> to bring up the worker. The 30-second <code>ExecStartPre</code> sleep gives <code>spark-02</code> time to finish booting and have Docker running before the head SSHes in.</p>
@@ -1040,7 +1063,7 @@ curl http://localhost:8000/v1/chat/completions \
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>sudo tee /etc/systemd/system/vllm-cluster.service &lt;&lt; 'EOF'
 [Unit]
-Description=vLLM Cluster - Qwen3.5-122B AutoRound
+Description=vLLM Cluster - Qwen3.5-122B FP8
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
@@ -1051,12 +1074,9 @@ RemainAfterExit=yes
 User=YOUR_USERNAME
 WorkingDirectory=/home/YOUR_USERNAME/spark-vllm-docker
 ExecStartPre=/bin/sleep 30
-ExecStart=/home/YOUR_USERNAME/spark-vllm-docker/run-recipe.sh \
-  qwen3.5-122b-int4-autoround -d -- \
+ExecStart=/home/YOUR_USERNAME/spark-vllm-docker/run-recipe.sh qwen3.5-122b-fp8 -d -- \
   --served-model-name qwen3.5-122b \
-  --gpu-memory-utilization 0.75 \
-  --default-chat-template-kwargs '{"enable_thinking": false}'
-ExecStop=/home/YOUR_USERNAME/spark-vllm-docker/launch-cluster.sh stop
+  --gpu-memory-utilization 0.80
 TimeoutStartSec=300
 TimeoutStopSec=60
 
@@ -1068,6 +1088,22 @@ sudo systemctl daemon-reload
 sudo systemctl enable vllm-cluster.service</code></pre>
     </div>
     <div class="verify">After a reboot of both nodes, <code>systemctl status vllm-cluster</code> on <code>spark-01</code> should show <code>active (exited)</code> and <code>curl http://localhost:8000/v1/models</code> should return the model list once warmup completes.</div>
+    <p>To manage the cluster after initial setup:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code># Start
+sudo systemctl start vllm-cluster.service
+
+# Stop
+sudo systemctl stop vllm-cluster.service
+
+# Restart (spark-02 worker restarts automatically via launch-cluster.sh)
+sudo systemctl restart vllm-cluster.service
+
+# Logs
+sudo journalctl -u vllm-cluster.service -f
+docker logs -f vllm_node</code></pre>
+    </div>
 
     <h3>Performance results</h3>
     <div class="table-wrap">
@@ -1075,14 +1111,14 @@ sudo systemctl enable vllm-cluster.service</code></pre>
         <thead><tr><th>Metric</th><th>Value</th><th>Notes</th></tr></thead>
         <tbody>
           <tr><td>Hardware</td><td>2× NVIDIA DGX Spark (GB10, 128&nbsp;GB unified memory each)</td><td>Total 256&nbsp;GB unified pool</td></tr>
-          <tr><td>Model</td><td><code>Intel/Qwen3.5-122B-A10B-int4-AutoRound</code></td><td>122B / A10B MoE, INT4 (AutoRound)</td></tr>
+          <tr><td>Model</td><td><code>Qwen/Qwen3.5-122B-A10B-FP8</code></td><td>122B / A10B MoE, FP8 (official Qwen)</td></tr>
           <tr><td>Network</td><td>200&nbsp;Gb/s DAC (QSFP) · NCCL over RoCE/RDMA</td><td><code>NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0</code></td></tr>
           <tr><td>Tensor parallel</td><td>TP=2 across both nodes</td><td>Ray-backed distributed executor</td></tr>
           <tr><td>First request (CUDA-graph warmup)</td><td>~20&nbsp;s</td><td>One-time cost per cold start</td></tr>
           <tr><td><strong>Steady-state throughput</strong></td><td><strong>~45&nbsp;tok/s</strong></td><td>Single-stream decode</td></tr>
           <tr><td>Context window</td><td>262,144 tokens</td><td>Full Qwen3.5 context retained</td></tr>
-          <tr><td>Memory per node</td><td>~37&nbsp;GB resident</td><td>Leaves ~91&nbsp;GB free per node for overhead</td></tr>
-          <tr><td>KV cache capacity</td><td>34,720 tokens</td><td>2,170 blocks × 16 tokens, gpu_memory_utilization=0.75</td></tr>
+          <tr><td>Memory per node</td><td>~61&nbsp;GB resident</td><td>FP8 weights; leaves remaining unified memory for KV cache at gpu_memory_utilization=0.80</td></tr>
+          <tr><td>Speculative decoding</td><td>MTP (<code>qwen3_next_mtp</code>)</td><td><code>num_speculative_tokens: 1</code> — reduces per-token latency during interactive use</td></tr>
           <tr><td>Previous (hand-built, NCCL over TCP)</td><td>~2–3&nbsp;tok/s</td><td>Same hardware, wrong transport</td></tr>
           <tr><td><strong>Improvement</strong></td><td><strong>~18×</strong></td><td>From correct NCCL RoCE configuration alone</td></tr>
         </tbody>
@@ -1131,7 +1167,7 @@ model_list:
       model: openai/qwen3.5-122b
       api_base: http://localhost:8000/v1
       api_key: "not-needed"
-      max_tokens: 32768
+      max_tokens: 8192
       extra_body:
         chat_template_kwargs:
           enable_thinking: false
@@ -1140,7 +1176,7 @@ model_list:
       supports_tool_choice: true
       max_context_window: 131072
       max_input_tokens: 98304
-      max_output_tokens: 32768
+      max_output_tokens: 8192
 
   # Opt-in reasoning — user selects this model explicitly for complex tasks.
   - model_name: Qwen3.5-122B-Reasoning
@@ -1148,7 +1184,7 @@ model_list:
       model: openai/qwen3.5-122b
       api_base: http://localhost:8000/v1
       api_key: "not-needed"
-      max_tokens: 32768
+      max_tokens: 8192
       extra_body:
         chat_template_kwargs:
           enable_thinking: true
@@ -1157,7 +1193,7 @@ model_list:
       supports_tool_choice: true
       max_context_window: 131072
       max_input_tokens: 98304
-      max_output_tokens: 32768
+      max_output_tokens: 8192
 
 litellm_settings:
   verbose: true
@@ -1309,7 +1345,7 @@ model_list:
       model: openai/qwen3.5-122b
       api_base: http://YOUR_NODE1_DAC_IP:8000/v1
       api_key: "not-needed"
-      max_tokens: 32768
+      max_tokens: 8192
       extra_body:
         chat_template_kwargs:
           enable_thinking: false
@@ -1322,7 +1358,7 @@ model_list:
       model: openai/qwen3.5-122b
       api_base: http://YOUR_NODE1_DAC_IP:8000/v1
       api_key: "not-needed"
-      max_tokens: 32768
+      max_tokens: 8192
       extra_body:
         chat_template_kwargs:
           enable_thinking: true
@@ -1854,8 +1890,8 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <ul class="validation-checklist">
       <li><strong>spark-01:</strong> <code>docker exec vllm_node ray status</code> shows <strong>2 nodes</strong> and <strong>2.0/2.0 GPU</strong>, with both DAC IPs (<code>YOUR_NODE1_DAC_IP</code> and <code>YOUR_NODE2_DAC_IP</code>) listed.</li>
       <li><strong>spark-01:</strong> <code>docker logs vllm_node | grep "NCCL INFO NET/IB"</code> shows both <code>rocep1s0f0</code> and <code>roceP2p1s0f0</code> — NCCL is on RoCE/RDMA, not TCP sockets.</li>
-      <li><strong>spark-01:</strong> <code>nvidia-smi</code> Processes section shows a <code>vllm</code> / <code>RayWorkerWrapper</code> at ~37&nbsp;GB (122B AutoRound INT4). The <code>--query-gpu=memory.used</code> / <code>memory.total</code> fields return <code>[N/A]</code> on GB10 — expected, use the Processes section instead.</li>
-      <li><strong>spark-02:</strong> <code>nvidia-smi</code> Processes section shows a <code>vllm</code> / <code>RayWorkerWrapper</code> at ~37&nbsp;GB.</li>
+      <li><strong>spark-01:</strong> <code>nvidia-smi</code> Processes section shows a <code>vllm</code> / <code>RayWorkerWrapper</code> at ~61&nbsp;GB (122B FP8). The <code>--query-gpu=memory.used</code> / <code>memory.total</code> fields return <code>[N/A]</code> on GB10 — expected, use the Processes section instead.</li>
+      <li><strong>spark-02:</strong> <code>nvidia-smi</code> Processes section shows a <code>vllm</code> / <code>RayWorkerWrapper</code> at ~61&nbsp;GB.</li>
       <li><strong>spark-01:</strong> <code>curl http://localhost:8000/v1/models</code> returns <code>qwen3.5-122b</code> (vLLM head). A streamed completion runs at ~45&nbsp;tok/s steady state.</li>
     </ul>
 
@@ -1961,7 +1997,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <h3>spark-02 — client node (separate ownership)</h3>
     <div class="file-tree">
       <span class="dir">~/.cache/huggingface/hub/</span>       <span class="comment"># model weights rsync'd from spark-01 over DAC</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;└── models--Intel--Qwen3.5-122B-A10B-int4-AutoRound/<br><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;└── models--Qwen--Qwen3.5-122B-A10B-FP8/<br><br>
       <span class="dir">~/sparky-ai-stack/</span><br>
       ├── litellm-config.yaml         <span class="comment"># CLIENT LiteLLM — client's master_key, points DAC → vLLM</span><br>
       ├── n8n.yml                     <span class="comment"># compose for client's n8n</span><br>
@@ -2008,7 +2044,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">NVFP4 model stalls silently after worker spawn (37&nbsp;GB allocated, no further progress)</div>
       <div class="issue-sym"><span>Symptom</span><span>An NVFP4 checkpoint (e.g. <code>Sehyo/Qwen3.5-122B-A10B-NVFP4</code>) loads weights to ~37&nbsp;GB on both nodes, the worker registers with Ray, and then everything stops. No errors, no progress, no completion of engine init.</span></div>
       <div class="issue-sym"><span>Cause</span><span>NVFP4 quantization is currently <strong>single-node only</strong> on DGX Spark. Multi-node NVFP4 fails at cluster launch in both <code>eugr/spark-vllm-docker</code> (the recipe is marked <code>solo_only: true</code>) and <code>vllm/vllm-openai:cu130-nightly</code>. The <code>Sehyo/Qwen3.5-122B-A10B-NVFP4</code> checkpoint additionally has weight-name mismatches with newer vLLM fused Mamba layer names.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use <code>Intel/Qwen3.5-122B-A10B-int4-AutoRound</code> for multi-node inference (Step 01 production model). Do not attempt NVFP4 with TP=2 multi-node until community support is confirmed.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use <code>Qwen/Qwen3.5-122B-A10B-FP8</code> for multi-node inference (Step 01 production model). Do not attempt NVFP4 with TP=2 multi-node until community support is confirmed.</span></div>
     </div>
 
     <div class="issue">
@@ -2036,7 +2072,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">Worker can't reach head — Ray GCS connection refused</div>
       <div class="issue-sym"><span>Symptom</span><span>Worker logs (<code>docker logs vllm_node</code> on spark-02) print "ConnectionError: ... 198.51.100.1:6379" continuously and never advance.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the head container hasn't started, (b) <code>LOCAL_IP</code> on the head's <code>.env</code> isn't the DAC IP so Ray bound to the wrong interface, or (c) a firewall blocks port 6379 over the DAC.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>On spark-01: <code>docker exec vllm_node ray status</code> — if Ray isn't running, restart with <code>./run-recipe.sh qwen3.5-122b-int4-autoround -d -- …</code>. Confirm <code>LOCAL_IP=YOUR_NODE1_DAC_IP</code> in <code>~/spark-vllm-docker/.env</code> on the head. From spark-02: <code>nc -zv YOUR_NODE1_DAC_IP 6379</code> should connect; if not, check firewall rules on the DAC interface.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>On spark-01: <code>docker exec vllm_node ray status</code> — if Ray isn't running, restart with <code>./run-recipe.sh qwen3.5-122b-fp8 -d -- …</code>. Confirm <code>LOCAL_IP=YOUR_NODE1_DAC_IP</code> in <code>~/spark-vllm-docker/.env</code> on the head. From spark-02: <code>nc -zv YOUR_NODE1_DAC_IP 6379</code> should connect; if not, check firewall rules on the DAC interface.</span></div>
     </div>
 
     <div class="issue">
@@ -2050,7 +2086,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title"><code>nvidia-smi memory.used</code> returns <code>[N/A]</code> on GB10</div>
       <div class="issue-sym"><span>Symptom</span><span><code>nvidia-smi --query-gpu=memory.used,memory.total --format=csv</code> returns <code>[N/A]</code> in both fields. Memory monitoring scripts that depend on these fields silently report nothing.</span></div>
       <div class="issue-sym"><span>Cause</span><span>GB10 (Grace Blackwell) uses unified memory. The classic <code>memory.used</code> / <code>memory.total</code> NVML fields are not populated on this hardware.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section. With the 122B AutoRound INT4 model loaded, you should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process at roughly <strong>~37&nbsp;GB</strong> per node — leaving roughly ~34,720 tokens of KV cache capacity at gpu_memory_utilization=0.75. The 35B FP8 bootstrap model lands closer to <strong>~97&nbsp;GB</strong>.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use plain <code>nvidia-smi</code> and read the <strong>Processes</strong> section. With the 122B FP8 model loaded, you should see a <code>vllm</code> / <code>RayWorkerWrapper</code> process at roughly <strong>~61&nbsp;GB</strong> per node. The 35B FP8 bootstrap model lands closer to <strong>~97&nbsp;GB</strong>.</span></div>
     </div>
 
     <div class="issue">
@@ -2105,7 +2141,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
       <div class="issue-title">235B FP8 model OOM on the 256&nbsp;GB cluster</div>
       <div class="issue-sym"><span>Symptom</span><span>Loading <code>Qwen/Qwen3-235B-A22B-FP8</code> at TP=2 fails. Ray kills the worker with an <code>OutOfMemoryError</code> at the ~95% memory threshold during weight loading; the head logs report a placement-group failure shortly after.</span></div>
       <div class="issue-sym"><span>Cause</span><span>235B at FP8 is ~235&nbsp;GB of weights total. Split across TP=2 that's ~117.5&nbsp;GB per node — and only ~121&nbsp;GB is usable per node, leaving no room for KV cache or OS overhead.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use a 4-bit quantization instead. A 235B INT4 model is ~117&nbsp;GB total ≈ ~58&nbsp;GB per node and fits with comfortable headroom. Or use a smaller model — the 122B AutoRound INT4 above is the recommended production choice.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use a smaller model — the 122B FP8 production model uses ~61&nbsp;GB per node and fits comfortably with headroom for KV cache. The 235B FP8 does not fit at TP=2 on this hardware.</span></div>
     </div>
 
     <div class="issue">
@@ -2148,7 +2184,7 @@ docker compose -f ~/sparky-ai-stack/n8n.yml up -d</code></pre>
     <div class="issue">
       <div class="issue-title">NVFP4 quantization is single-node only on DGX Spark</div>
       <div class="issue-sym"><span>Limitation</span><span>NVFP4 multi-node cluster mode is not supported as of vLLM <code>cu130-nightly</code> / eugr <code>spark-vllm-docker</code>. The NVFP4 recipe is marked <code>solo_only: true</code> in <code>eugr/spark-vllm-docker</code>, and <code>vllm/vllm-openai:cu130-nightly</code> fails at cluster launch when NVFP4 is selected with TP=2 multi-node.</span></div>
-      <div class="issue-fix"><span>Workaround</span><span>Do not attempt NVFP4 with TP=2 multi-node until community support is confirmed. Use <code>Intel/Qwen3.5-122B-A10B-int4-AutoRound</code> for multi-node inference — the Step 01 production recipe is built around this. See the NVFP4 stall entry in <a href="#issues">Cluster issues</a> for the symptom on the bad path.</span></div>
+      <div class="issue-fix"><span>Workaround</span><span>Do not attempt NVFP4 with TP=2 multi-node until community support is confirmed. Use <code>Qwen/Qwen3.5-122B-A10B-FP8</code> for multi-node inference — the Step 01 production recipe is built around this. See the NVFP4 stall entry in <a href="#issues">Cluster issues</a> for the symptom on the bad path.</span></div>
     </div>
     <div class="issue">
       <div class="issue-title">LiteLLM port already in use</div>

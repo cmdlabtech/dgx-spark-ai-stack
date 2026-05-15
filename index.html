@@ -2728,6 +2728,10 @@ sudo ufw enable</code></pre>
   <div class="step" id="step7">
     <div class="step-header"><span class="step-num">STEP 07</span><h2>Your Hermes Agent on spark-01</h2></div>
     <p>Hermes is your autonomous agent layer (skills, memory, cron, gateways). It runs on <strong>your</strong> node and talks to <strong>your</strong> LiteLLM. The client does not get a Hermes — they have their own Open WebUI and n8n on <code>spark-02</code>; if they want an agent they install their own.</p>
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <span><strong>Not Ollama.</strong> The official NVIDIA DGX reference playbook for Hermes assumes Ollama at <code>localhost:11434</code>. This stack does not run Ollama — Hermes points at LiteLLM at <code>localhost:8001</code> as a custom OpenAI-compatible endpoint. Ignore any Ollama references in the NVIDIA guide; the wizard answers in this step are the correct ones for this stack.</span>
+    </div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — install</h4>
     <div class="callout warning">
@@ -2791,7 +2795,7 @@ hermes --version</code></pre>
           <tr><td><code>~/.hermes/config.yaml</code></td><td>Main config — model, endpoint, providers</td></tr>
           <tr><td><code>~/.hermes/.env</code></td><td>API keys and gateway tokens</td></tr>
           <tr><td><code>~/.hermes/SOUL.md</code></td><td>Agent persona/tone — hot-reloaded each message, no restart needed</td></tr>
-          <tr><td><code>~/.hermes/skills/</code></td><td>Persistent skill documents (agentskills.io format)</td></tr>
+          <tr><td><code>~/.hermes/skills/</code></td><td>Persistent skill documents (agentskills.io format) — bundled skills seeded here automatically on install</td></tr>
           <tr><td><code>~/.hermes/memories/</code></td><td>Long-term memory store</td></tr>
           <tr><td><code>~/.hermes/sessions/</code></td><td>Conversation session state</td></tr>
           <tr><td><code>~/.hermes/logs/</code></td><td>Gateway and agent logs</td></tr>

@@ -4075,7 +4075,7 @@ document.querySelectorAll('[id]').forEach(el => observer.observe(el));
   var KEY = 'dgx-theme';
   var stored = null;
   try { stored = localStorage.getItem(KEY); } catch (e) {}
-  var initial = stored || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  var initial = stored || 'dark';
   document.documentElement.setAttribute('data-theme', initial);
   window.toggleTheme = function() {
     var current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';

@@ -469,7 +469,7 @@
   [data-theme="dark"] svg text[fill="#16a34a"] { fill: var(--green); }
   [data-theme="dark"] svg line[stroke="#ea580c"] { stroke: #fb923c; }
 
-  @media (max-width: 1100px) {
+  @media (max-width: 860px) {
     .tldr-grid { grid-template-columns: 1fr; }
   }
 
@@ -1043,11 +1043,6 @@
       <li>When both scripts return, run <code>hermes setup</code> interactively on spark-01 — the wizard prompts for the Telegram bot token and user ID, so it can't be safely scripted.</li>
       <li>Apply the Tailscale ACLs from Step 06 in each owner's admin console.</li>
     </ol>
-
-    <div class="callout note" style="margin:0 0 14px;">
-      <span class="callout-icon">ℹ</span>
-      <div><strong>Curl-from-gist pattern (optional).</strong> If you'd rather not <code>scp</code> the scripts, click <em>download</em>, push the file to a private gist or your own host, then on each node: <code>curl -fsSL https://&lt;your-host&gt;/setup-spark-01.sh | bash</code>. The downloaded scripts have the worksheet values baked in, so anyone who can read the URL can also read your secrets — use a one-time gist or self-host behind auth, and rotate the master keys after the run.</div>
-    </div>
 
     <div class="tldr-grid">
       <div class="tldr-col">
@@ -1764,6 +1759,11 @@ DONE
 </code></pre>
         </div>
       </div>
+    </div>
+
+    <div class="callout note" style="margin:14px 0 0;">
+      <span class="callout-icon">ℹ</span>
+      <div><strong>Curl-from-gist pattern (optional).</strong> If you'd rather not <code>scp</code> the scripts, click <em>download</em>, push the file to a private gist or your own host, then on each node: <code>curl -fsSL https://&lt;your-host&gt;/setup-spark-01.sh | bash</code>. The downloaded scripts have the worksheet values baked in, so anyone who can read the URL can also read your secrets — use a one-time gist or self-host behind auth, and rotate the master keys after the run.</div>
     </div>
   </div>
 

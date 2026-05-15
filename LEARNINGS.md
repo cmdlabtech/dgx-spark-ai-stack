@@ -1,0 +1,15 @@
+## Hermes Agent installer (NousResearch, 2026-05)
+- Installer script: https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh
+- Python runtime: uv manages Python 3.11 venv at ~/.hermes/hermes-agent/venv/
+- Node.js: 22 LTS, downloaded to ~/.hermes/node/, symlinked to ~/.local/bin/
+- Submodules: mini-swe-agent (terminal tools), tinker-atropos (RL skill training)
+- System deps installed via apt: ripgrep, ffmpeg
+- Config layout: ~/.hermes/config.yaml, ~/.hermes/.env, ~/.hermes/SOUL.md (all top-level)
+- Skills: bundled skills seeded to ~/.hermes/skills/ via skills_sync.py on install
+- hermes CLI: ~/.hermes/hermes-agent/venv/bin/hermes → symlinked to ~/.local/bin/hermes
+- Gateway: systemd service (hermes-gateway.service) — `hermes gateway install --system`
+- Update: `hermes update` pulls latest, restarts gateway
+- SOUL.md: hot-reloaded per message, no restart needed
+- This stack does NOT use Ollama — Hermes points at LiteLLM :8001 as custom OpenAI endpoint
+- NVIDIA DGX playbook for Hermes assumes Ollama :11434 — ignore for this stack
+- `hermes mcp test <server-name>` is canonical for verifying MCP server connectivity

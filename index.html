@@ -563,7 +563,7 @@
     <h2>Architecture</h2>
     <p style="margin:0 0 16px;font-size:13.5px;color:var(--text2);">Two physically separate DGX Spark nodes share a single tensor-parallel vLLM cluster (TP=2 over Ray on a 200&nbsp;Gb/s DAC link) — but each node runs its own independent application stack owned by a different party. The diagram shows three logical layers: <strong>application stacks</strong> (top, separate per owner), <strong>LiteLLM proxies</strong> (middle, one per side, separate keys and logs), and the <strong>shared compute pool</strong> (bottom, TP=2 across both nodes, served by the vLLM head on <code>spark-01:8000</code>). Tailscale sits as a separate overlay on each node — the DAC link is its own private hardware and does not traverse Tailscale.</p>
     <div class="diagram-wrap">
-      <svg width="100%" viewBox="0 0 1100 940" role="img" xmlns="http://www.w3.org/2000/svg" aria-labelledby="arch-desc">
+      <svg width="100%" viewBox="0 0 1100 870" role="img" xmlns="http://www.w3.org/2000/svg" aria-labelledby="arch-desc">
         <desc id="arch-desc">Two-layer split-trust architecture. Top: two independent application stacks. Left = spark-01 (your node) with Your Open WebUI, Your n8n, Your Hermes, and Your LiteLLM, on your Tailscale tailnet. Right = spark-02 (client node) with Client Open WebUI, Client n8n, and Client LiteLLM, on a separate client Tailscale tailnet. Both LiteLLM proxies feed into a single shared compute pool below: vLLM head (Ray master, TP rank 0) on spark-01:8000, vLLM Ray worker (TP rank 1) on spark-02, the Qwen model in 256 GB unified memory, connected via the DAC link (200 Gb/s, enp1s0f0np0, 198.51.100.0/30). Your LiteLLM calls vLLM over localhost:8000; client's LiteLLM calls it over the DAC at 198.51.100.1:8000. NCCL collectives between head and worker flow on the DAC. Tailscale overlays carry application traffic only; the DAC is private physical hardware not routed through either tailnet.</desc>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -671,51 +671,51 @@
         <text class="sub-text" x="825" y="354" text-anchor="middle" dominant-baseline="central" fill="#16a34a">↑ from client apps   ↓ to shared vLLM</text>
 
         <!-- ============ Arrows from each LiteLLM down to the shared pool ============ -->
-        <!-- Your LiteLLM bottom (y=378) → vLLM head top (y=566), with a label pill in the gap -->
-        <line x1="284" y1="378" x2="284" y2="566" class="arrow-line" marker-end="url(#arrow)"/>
-        <rect x="220" y="468" width="128" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
-        <text x="284" y="483" text-anchor="middle" class="mono-text" dominant-baseline="central">localhost:8000</text>
+        <!-- Your LiteLLM bottom (y=378) → vLLM head top (y=496), with a label pill in the gap -->
+        <line x1="284" y1="378" x2="284" y2="496" class="arrow-line" marker-end="url(#arrow)"/>
+        <rect x="220" y="426" width="128" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
+        <text x="284" y="437" text-anchor="middle" class="mono-text" dominant-baseline="central">localhost:8000</text>
 
-        <!-- Client LiteLLM bottom (y=378) → vLLM head top (y=566), with DAC label pill -->
-        <line x1="825" y1="378" x2="825" y2="566" class="arrow-line" marker-end="url(#arrow)"/>
-        <rect x="715" y="468" width="220" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
-        <text x="825" y="483" text-anchor="middle" class="mono-text" dominant-baseline="central">198.51.100.1:8000 (over DAC)</text>
+        <!-- Client LiteLLM bottom (y=378) → vLLM head top (y=496), with DAC label pill -->
+        <line x1="825" y1="378" x2="825" y2="496" class="arrow-line" marker-end="url(#arrow)"/>
+        <rect x="715" y="426" width="220" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
+        <text x="825" y="437" text-anchor="middle" class="mono-text" dominant-baseline="central">198.51.100.1:8000 (over DAC)</text>
 
         <!-- ============ Shared compute pool ============ -->
-        <rect x="20" y="510" width="1060" height="420" rx="10" class="pool-boundary"/>
-        <rect x="32" y="502" width="270" height="22" rx="4" fill="#fff7ed" stroke="#fdba74" stroke-width="1"/>
-        <text x="40" y="517" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">SHARED COMPUTE POOL · TP=2 over Ray</text>
+        <rect x="20" y="440" width="1060" height="420" rx="10" class="pool-boundary"/>
+        <rect x="32" y="432" width="270" height="22" rx="4" fill="#fff7ed" stroke="#fdba74" stroke-width="1"/>
+        <text x="40" y="447" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">SHARED COMPUTE POOL · TP=2 over Ray</text>
 
         <!-- Pool intro text -->
-        <text x="550" y="548" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412" font-weight="500">single vLLM endpoint at 198.51.100.1:8000 — both LiteLLM proxies talk to it</text>
+        <text x="550" y="478" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412" font-weight="500">single vLLM endpoint at 198.51.100.1:8000 — both LiteLLM proxies talk to it</text>
 
         <!-- vLLM head -->
-        <rect x="60" y="566" width="980" height="76" rx="6" class="vllm-rect"/>
-        <text class="title-text" x="550" y="588" text-anchor="middle" dominant-baseline="central">vLLM head (Ray master) · TP rank 0 · spark-01:8000 · :6379 (Ray GCS)</text>
-        <text class="sub-text" x="550" y="608" text-anchor="middle" dominant-baseline="central">--tensor-parallel-size 2 · --distributed-executor-backend ray</text>
-        <text class="mono-text" x="550" y="626" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.1 · NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 · GPU 0</text>
+        <rect x="60" y="496" width="980" height="76" rx="6" class="vllm-rect"/>
+        <text class="title-text" x="550" y="518" text-anchor="middle" dominant-baseline="central">vLLM head (Ray master) · TP rank 0 · spark-01:8000 · :6379 (Ray GCS)</text>
+        <text class="sub-text" x="550" y="538" text-anchor="middle" dominant-baseline="central">--tensor-parallel-size 2 · --distributed-executor-backend ray</text>
+        <text class="mono-text" x="550" y="556" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.1 · NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 · GPU 0</text>
 
         <!-- vLLM worker -->
-        <rect x="60" y="664" width="980" height="76" rx="6" class="vllm-rect"/>
-        <text class="title-text" x="550" y="686" text-anchor="middle" dominant-baseline="central">vLLM Ray worker · TP rank 1 · spark-02 (no API listener)</text>
-        <text class="sub-text" x="550" y="706" text-anchor="middle" dominant-baseline="central">processes tensor activations only — no readable text</text>
-        <text class="mono-text" x="550" y="724" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.2 · NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 · GPU 1</text>
+        <rect x="60" y="594" width="980" height="76" rx="6" class="vllm-rect"/>
+        <text class="title-text" x="550" y="616" text-anchor="middle" dominant-baseline="central">vLLM Ray worker · TP rank 1 · spark-02 (no API listener)</text>
+        <text class="sub-text" x="550" y="636" text-anchor="middle" dominant-baseline="central">processes tensor activations only — no readable text</text>
+        <text class="mono-text" x="550" y="654" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.2 · NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 · GPU 1</text>
 
         <!-- NCCL connector between head and worker (drawn outside boxes, on right) -->
-        <path d="M 1050 604 C 1080 604, 1080 702, 1050 702" stroke="#ea580c" stroke-width="3" fill="none"/>
-        <text x="1075" y="649" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#9a3412">NCCL</text>
-        <text x="1075" y="662" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">↕</text>
+        <path d="M 1050 534 C 1080 534, 1080 632, 1050 632" stroke="#ea580c" stroke-width="3" fill="none"/>
+        <text x="1075" y="579" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#9a3412">NCCL</text>
+        <text x="1075" y="592" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">↕</text>
 
         <!-- Model -->
-        <rect x="60" y="762" width="980" height="56" rx="6" class="vllm-rect" fill="#fffaf0"/>
-        <text class="title-text" x="550" y="782" text-anchor="middle" dominant-baseline="central">Qwen/Qwen3.5-122B-A10B-FP8 — 256 GB unified memory pool</text>
-        <text class="sub-text" x="550" y="800" text-anchor="middle" dominant-baseline="central">bootstrap fallback: Qwen/Qwen3.6-35B-A3B-FP8</text>
+        <rect x="60" y="692" width="980" height="56" rx="6" class="vllm-rect" fill="#fffaf0"/>
+        <text class="title-text" x="550" y="712" text-anchor="middle" dominant-baseline="central">Qwen/Qwen3.5-122B-A10B-FP8 — 256 GB unified memory pool</text>
+        <text class="sub-text" x="550" y="730" text-anchor="middle" dominant-baseline="central">bootstrap fallback: Qwen/Qwen3.6-35B-A3B-FP8</text>
 
         <!-- DAC link bar -->
-        <rect x="60" y="838" width="980" height="74" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
-        <text x="550" y="860" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#9a3412">DAC · 200 Gb/s direct-attach copper</text>
-        <text x="550" y="880" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#9a3412">enp1s0f0np0 · MTU 9216 · 198.51.100.0/30</text>
-        <text x="550" y="898" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#9a3412">NCCL allreduce over RoCE/RDMA · Ray control · NOT routed through either tailnet · separate from mgmt LAN</text>
+        <rect x="60" y="768" width="980" height="74" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+        <text x="550" y="790" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#9a3412">DAC · 200 Gb/s direct-attach copper</text>
+        <text x="550" y="810" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#9a3412">enp1s0f0np0 · MTU 9216 · 198.51.100.0/30</text>
+        <text x="550" y="828" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#9a3412">NCCL allreduce over RoCE/RDMA · Ray control · NOT routed through either tailnet · separate from mgmt LAN</text>
 
       </svg>
     </div>
@@ -1388,6 +1388,7 @@ docker compose -f "$HOME/spark-ai-stack/n8n.yml" up -d
 # >>>OPT:hermes
 # ───── 16. Hermes Agent + Dashboard ─────
 log "hermes install (run 'hermes setup' interactively after this script)"
+sudo apt install -y ripgrep ffmpeg
 curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash || true
 
 # Pre-create state dirs.
@@ -1932,15 +1933,19 @@ rsync -avP \
 container: vllm-node-tf5
 max_model_len: 262144
 max_num_batched_tokens: 8192
-mods: mods/fix-qwen3.5-chat-template</code></pre>
+mods: mods/fix-qwen3.5-chat-template
+env:
+  HF_HUB_OFFLINE: 1
+  TRANSFORMERS_OFFLINE: 1
+</code></pre>
     </div>
+    <p>These vars prevent vLLM from attempting to reach <code>huggingface.co</code> on every container start. The model weights are already present in the local HF cache — DNS failures after a power outage or network interruption will not block startup.</p>
     <p>Additional flags passed to <code>vllm serve</code> by the recipe:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">text</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>--load-format fastsafetensors --enable-prefix-caching --enable-auto-tool-choice \
 --tool-call-parser qwen3_coder --reasoning-parser qwen3 --chat-template unsloth.jinja \
 -tp 2 --distributed-executor-backend ray \
---speculative-config '{"method": "qwen3_next_mtp", "num_speculative_tokens": 1}' \
 --max-num-batched-tokens 8192 \
 --default-chat-template-kwargs '{"enable_thinking": false}'</code></pre>
     </div>
@@ -1960,9 +1965,18 @@ mods: mods/fix-qwen3.5-chat-template</code></pre>
       <li>Forms the Ray cluster (head on <code>spark-01</code>, worker on <code>spark-02</code>) and waits until both GPUs are registered before starting <code>vllm serve</code>.</li>
       <li>Applies the <code>mods/fix-qwen3.5-chat-template</code> mod and uses <code>fastsafetensors</code> for fast loader I/O.</li>
     </ul>
-    <div class="callout note">
-      <span class="callout-icon">ℹ</span>
-      <div><strong>Multi-Token Prediction (MTP) speculative decoding:</strong> The FP8 model includes an MTP head, which vLLM uses for speculative decoding. With <code>num_speculative_tokens: 1</code>, the model proposes one additional token per step and verifies it in the same forward pass. This reduces per-token latency noticeably during interactive use — particularly visible during reasoning/thinking phases. This capability is specific to the FP8 weights; it is not available with INT4 quantized variants of this model.</div>
+    <div class="callout warning">
+      <span class="callout-icon">⚠️</span>
+      <div><strong>MTP speculative decoding — do not enable on this stack</strong><br><br>
+      The FP8 model includes a Multi-Token Prediction (MTP) head (<code>qwen3_next_mtp</code>), and vLLM supports it via <code>--speculative-config</code>. Do not enable it.<br><br>
+      As of vLLM v0.19.0, MTP speculative decoding is actively unstable on Qwen3.5-class models:
+      <ul style="margin:8px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px;">
+        <li>Clients sending <code>min_p</code> or <code>logit_bias</code> sampling parameters (default behavior in Open WebUI, Hermes, and most frontends) receive a hard HTTP 500 — "The min_p and logit_bias sampling parameters are not yet supported with speculative decoding" — breaking all inference across every client simultaneously.</li>
+        <li>Tool calls fail or produce malformed output every 3–4 calls under <code>qwen3_next_mtp</code>. (<a href="https://github.com/vllm-project/vllm/issues/35800" target="_blank" rel="noopener">vllm-project/vllm#35800</a>)</li>
+        <li>Long-sequence requests crash with illegal memory access.</li>
+        <li>Generation quality degrades across multi-turn sessions, collapsing to 0% draft acceptance rate.</li>
+      </ul>
+      <br>vLLM's own documentation acknowledges speculative decoding is not yet optimized for all sampling parameters. Omit <code>--speculative-config</code> entirely until upstream fixes these issues. Steady-state throughput without MTP is ~45&nbsp;tok/s on this hardware — the benefit does not justify the breakage.</div>
     </div>
     <p>Watch the launch:</p>
     <div class="code-block">
@@ -2067,7 +2081,7 @@ docker logs -f vllm_node</code></pre>
           <tr><td><strong>Steady-state throughput</strong></td><td><strong>~45&nbsp;tok/s</strong></td><td>Single-stream decode</td></tr>
           <tr><td>Context window</td><td>262,144 tokens</td><td>Full Qwen3.5 context retained</td></tr>
           <tr><td>Memory per node</td><td>~61&nbsp;GB resident</td><td>FP8 weights; leaves remaining unified memory for KV cache at gpu_memory_utilization=0.80</td></tr>
-          <tr><td>Speculative decoding</td><td>MTP (<code>qwen3_next_mtp</code>)</td><td><code>num_speculative_tokens: 1</code> — reduces per-token latency during interactive use</td></tr>
+          <tr><td>Speculative decoding</td><td>Disabled</td><td>MTP (<code>qwen3_next_mtp</code>) is not stable in vLLM v0.19.0 — causes HTTP 500 on requests with standard sampling params. See Step 1e warning.</td></tr>
           <tr><td>Previous (hand-built, NCCL over TCP)</td><td>~2–3&nbsp;tok/s</td><td>Same hardware, wrong transport</td></tr>
           <tr><td><strong>Improvement</strong></td><td><strong>~18×</strong></td><td>From correct NCCL RoCE configuration alone</td></tr>
         </tbody>
@@ -2716,11 +2730,28 @@ sudo ufw enable</code></pre>
     <p>Hermes is your autonomous agent layer (skills, memory, cron, gateways). It runs on <strong>your</strong> node and talks to <strong>your</strong> LiteLLM. The client does not get a Hermes — they have their own Open WebUI and n8n on <code>spark-02</code>; if they want an agent they install their own.</p>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — install</h4>
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <span><strong>Pre-install note:</strong> The Hermes installer will prompt to install <code>ripgrep</code> (fast file search, used by agent tools) and <code>ffmpeg</code> (required for TTS/voice message features) via <code>apt</code>. Both are safe to accept. If you are running unattended (e.g. piped from curl without a TTY), the installer skips the sudo prompt and logs a warning — install them manually first to avoid the fallback:
+        <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo apt install -y ripgrep ffmpeg</code></pre></div>
+      </span>
+    </div>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
 echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc
 hermes --version</code></pre>
+    </div>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <span>The installer provisions its own isolated runtime — no manual Python or Node.js setup required:<br><br>
+        <strong>Python 3.11</strong> &nbsp;Managed by <code>uv</code> (Astral). Virtual env at <code>~/.hermes/hermes-agent/venv/</code>. <code>uv</code> itself installs to <code>~/.local/bin/uv</code> and <code>~/.cargo/bin/uv</code>.<br>
+        <strong>Node.js 22</strong> &nbsp;&nbsp;&nbsp;Downloaded to <code>~/.hermes/node/</code> with symlinks in <code>~/.local/bin/</code>. Powers browser automation tools (Playwright-based).<br>
+        <strong>hermes CLI</strong> &nbsp;&nbsp;Symlinked to <code>~/.local/bin/hermes</code>. The <code>PATH</code> line added to <code>~/.bashrc</code> by the installer covers this — source it or open a new shell before running <code>hermes setup</code>.<br><br>
+        Submodules initialized automatically:<br>
+        <strong>mini-swe-agent</strong> &nbsp;&nbsp;&nbsp;Terminal/shell tool backend. Gives the agent the ability to run arbitrary shell commands on spark-01. Review what workspace access you grant in <code>hermes setup</code> — prefer limiting to <code>~/workspace</code>.<br>
+        <strong>tinker-atropos</strong> &nbsp;&nbsp;&nbsp;RL-based skill self-improvement backend. Lets Hermes refine its own skill files after completing complex tasks.
+      </span>
     </div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — setup wizard</h4>
@@ -2735,16 +2766,41 @@ hermes --version</code></pre>
           <tr><td>Setup type</td><td>Full setup</td></tr>
           <tr><td>Provider</td><td>Custom endpoint</td></tr>
           <tr><td>API base URL</td><td><code>http://localhost:8001/v1</code></td></tr>
-          <tr><td>API key</td><td>your master_key</td></tr>
-          <tr><td>Model</td><td><code>qwen3.5-122b</code></td></tr>
-          <tr><td>Terminal backend</td><td>Local</td></tr>
+          <tr><td>API key</td><td>A virtual key scoped to Hermes from the LiteLLM Admin UI (recommended — gives a per-service audit trail). The master key also works but grants unrestricted access.</td></tr>
+          <tr><td>Model</td><td><code>Qwen3.5-122B-Non-Reasoning</code> (the LiteLLM model alias — Hermes calls LiteLLM, which maps this to the vLLM backend)</td></tr>
+          <tr><td>Terminal backend</td><td>Local — set workspace to <code>~/workspace</code> (limits shell tool scope to a safe directory)</td></tr>
           <tr><td>Session reset mode</td><td>Inactivity + daily reset</td></tr>
-          <tr><td>Search provider</td><td>Firecrawl Self-Hosted (or skip)</td></tr>
+          <tr><td>Search provider</td><td>Skip (or Brave Search if configured — see Brave Search MCP section)</td></tr>
           <tr><td>Launch chat now?</td><td><code>n</code></td></tr>
         </tbody>
       </table>
     </div>
     <p>The wizard writes <code>~/.hermes/config.yaml</code>. <code>base_url</code> is local — Hermes and your LiteLLM both live on <code>spark-01</code>.</p>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <span><strong>Tip — Customize agent tone:</strong> Edit <code>~/.hermes/SOUL.md</code> to define Hermes' personality. This file is re-read on every message — changes take effect immediately without restarting the gateway. Leave it empty to use the default personality.<br><br>
+        Example for a terse technical assistant:<br>
+        <code>You are a concise, direct technical assistant. No filler. No preamble. State the answer first, then explain if needed. Use correct terminology.</code>
+      </span>
+    </div>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### Hermes file locations</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Path</th><th>Contents</th></tr></thead>
+        <tbody>
+          <tr><td><code>~/.hermes/config.yaml</code></td><td>Main config — model, endpoint, providers</td></tr>
+          <tr><td><code>~/.hermes/.env</code></td><td>API keys and gateway tokens</td></tr>
+          <tr><td><code>~/.hermes/SOUL.md</code></td><td>Agent persona/tone — hot-reloaded each message, no restart needed</td></tr>
+          <tr><td><code>~/.hermes/skills/</code></td><td>Persistent skill documents (agentskills.io format)</td></tr>
+          <tr><td><code>~/.hermes/memories/</code></td><td>Long-term memory store</td></tr>
+          <tr><td><code>~/.hermes/sessions/</code></td><td>Conversation session state</td></tr>
+          <tr><td><code>~/.hermes/logs/</code></td><td>Gateway and agent logs</td></tr>
+          <tr><td><code>~/.hermes/cron/</code></td><td>Scheduled task definitions</td></tr>
+          <tr><td><code>~/.hermes/hermes-agent/</code></td><td>Cloned repo + venv (managed — do not edit directly)</td></tr>
+          <tr><td><code>~/.hermes/node/</code></td><td>Node.js 22 runtime (managed — do not edit directly)</td></tr>
+        </tbody>
+      </table>
+    </div>
 
     <h3>Telegram gateway</h3>
     <p>Create a bot via <code>@BotFather</code> (<code>/newbot</code>, copy the token) and get your user ID from <code>@userinfobot</code>. Then:</p>
@@ -2755,6 +2811,10 @@ hermes --version</code></pre>
 sudo /home/YOUR_USERNAME/.local/bin/hermes gateway install --system
 sudo systemctl start hermes-gateway
 sudo systemctl status hermes-gateway --no-pager</code></pre>
+    </div>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <span>The full path is required because <code>sudo</code> does not inherit your user's <code>$PATH</code>. Alternatively, <code>hermes gateway install</code> (without <code>sudo</code>) installs a user-scope service instead of a system service — both work, but the system service starts on boot without a logged-in user session.</span>
     </div>
 
     <h3>Built-in dashboard</h3>
@@ -2786,6 +2846,16 @@ sudo systemctl status hermes-dashboard --no-pager</code></pre>
     </div>
     <p>The <code>--insecure</code> flag is required to bind to <code>0.0.0.0</code> instead of localhost. Protect port 9119 with Tailscale ACLs (Step 06) — it should only be reachable from your tailnet, not the open internet.</p>
     <div class="verify">Dashboard is at <code>http://YOUR_NODE1_TAILSCALE_IP:9119</code> from any device on your tailnet.</div>
+
+    <h3>Keeping Hermes up to date</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code># sparky-01: Update Hermes to the latest release
+hermes update
+# Pulls latest from main, applies dependency changes, restarts the gateway service.
+# Confirm it came back up:
+sudo systemctl status hermes-gateway --no-pager</code></pre>
+    </div>
   </div>
 
   <div class="step" id="step8">
@@ -2857,7 +2927,10 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       <li><strong>spark-01:</strong> <code>sudo systemctl status litellm hermes-gateway</code> — both <strong>active (running)</strong>.</li>
       <li><strong>spark-01:</strong> <code>docker ps</code> shows <code>vllm_node</code>, <code>open-webui</code>, and <code>n8n</code> all <em>Up</em>. <code>sudo systemctl status hermes-dashboard</code> is <strong>active (running)</strong>.</li>
       <li><strong>spark-01:</strong> Open <code>http://localhost:8080</code> (or your tailnet hostname), send a chat message — completion streams back. Your LiteLLM log records the request.</li>
-      <li><strong>spark-01:</strong> Send a Telegram message — Hermes responds. End-to-end your-side path: Telegram → Hermes → your LiteLLM → vLLM TP=2.</li>
+      <li><strong>spark-01:</strong> Send a Telegram message — Hermes responds. End-to-end your-side path: Telegram → Hermes → your LiteLLM → vLLM TP=2. Confirm in LiteLLM logs that the request arrived on the Hermes virtual key, not the master key.</li>
+      <li><strong>spark-01:</strong> <code>hermes --version</code> returns a version string. If MCP servers are configured: <code>hermes mcp test &lt;server-name&gt;</code> verifies MCP connectivity.</li>
+      <li><strong>spark-01:</strong> <code>sudo systemctl status hermes-gateway hermes-dashboard</code> — both <strong>active (running)</strong>.</li>
+      <li><strong>spark-01:</strong> <code>~/.hermes/SOUL.md</code> exists (created by installer). <code>~/.hermes/skills/</code> is populated with bundled skills seeded by the installer.</li>
     </ul>
 
     <h3>Client side (spark-02)</h3>
@@ -3094,6 +3167,17 @@ newgrp docker</code></pre></div>
     </div>
 
     <div class="issue">
+      <div class="issue-title">vLLM container fails to start after power loss — HF DNS resolution error</div>
+      <div class="issue-sym"><span>Symptom</span><span>After a power outage, the <code>vllm_node</code> container on spark-01 exits immediately. <code>docker logs vllm_node</code> shows repeated <code>[Errno -3] Temporary failure in name resolution</code> against <code>huggingface.co</code>, followed by <code>huggingface_hub.errors.LocalEntryNotFoundError</code> and an <code>OSError</code> about being unable to connect to HF to load files.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>On container start, vLLM attempts to contact <code>huggingface.co</code> to check for model config updates — even when the weights are already in the local cache. If Docker's internal DNS resolver hasn't recovered by the time the container starts (common immediately after a power cycle), the resolution fails and vLLM exits rather than falling back to the cached files.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Set <code>HF_HUB_OFFLINE: 1</code> and <code>TRANSFORMERS_OFFLINE: 1</code> in the recipe <code>env</code> block (see Step 1e). These vars were added to <code>qwen3.5-122b-fp8.yaml</code> as the permanent fix. If the container is already failing and the recipe hasn't been patched yet, apply the patch and restart the service:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo systemctl restart vllm-cluster.service
+sudo journalctl -u vllm-cluster.service -f</code></pre></div>
+          Always check that spark-02's <code>vllm_node</code> worker is running before restarting the service on spark-01 — the launcher SSHes into spark-02 to start the worker, and if the worker container is down it must be started first or the cluster won't form.
+        </span></div>
+    </div>
+
+    <div class="issue">
       <div class="issue-title">Client LiteLLM can't reach vLLM</div>
       <div class="issue-sym"><span>Symptom</span><span>Client LiteLLM on spark-02 returns <code>connection refused</code> or <code>connect timeout</code> on every request. <code>~/spark-ai-stack/logs/litellm.log</code> on spark-02 shows <code>httpx.ConnectError</code> against <code>198.51.100.1:8000</code>.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the DAC link is down, (b) the vLLM head container on spark-01 is not running, or (c) the host firewall on spark-01 is blocking the DAC peer from reaching port 8000.</span></div>
@@ -3193,6 +3277,23 @@ journalctl -u litellm -n 50 --no-pager
   <div class="step" id="known-issues">
     <div class="step-header"><span class="step-num">REF</span><h2>Other known issues</h2></div>
     <div class="issue">
+      <div class="issue-title">MTP speculative decoding breaks all clients in vLLM v0.19.0</div>
+      <div class="issue-sym"><span>Symptom</span><span>Every request from every client (Open WebUI, Hermes, n8n, direct API) fails with HTTP 500. LiteLLM logs show:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">text</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>litellm.APIConnectionError: OpenAIException - The min_p and logit_bias
+sampling parameters are not yet supported with speculative decoding.</code></pre></div>
+        </span></div>
+      <div class="issue-sym"><span>Cause</span><span><code>--speculative-config '{"method":"qwen3_next_mtp",...}'</code> is active in the recipe. Open WebUI and Hermes send <code>min_p</code> and <code>logit_bias</code> sampling parameters by default. vLLM rejects any request containing these params when speculative decoding is enabled — there is no per-request fallback, so the entire API surface breaks simultaneously.<br><br>This is a known vLLM bug affecting Qwen3.5-class models: <a href="https://github.com/vllm-project/vllm/issues/35800" target="_blank" rel="noopener">vllm-project/vllm#35800</a></span></div>
+      <div class="issue-fix"><span>Fix</span><span>Remove <code>--speculative-config</code> from the recipe, then restart the cluster:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sed -i '/speculative-config/d' ~/spark-vllm-docker/recipes/qwen3.5-122b-fp8.yaml
+grep "speculative" ~/spark-vllm-docker/recipes/qwen3.5-122b-fp8.yaml || echo "Removed OK"</code></pre></div>
+          Stop the worker first, then restart the service:
+          <div class="code-block" style="margin:6px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-02</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>docker stop vllm_node &amp;&amp; docker rm vllm_node</code></pre></div>
+          <div class="code-block" style="margin:6px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo systemctl restart vllm-cluster.service</code></pre></div>
+          Weight reload takes ~4 minutes. Monitor with <code>docker logs -f vllm_node</code> on spark-01.
+        </span></div>
+    </div>
+
+    <div class="issue">
       <div class="issue-title">NVFP4 quantization is single-node only on DGX Spark</div>
       <div class="issue-sym"><span>Limitation</span><span>NVFP4 multi-node cluster mode is not supported as of vLLM <code>cu130-nightly</code> / eugr <code>spark-vllm-docker</code>. The NVFP4 recipe is marked <code>solo_only: true</code> in <code>eugr/spark-vllm-docker</code>, and <code>vllm/vllm-openai:cu130-nightly</code> fails at cluster launch when NVFP4 is selected with TP=2 multi-node.</span></div>
       <div class="issue-fix"><span>Workaround</span><span>Do not attempt NVFP4 with TP=2 multi-node until community support is confirmed. Use <code>Qwen/Qwen3.5-122B-A10B-FP8</code> for multi-node inference — the Step 01 production recipe is built around this. See the NVFP4 stall entry in <a href="#issues">Cluster issues</a> for the symptom on the bad path.</span></div>
@@ -3273,6 +3374,43 @@ systemctl --user restart hermes</code></pre></div>
           </div>
         </span>
       </div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">Hermes: <code>hermes</code> command not found after install</div>
+      <div class="issue-sym"><span>Symptom</span><span>The installer completed successfully but the shell reports <code>hermes: command not found</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>The installer appends <code>PATH="$HOME/.local/bin:$PATH"</code> to <code>~/.bashrc</code>. If you ran the installer via <code>curl ... | bash</code> in a non-login shell, the new PATH line is not active until you source it or open a new shell.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>source ~/.bashrc    # or open a new shell</code></pre></div>
+        </span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">Hermes: <code>hermes setup</code> fails with import error — wrong Python picked up</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>hermes setup</code> exits immediately with a Python import error or <code>ModuleNotFoundError</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>The installer creates a venv at <code>~/.hermes/hermes-agent/venv/</code> using Python 3.11 via <code>uv</code>. If the symlink at <code>~/.local/bin/hermes</code> is broken or points elsewhere, the wrong Python is used.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Confirm the symlink points into the venv:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>ls -la ~/.local/bin/hermes
+# Should point to: ~/.hermes/hermes-agent/venv/bin/hermes</code></pre></div>
+        </span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">Hermes: gateway fails to start after system reboot</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>sudo systemctl status hermes-gateway</code> shows a failed or activating state after reboot.</span></div>
+      <div class="issue-sym"><span>Cause</span><span><code>hermes-gateway.service</code> may start before the network is fully up.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Add network-online ordering to the unit file:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code># Add to the [Unit] section of /etc/systemd/system/hermes-gateway.service:
+#   After=network-online.target
+#   Wants=network-online.target
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl restart hermes-gateway</code></pre></div>
+        </span></div>
+    </div>
+    <div class="issue">
+      <div class="issue-title">Hermes: mini-swe-agent terminal tools not working</div>
+      <div class="issue-sym"><span>Symptom</span><span>Shell/terminal tool calls from Hermes fail or the mini-swe-agent submodule is reported as missing.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Re-initialize the submodule and reinstall it into the venv:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>cd ~/.hermes/hermes-agent
+git submodule update --init --recursive
+~/.hermes/hermes-agent/venv/bin/pip install -e ./mini-swe-agent</code></pre></div>
+        </span></div>
     </div>
   </div>
 

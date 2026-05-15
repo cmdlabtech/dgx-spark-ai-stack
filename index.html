@@ -33,6 +33,24 @@
     --sans: 'Inter', sans-serif;
   }
 
+  :root[data-theme="dark"] {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text2: #c9d1d9;
+    --text3: #8b949e;
+    --accent: #58a6ff;
+    --accent-bg: #0d1f3a;
+    --green: #3fb950;
+    --green-bg: #0f2417;
+    --amber: #f0b429;
+    --amber-bg: #2a1f08;
+    --amber-border: #6b4f10;
+    --red: #f85149;
+    --red-bg: #2a0f10;
+  }
+
   html { scroll-behavior: smooth; }
 
   body {
@@ -63,6 +81,7 @@
   aside::-webkit-scrollbar { display: none; }
 
   .sidebar-logo {
+    position: relative;
     padding: 0 20px 24px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 20px;
@@ -70,6 +89,30 @@
 
   .sidebar-logo .wordmark { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.4; }
   .sidebar-logo .sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  .theme-toggle {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text2);
+    cursor: pointer;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .theme-toggle:hover { background: var(--surface); color: var(--text); }
+  .theme-toggle .icon-sun { display: none; }
+  :root[data-theme="dark"] .theme-toggle .icon-sun { display: inline; }
+  :root[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
 
   .nav-section { padding: 0 20px; margin-bottom: 20px; }
 
@@ -199,7 +242,7 @@
   .copy-btn:hover { color: var(--accent); border-color: #bfdbfe; }
   .copy-btn.copied { color: var(--green); border-color: #bbf7d0; }
 
-  pre { padding: 16px; overflow-x: auto; background: #f9fafb; margin: 0; }
+  pre { padding: 16px; overflow-x: auto; background: var(--surface); margin: 0; }
 
   pre code { font-family: var(--mono); font-size: 12.5px; line-height: 1.65; color: var(--text); white-space: pre; }
 
@@ -392,6 +435,40 @@
   .opt-row span.opt-port { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text3); margin-left: 4px; }
   .opt-row input:not(:checked) ~ span { color: var(--text3); text-decoration: line-through; text-decoration-color: var(--text3); }
 
+  /* ── Dark-mode overrides ── */
+  [data-theme="dark"] .callout.note { border-color: #1e3a5f; }
+  [data-theme="dark"] details.arch-card.dual summary .arch-badge { background: #1a1030; color: #a78bfa; border-color: #4c1d95; }
+  [data-theme="dark"] .worksheet-col.you h4 { color: #60a5fa; }
+  [data-theme="dark"] .worksheet-col.client h4 { color: #a78bfa; }
+  [data-theme="dark"] .tldr-col-head.you .tldr-col-title { color: #60a5fa; }
+  [data-theme="dark"] .tldr-col-head.client .tldr-col-title { color: #a78bfa; }
+  [data-theme="dark"] pre code .placeholder-filled { background: #3b2a05; color: #fbbf24; }
+  [data-theme="dark"] pre code .placeholder-unfilled { background: #2d0f10; color: #f87171; }
+  [data-theme="dark"] pre code .placeholder-secret { background: #1a1030; color: #a78bfa; }
+
+  /* Inline SVG presentation-attribute overrides (specificity beats attr defaults) */
+  /* White/near-white rect fills → dark bg */
+  [data-theme="dark"] svg rect[fill="#ffffff"],
+  [data-theme="dark"] svg rect[fill="#fff"] { fill: var(--bg); stroke: var(--border); }
+  /* Light-blue tint (spark-01 header pills, worksheet node box) */
+  [data-theme="dark"] svg rect[fill="#eff6ff"] { fill: #0d1f3a; stroke: #3b82f6; }
+  /* Light-purple tint (spark-02 header pill, worksheet client box) */
+  [data-theme="dark"] svg rect[fill="#f5f3ff"] { fill: #12082a; stroke: #7c3aed; }
+  /* Gray pill backgrounds (localhost:8000 etc.) */
+  [data-theme="dark"] svg rect[fill="#f8f9fa"] { fill: var(--surface); stroke: var(--border); }
+  /* Amber DAC label pill */
+  [data-theme="dark"] svg rect[fill="#fff7ed"] { fill: #1c1005; stroke: #ea580c; }
+  [data-theme="dark"] svg rect[fill="#fffaf0"] { fill: #1c1005; stroke: var(--amber-border); }
+
+  /* SVG inline text fill overrides */
+  [data-theme="dark"] svg text[fill="#6b7280"] { fill: var(--text3); }
+  [data-theme="dark"] svg text[fill="#1d4ed8"] { fill: #60a5fa; }
+  [data-theme="dark"] svg text[fill="#5b21b6"] { fill: #a78bfa; }
+  [data-theme="dark"] svg text[fill="#0f766e"] { fill: #2dd4bf; }
+  [data-theme="dark"] svg text[fill="#9a3412"] { fill: #fb923c; }
+  [data-theme="dark"] svg text[fill="#16a34a"] { fill: var(--green); }
+  [data-theme="dark"] svg line[stroke="#ea580c"] { stroke: #fb923c; }
+
   @media (max-width: 1100px) {
     .tldr-grid { grid-template-columns: 1fr; }
   }
@@ -417,6 +494,9 @@
   <div class="sidebar-logo">
     <div class="wordmark">NVIDIA DGX<br>At-Home AI Stack</div>
     <div class="sub">Split-Trust Shared Compute · arm64 · v3.2</div>
+    <button type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode">
+      <span class="icon-moon">☾</span><span class="icon-sun">☀</span>
+    </button>
   </div>
   <nav class="nav-section">
     <div class="nav-label">Overview</div>
@@ -492,19 +572,19 @@
           </marker>
         </defs>
         <style>
-          .users-rect { fill:#f8f9fa; stroke:#e5e7eb; stroke-width:1; }
-          .app-blue { fill:#eff6ff; stroke:#bfdbfe; stroke-width:1; }
-          .app-teal { fill:#f0fdfa; stroke:#5eead4; stroke-width:1; }
-          .litellm-rect { fill:#f5f3ff; stroke:#c4b5fd; stroke-width:1.5; }
-          .vllm-rect { fill:#fff7ed; stroke:#fdba74; stroke-width:1.5; }
-          .arrow-line { stroke:#9ca3af; stroke-width:1.3; fill:none; }
-          .title-text { font-family:'Inter',sans-serif; font-size:13px; font-weight:600; fill:#111827; }
-          .sub-text { font-family:'Inter',sans-serif; font-size:11px; fill:#6b7280; }
-          .mono-text { font-family:'JetBrains Mono',monospace; font-size:11px; fill:#374151; }
-          .your-boundary { fill:#ffffff; stroke:#3b82f6; stroke-width:1.5; stroke-dasharray:8 4; }
-          .client-boundary { fill:#ffffff; stroke:#7c3aed; stroke-width:1.5; stroke-dasharray:8 4; }
-          .pool-boundary { fill:#fffbf5; stroke:#fdba74; stroke-width:1.5; stroke-dasharray:8 4; }
-          .ts-badge { fill:#f0fdfa; stroke:#5eead4; stroke-width:1; stroke-dasharray:4 3; }
+          .users-rect { fill:var(--surface); stroke:var(--border); stroke-width:1; }
+          .app-blue { fill:var(--accent-bg); stroke:#bfdbfe; stroke-width:1; }
+          .app-teal { fill:var(--green-bg); stroke:#5eead4; stroke-width:1; }
+          .litellm-rect { fill:var(--accent-bg); stroke:#c4b5fd; stroke-width:1.5; }
+          .vllm-rect { fill:var(--amber-bg); stroke:var(--amber-border); stroke-width:1.5; }
+          .arrow-line { stroke:var(--text3); stroke-width:1.3; fill:none; }
+          .title-text { font-family:'Inter',sans-serif; font-size:13px; font-weight:600; fill:var(--text); }
+          .sub-text { font-family:'Inter',sans-serif; font-size:11px; fill:var(--text3); }
+          .mono-text { font-family:'JetBrains Mono',monospace; font-size:11px; fill:var(--text2); }
+          .your-boundary { fill:var(--bg); stroke:#3b82f6; stroke-width:1.5; stroke-dasharray:8 4; }
+          .client-boundary { fill:var(--bg); stroke:#7c3aed; stroke-width:1.5; stroke-dasharray:8 4; }
+          .pool-boundary { fill:var(--amber-bg); stroke:var(--amber-border); stroke-width:1.5; stroke-dasharray:8 4; }
+          .ts-badge { fill:var(--green-bg); stroke:#5eead4; stroke-width:1; stroke-dasharray:4 3; }
         </style>
 
         <!-- ============ Top: users / clients ============ -->
@@ -3987,6 +4067,21 @@ document.querySelectorAll('[id]').forEach(el => observer.observe(el));
     });
     saveSecrets(readSecretForm());
     renderScripts();
+  };
+})();
+
+// Theme toggle (persists in localStorage, respects system preference on first load)
+(function() {
+  var KEY = 'dgx-theme';
+  var stored = null;
+  try { stored = localStorage.getItem(KEY); } catch (e) {}
+  var initial = stored || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', initial);
+  window.toggleTheme = function() {
+    var current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    var next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
   };
 })();
 

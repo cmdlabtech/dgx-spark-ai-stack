@@ -933,7 +933,7 @@
             <h4>spark-01 layers</h4>
             <label class="opt-row"><input type="checkbox" data-opt="1.openwebui" checked/> <span>Open WebUI <span class="opt-port">:8080</span></span></label>
             <label class="opt-row"><input type="checkbox" data-opt="1.n8n" checked/> <span>n8n <span class="opt-port">:5678</span></span></label>
-            <label class="opt-row"><input type="checkbox" data-opt="1.hermes" checked/> <span>Hermes Agent + WebUI <span class="opt-port">:8787</span></span></label>
+            <label class="opt-row"><input type="checkbox" data-opt="1.hermes" checked/> <span>Hermes Agent + Dashboard <span class="opt-port">:9119</span></span></label>
             <label class="opt-row"><input type="checkbox" data-opt="1.tailscale" checked/> <span>Tailscale (owner tailnet)</span></label>
             <label class="opt-row"><input type="checkbox" data-opt="1.ufw" checked/> <span>ufw host firewall</span></label>
           </div>
@@ -1312,32 +1312,32 @@ docker compose -f "$HOME/spark-ai-stack/n8n.yml" up -d
 # <<<OPT:n8n
 
 # >>>OPT:hermes
-# ───── 16. Hermes Agent + WebUI ─────
+# ───── 16. Hermes Agent + Dashboard ─────
 log "hermes install (run 'hermes setup' interactively after this script)"
 curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash || true
 
-# Pre-create bind-mount targets so docker doesn't mkdir them as root.
+# Pre-create state dirs.
 mkdir -p "$HOME/.hermes" "$HOME/workspace"
 
-cat &gt; "$HOME/spark-ai-stack/hermes-webui.yml" &lt;&lt;EOF
-services:
-  hermes-webui:
-    image: ghcr.io/nesquena/hermes-webui:latest
-    container_name: hermes-webui
-    restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - WANTED_UID=1000
-      - WANTED_GID=1000
-      - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui-mvp
-    volumes:
-      - /home/$USERNAME/.hermes:/home/hermeswebui/.hermes
-      - /home/$USERNAME/workspace:/workspace
-    ports:
-      - "8787:8787"
+sudo tee /etc/systemd/system/hermes-dashboard.service &gt;/dev/null &lt;&lt;EOF
+[Unit]
+Description=Hermes Agent Dashboard
+After=network.target hermes-gateway.service
+Wants=hermes-gateway.service
+
+[Service]
+Type=simple
+User=$USERNAME
+ExecStart=/home/$USERNAME/.local/bin/hermes dashboard --port 9119 --host 0.0.0.0 --insecure --no-open
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
 EOF
-docker compose -f "$HOME/spark-ai-stack/hermes-webui.yml" up -d || true
+sudo systemctl daemon-reload
+sudo systemctl enable hermes-dashboard
+sudo systemctl start hermes-dashboard
 # <<<OPT:hermes
 
 # >>>OPT:tailscale
@@ -1371,7 +1371,7 @@ sudo ufw allow in on tailscale0 to any port 8080 proto tcp
 sudo ufw allow in on tailscale0 to any port 5678 proto tcp
 # <<<OPT:n8n
 # >>>OPT:hermes
-sudo ufw allow in on tailscale0 to any port 8787 proto tcp
+sudo ufw allow in on tailscale0 to any port 9119 proto tcp
 # <<<OPT:hermes
 # <<<OPT:tailscale
 sudo ufw allow in on enp1s0f0np0 from "$NODE2_DAC_IP" to any port 8000 proto tcp
@@ -2122,7 +2122,7 @@ sudo systemctl start litellm</code></pre>
     <p>The LiteLLM Admin UI and virtual key system require PostgreSQL — this is why the step exists. LiteLLM's Prisma schema is hardcoded for PostgreSQL, and the Admin UI, virtual key generation, and model management all write to the PostgreSQL metadata database.</p>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — bring up the litellm-db postgres container</h4>
-    <p>On spark-01 the postgres container lives in <code>~/spark-ai-stack/docker-compose.yml</code> alongside <code>n8n</code> and <code>hermes-webui</code>:</p>
+    <p>On spark-01 the postgres container lives in <code>~/spark-ai-stack/docker-compose.yml</code> alongside <code>n8n</code>:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>services:
@@ -2530,7 +2530,7 @@ tailscale ip -4   # note this address — your apps will be reachable here</code
   "acls": [
     { "action": "accept",
       "src":    ["group:owner-users"],
-      "dst":    ["tag:owner:8080", "tag:owner:8001", "tag:owner:5678", "tag:owner:8787"]
+      "dst":    ["tag:owner:8080", "tag:owner:8001", "tag:owner:5678", "tag:owner:9119"]
     },
     { "action": "accept",
       "src":    ["group:owner-users"],
@@ -2611,7 +2611,7 @@ sudo ufw default allow outgoing
 sudo ufw allow in on tailscale0 to any port 8001 proto tcp           # your LiteLLM
 sudo ufw allow in on tailscale0 to any port 8080 proto tcp           # your Open WebUI
 sudo ufw allow in on tailscale0 to any port 5678 proto tcp           # your n8n
-sudo ufw allow in on tailscale0 to any port 8787 proto tcp           # your Hermes WebUI
+sudo ufw allow in on tailscale0 to any port 9119 proto tcp           # your Hermes dashboard
 sudo ufw allow in on enp1s0f0np0 from YOUR_NODE2_DAC_IP to any port 8000 proto tcp   # client LiteLLM → vLLM only
 sudo ufw allow in on enp1s0f0np0 from YOUR_NODE2_DAC_IP to any port 6379 proto tcp   # Ray GCS over DAC
 sudo ufw allow ssh                                                   # mgmt LAN ssh
@@ -2678,33 +2678,35 @@ sudo systemctl start hermes-gateway
 sudo systemctl status hermes-gateway --no-pager</code></pre>
     </div>
 
-    <h3>Hermes WebUI (Docker, spark-01)</h3>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — docker-compose for hermes-webui</h4>
+    <h3>Built-in dashboard</h3>
+    <p>Hermes ships a built-in web dashboard for managing config, API keys, and sessions. Run it as a systemd service so it starts automatically alongside the gateway.</p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — create the dashboard service</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/spark-ai-stack/hermes-webui.yml &lt;&lt; 'EOF'
-services:
-  hermes-webui:
-    image: ghcr.io/nesquena/hermes-webui:latest
-    container_name: hermes-webui
-    restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - WANTED_UID=1000
-      - WANTED_GID=1000
-      - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui-mvp
-    volumes:
-      - /home/YOUR_USERNAME/.hermes:/home/hermeswebui/.hermes
-      - /home/YOUR_USERNAME/workspace:/workspace
-    ports:
-      - "8787:8787"
+      <pre><code>sudo tee /etc/systemd/system/hermes-dashboard.service &lt;&lt; 'EOF'
+[Unit]
+Description=Hermes Agent Dashboard
+After=network.target hermes-gateway.service
+Wants=hermes-gateway.service
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+ExecStart=/home/YOUR_USERNAME/.local/bin/hermes dashboard --port 9119 --host 0.0.0.0 --insecure --no-open
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
 EOF
 
-mkdir -p ~/workspace
-docker compose -f ~/spark-ai-stack/hermes-webui.yml up -d</code></pre>
+sudo systemctl daemon-reload
+sudo systemctl enable hermes-dashboard
+sudo systemctl start hermes-dashboard
+sudo systemctl status hermes-dashboard --no-pager</code></pre>
     </div>
-    <div class="verify">Visit <code>http://localhost:8787</code> on spark-01 (or your tailnet hostname).</div>
+    <p>The <code>--insecure</code> flag is required to bind to <code>0.0.0.0</code> instead of localhost. Protect port 9119 with Tailscale ACLs (Step 06) — it should only be reachable from your tailnet, not the open internet.</p>
+    <div class="verify">Dashboard is at <code>http://YOUR_NODE1_TAILSCALE_IP:9119</code> from any device on your tailnet.</div>
   </div>
 
   <div class="step" id="step8">
@@ -2774,7 +2776,7 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
     <ul class="validation-checklist">
       <li><strong>spark-01:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_MASTER_KEY"</code> returns <code>qwen3.5-122b</code> through your LiteLLM.</li>
       <li><strong>spark-01:</strong> <code>sudo systemctl status litellm hermes-gateway</code> — both <strong>active (running)</strong>.</li>
-      <li><strong>spark-01:</strong> <code>docker ps</code> shows <code>vllm_node</code>, <code>open-webui</code>, <code>hermes-webui</code>, and <code>n8n</code> all <em>Up</em>.</li>
+      <li><strong>spark-01:</strong> <code>docker ps</code> shows <code>vllm_node</code>, <code>open-webui</code>, and <code>n8n</code> all <em>Up</em>. <code>sudo systemctl status hermes-dashboard</code> is <strong>active (running)</strong>.</li>
       <li><strong>spark-01:</strong> Open <code>http://localhost:8080</code> (or your tailnet hostname), send a chat message — completion streams back. Your LiteLLM log records the request.</li>
       <li><strong>spark-01:</strong> Send a Telegram message — Hermes responds. End-to-end your-side path: Telegram → Hermes → your LiteLLM → vLLM TP=2.</li>
     </ul>
@@ -2825,7 +2827,7 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       <div class="port-card"><div class="port-num">8001</div><div class="port-name">Your LiteLLM</div><div class="port-note">Your tailnet only · your master_key</div></div>
       <div class="port-card"><div class="port-num">8080</div><div class="port-name">Your Open WebUI</div><div class="port-note">Your tailnet only</div></div>
       <div class="port-card"><div class="port-num">5678</div><div class="port-name">Your n8n</div><div class="port-note">Your tailnet only</div></div>
-      <div class="port-card"><div class="port-num">8787</div><div class="port-name">Your Hermes WebUI</div><div class="port-note">Your tailnet only</div></div>
+      <div class="port-card"><div class="port-num">9119</div><div class="port-name">hermes-dashboard</div><div class="port-note">Hermes built-in dashboard — config, keys, sessions · Your tailnet only</div></div>
       <div class="port-card"><div class="port-num">8265</div><div class="port-name">Ray dashboard</div><div class="port-note">Optional · localhost only</div></div>
     </div>
     <h3 style="margin-top:18px;">spark-02 (client node)</h3>
@@ -2852,7 +2854,6 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       └── launch-cluster.sh           <span class="comment"># stop/teardown helper invoked by systemd</span><br><br>
       <span class="dir">~/spark-ai-stack/</span><br>
       ├── litellm-config.yaml         <span class="comment"># YOUR LiteLLM — your master_key, localhost:8000</span><br>
-      ├── hermes-webui.yml            <span class="comment"># compose for your hermes-webui</span><br>
       ├── n8n.yml                     <span class="comment"># compose for your n8n</span><br>
       └── logs/<br>
       &nbsp;&nbsp;&nbsp;&nbsp;├── litellm.db             <span class="comment"># YOUR SQLite request log</span><br>
@@ -2866,7 +2867,8 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       ├── vllm-cluster.service        <span class="comment"># vLLM cluster auto-start (head SSHes to worker)</span><br>
       ├── litellm.service             <span class="comment"># YOUR LiteLLM auto-start</span><br>
       ├── litellm.service.d/override.conf  <span class="comment"># PYTHONPATH only</span><br>
-      └── hermes-gateway.service      <span class="comment"># YOUR Telegram gateway auto-start</span>
+      ├── hermes-gateway.service      <span class="comment"># YOUR Telegram gateway auto-start</span><br>
+      └── hermes-dashboard.service    <span class="comment"># YOUR Hermes dashboard auto-start</span>
     </div>
 
     <h3>spark-02 — client node (separate ownership)</h3>

@@ -532,11 +532,13 @@
     <a href="#obsidian-vault-bugs" class="nav-item"><span class="num">—</span> Obsidian — bugs &amp; fixes</a>
     <a href="#brave-search-mcp" class="nav-item"><span class="num">—</span> Brave Search — setup</a>
     <a href="#playwright-mcp" class="nav-item"><span class="num">—</span> Playwright — browser automation</a>
+    <a href="#home-assistant-mcp" class="nav-item"><span class="num">—</span> Home Assistant MCP</a>
   </nav>
   <nav class="nav-section">
     <div class="nav-label">Appendix</div>
     <a href="#appendix-ha" class="nav-item"><span class="num">—</span> Clustered Open WebUI / n8n</a>
     <a href="#litellm-ui" class="nav-item"><span class="num">—</span> LiteLLM Admin UI</a>
+    <a href="#changelog" class="nav-item"><span class="num">—</span> Changelog</a>
   </nav>
 </aside>
 
@@ -1055,7 +1057,7 @@
 # DGX AI Stack — spark-01 (owner / Ray head) one-shot setup
 # Bundles: bootstrap · GUI disable · RoCE check · vLLM image build + DAC copy ·
 # model download + rsync · LiteLLM + Postgres + Prisma · Open WebUI · n8n ·
-# Hermes install · Hermes WebUI · Tailscale · ufw.
+# Hermes install · Hermes dashboard · Tailscale · ufw.
 # Re-running is safe: every step is guarded.
 set -euo pipefail
 
@@ -1837,7 +1839,7 @@ ps aux | grep -E "Xorg|gnome" | grep -v grep</code></pre>
           <tr>
             <td><strong>Production (default)</strong></td>
             <td><code>Qwen/Qwen3.5-122B-A10B-FP8</code></td>
-            <td>The intended daily driver — 122B / A10B MoE, official Qwen FP8. ~61&nbsp;GB resident per node. Includes the Multi-Token Prediction (MTP) head used for speculative decoding. Steady-state throughput ~45&nbsp;tok/s at TP=2. 262K context window. Recipe: <code>qwen3.5-122b-fp8</code>.</td>
+            <td>The intended daily driver — 122B / A10B MoE, official Qwen FP8. ~61&nbsp;GB resident per node. Includes an MTP head (<code>qwen3_next_mtp</code>) but <strong>speculative decoding is disabled</strong> — unstable in vLLM v0.19.0 (HTTP 500 on requests with standard sampling params). Steady-state throughput ~45&nbsp;tok/s at TP=2 without MTP. 262K context window. Recipe: <code>qwen3.5-122b-fp8</code>.</td>
           </tr>
           <tr>
             <td>Bootstrap fallback</td>
@@ -2851,10 +2853,89 @@ sudo systemctl status hermes-dashboard --no-pager</code></pre>
     <p>The <code>--insecure</code> flag is required to bind to <code>0.0.0.0</code> instead of localhost. Protect port 9119 with Tailscale ACLs (Step 06) — it should only be reachable from your tailnet, not the open internet.</p>
     <div class="verify">Dashboard is at <code>http://YOUR_NODE1_TAILSCALE_IP:9119</code> from any device on your tailnet.</div>
 
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <span><strong>Dashboard crash-loop — Node.js build required.</strong> <code>hermes-dashboard.service</code> will crash-loop silently (restart counter &gt;3600) on a fresh install because the dashboard frontend has never been compiled. The system Node.js installed in the steps above is for system-wide use (e.g. npx MCP servers); the dashboard build needs Node.js from within the Hermes install path.<br><br>
+        Run this once after every <code>hermes update</code>:
+        <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+cd ~/.hermes/hermes-agent/web && npm install && npm run build
+sudo systemctl restart hermes-dashboard
+sudo systemctl status hermes-dashboard --no-pager</code></pre></div>
+        Verify the dashboard responds: <code>curl -s http://127.0.0.1:9119/api/status</code>
+      </span>
+    </div>
+
+    <h3>Dashboard — basic auth (required for remote access)</h3>
+    <p>Binding the dashboard to <code>0.0.0.0</code> exposes it to the local network. Add basic auth so it requires a username and password even inside the tailnet. Set these in <code>~/.hermes/.env</code> on spark-01 (not in <code>config.yaml</code>):</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash · spark-01 — ~/.hermes/.env</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>HERMES_DASHBOARD_BASIC_AUTH_USERNAME=YOUR_DASHBOARD_USERNAME
+HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=YOUR_DASHBOARD_PASSWORD</code></pre>
+    </div>
+    <p>Restart the dashboard after setting these. Verify auth is active:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo systemctl restart hermes-dashboard
+curl -s http://127.0.0.1:9119/api/status | grep auth</code></pre>
+    </div>
+    <div class="verify">Expected: <code>"auth_required": true, "auth_providers": ["basic"]</code></div>
+
+    <h3>Dashboard — auto-restart on gateway update</h3>
+    <p>After <code>hermes update</code> (or any <code>hermes-gateway</code> restart), the dashboard process goes stale and must be restarted. Wire this up automatically via a systemd override and a sudoers rule — the gateway service runs as your user, which can't call <code>systemctl</code> on system services without sudo.</p>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — sudoers rule</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo tee /etc/sudoers.d/hermes-dashboard-restart &lt;&lt;'EOF'
+YOUR_USERNAME ALL=(root) NOPASSWD: /usr/bin/systemctl --no-block try-restart hermes-dashboard.service
+EOF</code></pre>
+    </div>
+    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — gateway service override</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo mkdir -p /etc/systemd/system/hermes-gateway.service.d
+sudo tee /etc/systemd/system/hermes-gateway.service.d/override.conf &lt;&lt;'EOF'
+[Service]
+ExecStartPost=-/usr/bin/sudo -n /usr/bin/systemctl --no-block try-restart hermes-dashboard.service
+EOF
+
+sudo systemctl daemon-reload && sudo systemctl restart hermes-gateway</code></pre>
+    </div>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <span>The <code>-</code> prefix on <code>ExecStartPost</code> is required — it prevents a sudo failure from propagating and crashing the gateway. <code>--no-block</code> fires the dashboard restart asynchronously so it doesn't delay the gateway startup.</span>
+    </div>
+
+    <h3>Hermes desktop app (v0.15.2+)</h3>
+    <p>The Hermes desktop app (released June 2026) connects to your dashboard on spark-01 — it does <strong>not</strong> run its own backend. Without the remote URL set before first launch, the app spins up a local backend, SIGTERMs it, and enters a reset loop.</p>
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <span><strong>Set <code>HERMES_DESKTOP_REMOTE_URL</code> before launching the app for the first time.</strong> Add to <code>~/.hermes/.env</code> on your Mac (not on spark-01):</span>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash · Mac — ~/.hermes/.env</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>HERMES_DESKTOP_REMOTE_URL=http://YOUR_NODE1_TAILSCALE_IP:9119
+HERMES_DESKTOP_REMOTE_TOKEN=YOUR_DASHBOARD_SESSION_TOKEN</code></pre>
+    </div>
+    <p><code>HERMES_DESKTOP_REMOTE_TOKEN</code> must match <code>HERMES_DASHBOARD_SESSION_TOKEN</code> in <code>~/.hermes/.env</code> on spark-01. The dashboard basic auth credentials (username/password) are separate from this token.</p>
+
+    <h3>Hermes memory limits</h3>
+    <p>Default memory limits can cause the agent to truncate context or behave inconsistently on long sessions. These values are confirmed stable on this stack:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>hermes config set memory_char_limit 6000
+hermes config set user_char_limit 3000
+sudo systemctl restart hermes-gateway</code></pre>
+    </div>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <span>Use <code>hermes config set</code> — do not hand-edit <code>~/.hermes/config.yaml</code> for these values. The CLI applies validation and correct encoding that the YAML parser may not catch.</span>
+    </div>
+
     <h3>Keeping Hermes up to date</h3>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code># sparky-01: Update Hermes to the latest release
+      <pre><code># spark-01: Update Hermes to the latest release
 hermes update
 # Pulls latest from main, applies dependency changes, restarts the gateway service.
 # Confirm it came back up:
@@ -3340,9 +3421,30 @@ sudo apt install -y nodejs</code></pre></div>
         </span></div>
     </div>
     <div class="issue">
-      <div class="issue-title">Signal on arm64</div>
-      <div class="issue-sym"><span>Symptom</span><span>signal-cli 0.14.x requires Java 25 (not in Ubuntu 24.04 apt repos). Signal servers block datacenter IPs at TLS level.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Use Telegram — no IP restrictions, native arm64 support.</span></div>
+      <div class="issue-title">Signal on arm64 — not supported, use Telegram</div>
+      <div class="issue-sym"><span>Symptom</span><span>signal-cli 0.14.x requires Java 25 (not in Ubuntu 24.04 apt repos). Signal servers block datacenter/home-lab IPs at TLS level regardless of Java version.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Use Telegram. Telegram has no IP restrictions and native arm64 support. This has been evaluated and deprioritized — Telegram is the only supported remote messaging gateway on this stack.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">Power outage recovery — orphaned container grabs port 8000</div>
+      <div class="issue-sym"><span>Symptom</span><span>After a power outage, <code>vllm-cluster.service</code> fails to start on spark-01. <code>docker logs vllm_node</code> shows <code>address already in use :8000</code> or the Ray cluster comes up but the API server never binds.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>An old standalone container with <code>restart: always</code> on port 8000 (e.g. a hand-run <code>vllm-qwen</code> container predating <code>vllm-cluster.service</code>) grabbed the port on boot before <code>vllm-cluster.service</code> fired. Any container with <code>--restart=always</code> on port 8000 will cause this.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Identify and remove the offending container:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code># Find what's holding port 8000
+docker ps --filter "publish=8000" --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"
+
+# If a non-vllm_node container appears, stop and remove it:
+docker stop &lt;container-name&gt; &amp;&amp; docker rm &lt;container-name&gt;
+
+# Then start the cluster:
+sudo systemctl restart vllm-cluster.service
+docker logs -f vllm_node</code></pre></div>
+        <br>Correct restart policies for this stack:<br>
+        <code>vllm_node</code> → <code>restart: no</code> (systemd-managed — must never self-restart)<br>
+        <code>n8n</code>, <code>open-webui</code>, <code>litellm-db</code> → <code>restart: unless-stopped</code>
+        <br><br>Post-outage startup order: (1) confirm spark-02 <code>vllm_node</code> is absent (<code>docker ps | grep vllm_node</code>), (2) spark-01: <code>sudo systemctl restart vllm-cluster.service</code>, (3) monitor: <code>docker logs -f vllm_node</code>.
+        </span></div>
     </div>
     <div class="issue">
       <div class="issue-title">config.yaml YAML error causes silent .env fallback</div>
@@ -3440,9 +3542,13 @@ git submodule update --init --recursive
 
   <div class="step" id="obsidian-vault-sync">
     <div class="step-header"><span class="step-num">OBSIDIAN VAULT SYNC + MCP</span><h2>Architecture</h2></div>
-    <p>Obsidian vault sync runs on a dedicated Ubuntu 24.04 LXC (hostname: <code>YOUR_LXC_HOSTNAME</code>, IP: <code>YOUR_LXC_IP</code>) on the Proxmox homelab. Syncthing syncs the vault from Mac/Android to <code>/vault</code> on the LXC. The obsidian-mcp MCP server (<a href="https://github.com/StevenStavrakis/obsidian-mcp" target="_blank">StevenStavrakis/obsidian-mcp</a>) runs inside the LXC, exposed via supergateway on port 3000 using streamableHttp transport. LiteLLM on spark-01 connects to it at <code>http://YOUR_LXC_IP:3000/mcp</code>.</p>
+    <p>Obsidian vault sync runs on a dedicated Ubuntu 24.04 LXC (hostname: <code>YOUR_LXC_HOSTNAME</code>, IP: <code>YOUR_LXC_IP</code>) on the Proxmox homelab. Syncthing syncs the vault from Mac/Android to <code>/vault</code> on the LXC. <code>@modelcontextprotocol/server-filesystem</code> exposes the vault as a filesystem MCP server, wrapped by <code>supergateway</code> with streamableHttp transport on port 3000. LiteLLM on spark-01 connects to it at <code>http://YOUR_LXC_IP:3000/mcp</code>.</p>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <span><strong>Why not obsidian-mcp?</strong> <code>obsidian-mcp</code> (StevenStavrakis) requires the Obsidian desktop app to be running in the LXC — not viable headless. <code>@modelcontextprotocol/server-filesystem</code> exposes the vault directory directly with no app dependency.</span>
+    </div>
     <div class="diagram-wrap" style="margin-top:12px;">
-      <pre style="background:transparent;padding:0;"><code>Obsidian (Mac/Android) &lt;-&gt; Syncthing &lt;-&gt; /vault on LXC &lt;-&gt; obsidian-mcp &lt;-&gt; supergateway :3000 &lt;-&gt; LiteLLM MCP client</code></pre>
+      <pre style="background:transparent;padding:0;"><code>Obsidian (Mac/Android) &lt;-&gt; Syncthing &lt;-&gt; /vault on LXC &lt;-&gt; server-filesystem &lt;-&gt; supergateway :3000 &lt;-&gt; LiteLLM MCP client</code></pre>
     </div>
 
     <h3>LXC setup</h3>
@@ -3453,7 +3559,7 @@ git submodule update --init --recursive
           <tr><td>OS</td><td>Ubuntu 24.04 LTS</td></tr>
           <tr><td>Hostname</td><td><code>YOUR_LXC_HOSTNAME</code></td></tr>
           <tr><td>IP</td><td><code>YOUR_LXC_IP</code></td></tr>
-          <tr><td>Vault path</td><td><code>/vault</code> with <code>.obsidian/app.json</code> stub (required for MCP server vault validation)</td></tr>
+          <tr><td>Vault path</td><td><code>/vault</code></td></tr>
           <tr><td>Services</td><td><code>syncthing@root</code> and <code>obsidian-mcp</code> — both enabled as systemd services</td></tr>
         </tbody>
       </table>
@@ -3483,11 +3589,11 @@ echo "deb [signed-by=/usr/share/keyrings/syncthing-archive-keyring.gpg] \
   &gt; /etc/apt/sources.list.d/syncthing.list
 apt update &amp;&amp; apt install -y syncthing
 
-# Vault directory — obsidian-mcp requires .obsidian to exist
-mkdir -p /vault/.obsidian
-echo '{}' &gt; /vault/.obsidian/app.json
+# Vault directory
+mkdir -p /vault
 
-# Syncthing
+# Syncthing — After=network-online.target prevents a race where the service starts
+# before the IP is assigned, causing the first vault sync to fail on boot
 systemctl enable syncthing@root
 systemctl start syncthing@root
 sleep 8
@@ -3497,23 +3603,23 @@ CONFIG_PATH=$(find /root -name "config.xml" 2&gt;/dev/null | grep syncthing | he
 sed -i 's|&lt;address&gt;127.0.0.1:8384&lt;/address&gt;|&lt;address&gt;0.0.0.0:8384&lt;/address&gt;|' "$CONFIG_PATH"
 systemctl restart syncthing@root
 
-# obsidian-mcp + supergateway
-npm install -g obsidian-mcp supergateway
+# @modelcontextprotocol/server-filesystem + supergateway
+npm install -g @modelcontextprotocol/server-filesystem supergateway
 
-# systemd service — streamableHttp transport (required for LiteLLM v1.80.18+)
+# systemd service — streamableHttp transport, stateless (no --stateful), protocol 2024-11-05
 cat &gt; /etc/systemd/system/obsidian-mcp.service &lt;&lt; 'EOF'
 [Unit]
-Description=Obsidian MCP Server
-After=network.target
+Description=Obsidian MCP Server (server-filesystem)
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-ExecStart=supergateway --stdio "obsidian-mcp /vault" \
+ExecStart=supergateway \
+  --stdio "npx -y @modelcontextprotocol/server-filesystem /vault" \
   --port 3000 \
-  --outputTransport streamableHttp \
-  --stateful \
-  --protocolVersion 2025-11-25
+  --outputTransport streamableHttp
 Restart=on-failure
 RestartSec=10
 
@@ -3534,48 +3640,51 @@ systemctl start obsidian-mcp</code></pre>
     </ul>
 
     <h3>LiteLLM connection</h3>
-    <p>In the LiteLLM UI on spark-01 (<code>http://spark-01:8001/ui</code>), add an MCP server:</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Field</th><th>Value</th></tr></thead>
-        <tbody>
-          <tr><td>URL</td><td><code>http://YOUR_LXC_IP:3000/mcp</code></td></tr>
-          <tr><td>Transport</td><td><code>streamableHttp</code> (not SSE)</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p style="margin-top:10px;">Or via <code>litellm-config.yaml</code> at the top level (not nested under <code>litellm_settings</code>):</p>
+    <p>Via <code>litellm-config.yaml</code> at the top level (not nested under <code>litellm_settings</code>). The <code>protocol_version</code> must be explicit — <code>server-filesystem</code> ignores <code>2025-11-25</code> and the handshake fails silently without it:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mcp_servers:
   - name: obsidian
     url: http://YOUR_LXC_IP:3000/mcp
-    transport: streamableHttp</code></pre>
+    transport: streamableHttp
+    protocol_version: "2024-11-05"</code></pre>
     </div>
+    <div class="callout note">
+      <span class="callout-icon">ℹ</span>
+      <span>The server is stateless — no <code>mcp-session-id</code> header is needed. Clients must send <code>Accept: application/json, text/event-stream</code> — missing this returns <code>-32000 Not Acceptable</code>. LiteLLM sends the correct header automatically when <code>transport: streamableHttp</code> is set.</span>
+    </div>
+    <div class="verify">Verify: <code>curl -s -H "Accept: application/json, text/event-stream" http://YOUR_LXC_IP:3000/mcp</code> — expected: JSON with <code>method: "initialize"</code> response. A <code>-32000</code> error means the Accept header is missing.</div>
   </div>
 
   <div class="step" id="obsidian-vault-bugs">
     <div class="step-header"><span class="step-num">OBSIDIAN VAULT SYNC + MCP</span><h2>Known issues</h2></div>
 
     <div class="issue">
-      <div class="issue-title">1 — SSE transport fails with LiteLLM v1.80.18+</div>
-      <div class="issue-fix"><span>Fix</span><span>Use <code>streamableHttp</code> transport only.</span></div>
+      <div class="issue-title">1 — <code>-32000 Not Acceptable</code> on MCP POST requests</div>
+      <div class="issue-sym"><span>Symptom</span><span>POSTs to <code>/mcp</code> return <code>{"error": {"code": -32000, "message": "Not Acceptable"}}</code>.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>The request is missing the <code>Accept: application/json, text/event-stream</code> header. LiteLLM sends it automatically — this error usually means a client (curl test, custom integration) is omitting it. Add <code>-H "Accept: application/json, text/event-stream"</code> to any manual curl calls.</span></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">2 — obsidian-mcp fails to start if <code>/vault/.obsidian/app.json</code> does not exist</div>
-      <div class="issue-fix"><span>Fix</span><span><code>mkdir -p /vault/.obsidian &amp;&amp; echo '{}' &gt; /vault/.obsidian/app.json</code></span></div>
+      <div class="issue-title">2 — Protocol version mismatch / silent handshake failure</div>
+      <div class="issue-sym"><span>Symptom</span><span>MCP server connects but tool calls return no results or the session never initializes.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Set <code>protocol_version: "2024-11-05"</code> in the LiteLLM MCP server config. <code>@modelcontextprotocol/server-filesystem</code> does not respond correctly to <code>2025-11-25</code> — the handshake succeeds at the transport level but tool listing returns empty.</span></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">3 — <code>--stateful</code> and <code>--protocolVersion 2025-11-25</code> flags required for LiteLLM v1.80.18+</div>
-      <div class="issue-sym"><span>Symptom</span><span>MCP tool calls silently fail without these flags.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Both flags are included in the setup script above and are required for protocol compatibility. Without <code>--stateful</code>, supergateway spawns a new child process per request and exhausts thread limits under load. Without <code>--protocolVersion 2025-11-25</code>, the handshake version mismatches and LiteLLM sends SIGTERM.</span></div>
+      <div class="issue-title">3 — Syncthing fails on boot (IP not assigned in time)</div>
+      <div class="issue-sym"><span>Symptom</span><span>Vault sync works when Syncthing is started manually but fails after reboot.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>The default <code>After=network.target</code> races IP assignment on boot. The setup script uses <code>After=network-online.target</code> + <code>Wants=network-online.target</code> — verify these are present in the running unit: <code>systemctl cat syncthing@root | grep -E "After|Wants"</code>. If they are missing, edit <code>/etc/systemd/system/syncthing@root.service</code> or create a drop-in override.</span></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">4 — Node.js v18 causes segfaults in obsidian-mcp</div>
-      <div class="issue-fix"><span>Fix</span><span>Use Node.js v20 or v22. The setup script installs v22 via NodeSource.</span></div>
+      <div class="issue-title">4 — SSE transport (<code>--outputTransport sse</code>) breaks POST requests</div>
+      <div class="issue-fix"><span>Fix</span><span>Omitting <code>--outputTransport streamableHttp</code> defaults supergateway to SSE, which does not handle <code>/mcp</code> POSTs. Always specify <code>--outputTransport streamableHttp</code> explicitly.</span></div>
+    </div>
+
+    <div class="issue">
+      <div class="issue-title">5 — LXC disk corruption on network-backed storage</div>
+      <div class="issue-fix"><span>Fix</span><span>Storing the LXC root disk on a network share (e.g. CIFS/SMB) caused EXT4 I/O errors and disk corruption under write load. Use local storage or a reliable block storage backend for LXC root disks.</span></div>
     </div>
   </div>
 
@@ -3707,6 +3816,43 @@ sudo apt install -y nodejs</code></pre>
     <p>Expected: the model calls the navigate and screenshot tools (shown as "Explored" in Open WebUI) and returns a summary of the page.</p>
   </div>
 
+  <div class="step" id="home-assistant-mcp">
+    <div class="step-header"><span class="step-num">HOME ASSISTANT MCP</span><h2>Home Assistant tool integration</h2></div>
+    <p>Home Assistant exposes its own MCP endpoint at <code>/api/mcp</code> using Streamable HTTP transport. This lets Hermes (via LiteLLM) call HA as a tool — controlling devices, querying states, reading automations.</p>
+
+    <h3>Step 1 — Enable the integration in Home Assistant</h3>
+    <p><strong>Settings → Devices &amp; Services → Add Integration → search "Model Context Protocol Server"</strong></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>Integration</td><td>Model Context Protocol Server</td></tr>
+          <tr><td>Endpoint path</td><td><code>/api/mcp</code> (built into HA — no extra server needed)</td></tr>
+          <tr><td>Transport</td><td>Streamable HTTP</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Step 2 — Generate a long-lived access token</h3>
+    <p>In Home Assistant: <strong>Profile → Long-Lived Access Tokens → Create Token</strong>. Copy the full token — it is only shown once.</p>
+    <div class="callout warning">
+      <span class="callout-icon">⚠</span>
+      <span>Pass the token as the <code>API_ACCESS_TOKEN</code> environment variable when configuring the MCP server in LiteLLM, not inline as a bearer token header — inline tokens get truncated by the LiteLLM UI field length limit.</span>
+    </div>
+
+    <h3>Step 3 — Add to LiteLLM MCP config</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml · litellm-config.yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>mcp_servers:
+  - name: home-assistant
+    url: http://YOUR_HA_IP:8123/api/mcp
+    transport: streamableHttp
+    headers:
+      Authorization: "Bearer YOUR_HA_LONG_LIVED_TOKEN"</code></pre>
+    </div>
+    <div class="verify">Verify: in Open WebUI or Hermes, ask the model to list your Home Assistant entities. Expected: device list returned as a tool call result.</div>
+  </div>
+
   <div class="step" id="litellm-ui">
     <div class="step-header"><span class="step-num">TROUBLESHOOTING</span><h2>LiteLLM Admin UI</h2></div>
     <p>The LiteLLM proxy ships with a built-in web UI at <code>/ui</code>. It requires a master key and a PostgreSQL database — SQLite is not supported for the UI auth layer. The following documents every error encountered during setup, in order.</p>
@@ -3799,6 +3945,28 @@ sudo systemctl status litellm</code></pre>
     <h3>Accessing the UI</h3>
     <p>Navigate to <code>http://YOUR_NODE1_MGMT_IP:8001/ui</code>. Username: <code>admin</code>. Password: your <code>master_key</code> value.</p>
     <div class="verify">UI loads and accepts login with master key credentials</div>
+  </div>
+
+  <div class="step" id="changelog">
+    <div class="step-header"><span class="step-num">CHANGELOG</span><h2>Project milestones</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Milestone</th></tr></thead>
+        <tbody>
+          <tr><td>May 1, 2026</td><td>DGX Spark acquisition — Project Jiffy initiated</td></tr>
+          <tr><td>May 9–13</td><td>Two-node clustering, 200&nbsp;GbE/RoCE networking, vLLM bring-up</td></tr>
+          <tr><td>May 13</td><td>INT4 → FP8 model migration; NCCL/RoCE fix → 18× throughput improvement (2–3 tok/s → 45 tok/s)</td></tr>
+          <tr><td>May 15</td><td>MTP speculative decoding removed — unstable in vLLM v0.19.0, HTTP 500 on standard sampling params</td></tr>
+          <tr><td>May 16</td><td>Hermes Agent deployed — Telegram gateway live</td></tr>
+          <tr><td>May 24–29</td><td>n8n trading bot and market research workflows built</td></tr>
+          <tr><td>June 2</td><td>Hermes desktop app v0.15.2 released</td></tr>
+          <tr><td>June 8</td><td>Desktop app integration; dashboard basic auth; Home Assistant MCP confirmed working</td></tr>
+          <tr><td>June 11</td><td>Obsidian MCP — obsidian-mcp → @modelcontextprotocol/server-filesystem migration</td></tr>
+          <tr><td>June 12</td><td>Hermes memory limits raised (memory_char_limit 6000, user_char_limit 3000); dashboard auto-restart via ExecStartPost + sudoers</td></tr>
+          <tr><td>June 15</td><td>Power outage recovery — orphaned vllm-qwen container (restart:always on port 8000) identified and removed</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
 </main>

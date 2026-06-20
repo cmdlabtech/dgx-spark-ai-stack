@@ -40,14 +40,14 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
 | Your [Open WebUI](https://github.com/open-webui/open-webui) | `spark-01` | You — your data | 8080 (your tailnet) |
 | Client [Open WebUI](https://github.com/open-webui/open-webui) | `spark-02` | Client — their data | 8080 (client's tailnet) |
 | Your [Hermes Agent](https://github.com/NousResearch/hermes-agent) | `spark-01` | You | — |
-| Your [Hermes WebUI](https://github.com/nesquena/hermes-webui) | `spark-01` | You | 8787 (your tailnet) |
+| Your Hermes dashboard (built-in) | `spark-01` | You | 9119 (your tailnet) |
 | Your [n8n](https://github.com/n8n-io/n8n) | `spark-01` | You | 5678 (your tailnet) |
 | Client [n8n](https://github.com/n8n-io/n8n) | `spark-02` | Client | 5678 (client's tailnet) |
 | Your Tailscale | `spark-01` | You — your ACLs | — |
 | Client Tailscale | `spark-02` | Client — their ACLs | — |
 | Telegram gateway (Hermes) | `spark-01` | You | — |
 
-**Production model:** `Intel/Qwen3.5-122B-A10B-int4-AutoRound` (122B / A10B MoE, INT4 via Intel AutoRound; ~37 GB resident per node, leaving ~91 GB per-node for KV cache). Steady-state throughput ~45 tok/s at TP=2 with NCCL over RoCE/RDMA on the DAC. 262K context.
+**Production model:** `Intel/Qwen3.5-122B-A10B-int4-AutoRound` (122B / A10B MoE, INT4 via Intel AutoRound; ~37 GB resident per node, leaving ~91 GB per-node for KV cache). Steady-state throughput ~45 tok/s at TP=2 with NCCL over RoCE/RDMA on the DAC. MTP speculative decoding is disabled — unstable in vLLM v0.19.0 on Qwen3.5-class models. 262K context.
 
 **Bootstrap fallback:** `Qwen/Qwen3.6-35B-A3B-FP8` — the model used to bring the cluster up the first time; useful for fast iteration on Ray/NCCL/RoCE wiring before committing to the longer 122B load.
 
@@ -74,7 +74,7 @@ Tailscale is a per-owner overlay: each node joins its owner's tailnet independen
 │                              │          │                              │
 │  Your Open WebUI    :8080    │          │  Client Open WebUI    :8080  │
 │  Your n8n           :5678    │          │  Client n8n           :5678  │
-│  Your Hermes        :8787    │          │                              │
+│  Your Hermes        :9119    │          │                              │
 │            │                 │          │            │                 │
 │            ▼                 │          │            ▼                 │
 │  Your LiteLLM       :8001    │          │  Client LiteLLM      :8001   │
@@ -165,7 +165,7 @@ Deploying Syncthing and the MCP pipeline on a separate Proxmox LXC rather than o
 
 vLLM is started by the `eugr/spark-vllm-docker` launcher (`./run-recipe.sh`) — fronted by a `vllm-cluster.service` systemd unit on `spark-01` — rather than as a service in any Compose file. This is intentional. Loading the 122B AutoRound INT4 model across two nodes takes several minutes and pins ~37 GB of weights resident on each node — restarting the cluster is not cheap. Keeping it outside Compose means:
 
-- `docker compose up/down/restart` on n8n or hermes-webui has zero effect on the vLLM cluster
+- `docker compose up/down/restart` on n8n or open-webui has zero effect on the vLLM cluster
 - Iterating on workflow automation, the agent UI, or compose config doesn't force a model reload on either node
 - vLLM can be updated or restarted independently — the launcher forms the Ray cluster (head, then worker, with a GPU-count gate before `vllm serve`) and propagates `NCCL_IB_HCA` / `/dev/infiniband` passthrough into both containers
 - A crash or misconfiguration in a compose service can't cascade into taking down the model server
@@ -181,7 +181,7 @@ In practice this means the vLLM cluster runs continuously and is only restarted 
 5. **Step 04 — Your Open WebUI (spark-01)** — points at your LiteLLM, your tailnet
 6. **Step 05 — Client Open WebUI (spark-02)** — points at client's LiteLLM, client's tailnet, client's data stays on `spark-02`
 7. **Step 06 — Tailscale (both nodes, separate tailnets)** — per-owner ACLs, host firewall rules that prevent the unauthenticated vLLM port leaking onto either tailnet
-8. **Step 07 — Your Hermes Agent (spark-01)** — Telegram gateway, Hermes WebUI
+8. **Step 07 — Your Hermes Agent (spark-01)** — Telegram gateway, built-in dashboard (port 9119), dashboard Node.js build fix, desktop app (v0.15.2), memory limits, dashboard auto-restart on gateway update
 9. **Step 08 — Your n8n (spark-01)** — single-instance, owner-side flows. Client deploys their own n8n on `spark-02` independently.
 10. Validation checklist — both-side positive tests + cross-stack negative tests (each side cannot reach the other)
 11. Cluster issues and resolutions: NCCL falling back to TCP (slow inference), NVFP4 multi-node stall, Ray version mismatch, Ray GCS, `VLLM_HOST_IP` / `LOCAL_IP` mismatch, NCCL on wrong interface, client LiteLLM can't reach vLLM, port-8000 leak through Tailscale ACL, cross-LiteLLM mgmt-LAN collision, log-bleed across owners
@@ -312,19 +312,25 @@ The `extra_hosts: - "host.docker.internal:host-gateway"` entry in `docker-compos
 
 ### Hermes config
 
-`~/.hermes/config.yaml` must use the bridge-reachable URL, not `localhost`:
+Hermes itself runs as a systemd service (not in Docker), so `~/.hermes/config.yaml` uses `localhost` directly:
 
 ```yaml
-base_url: http://host.docker.internal:8001/v1
+base_url: http://localhost:8001/v1
 ```
+
+Containers that call LiteLLM from inside Docker (n8n, Open WebUI) use `host.docker.internal` instead of `localhost`.
 
 ### Verification
 
 ```bash
-docker exec hermes-webui curl -s http://host.docker.internal:8001/v1/models
+# From host — Hermes → LiteLLM
+curl -s http://localhost:8001/v1/models
+
+# From inside n8n or Open WebUI container
+docker exec n8n curl -s http://host.docker.internal:8001/v1/models
 ```
 
-A JSON list of available models confirms the container can reach the LiteLLM proxy on the host. A `Connection refused` error means either the `host-gateway` mapping is missing or LiteLLM is not running on the host.
+A JSON list of available models confirms connectivity. `Connection refused` means either the `host-gateway` mapping is missing from `docker-compose.yml` or LiteLLM is not running.
 
 ## License
 

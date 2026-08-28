@@ -33,23 +33,5 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # Postgres for LiteLLM Admin UI and virtual key generation.
-  # Required: LiteLLM's Prisma schema is hardcoded for PostgreSQL — SQLite is
-  # not supported. After `docker compose up -d litellm-db`, apply the schema
-  # with `prisma db push` (see Step 2d in index.html).
-  litellm-db:
-    image: postgres:16
-    container_name: litellm-db
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=litellm
-      - POSTGRES_PASSWORD=litellm
-      - POSTGRES_DB=litellm
-    volumes:
-      - litellm_db:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
 volumes:
   n8n_data:
-  litellm_db:

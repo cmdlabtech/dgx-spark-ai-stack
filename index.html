@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NVIDIA DGX: At-Home AI Stack — Two-Node Clustered Setup Guide</title>
-<meta name="description" content="Two-node clustered self-hosted AI server stack on dual Nvidia DGX Spark (arm64). vLLM TP=2 over Ray, LiteLLM, Hermes Agent, n8n, Open WebUI, Telegram gateway.">
+<meta name="description" content="Two-node clustered self-hosted AI server stack on dual Nvidia DGX Spark (arm64). vLLM TP=2 over Ray, Hermes Agent, n8n, Open WebUI, Telegram gateway.">
 <meta property="og:title" content="NVIDIA DGX: At-Home AI Stack — Two-Node Clustered">
 <meta property="og:description" content="Two-node clustered self-hosted AI server stack on dual Nvidia DGX Spark (arm64). vLLM TP=2 over Ray, with separated backend/frontend services.">
 <meta property="og:type" content="website">
@@ -492,7 +492,7 @@
 <aside>
   <div class="sidebar-logo">
     <div class="wordmark">NVIDIA DGX<br>At-Home AI Stack</div>
-    <div class="sub">Split-Trust Shared Compute · arm64 · v3.2</div>
+    <div class="sub">Split-Trust Shared Compute · arm64 · v5.0</div>
     <button type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle dark mode">
       <span class="icon-moon">☾</span><span class="icon-sun">☀</span>
     </button>
@@ -509,13 +509,11 @@
   <nav class="nav-section">
     <div class="nav-label">Steps</div>
     <a href="#step1" class="nav-item"><span class="num">01</span> vLLM clustered (TP=2)</a>
-    <a href="#step2" class="nav-item"><span class="num">02</span> Your LiteLLM (spark-01)</a>
-    <a href="#step3" class="nav-item"><span class="num">03</span> Client LiteLLM (spark-02)</a>
-    <a href="#step4" class="nav-item"><span class="num">04</span> Your Open WebUI (spark-01)</a>
-    <a href="#step5" class="nav-item"><span class="num">05</span> Client Open WebUI (spark-02)</a>
-    <a href="#step6" class="nav-item"><span class="num">06</span> Tailscale (both nodes)</a>
-    <a href="#step7" class="nav-item"><span class="num">07</span> Your Hermes (spark-01)</a>
-    <a href="#step8" class="nav-item"><span class="num">08</span> Your n8n (spark-01)</a>
+    <a href="#step2" class="nav-item"><span class="num">02</span> Your Open WebUI (spark-01)</a>
+    <a href="#step3" class="nav-item"><span class="num">03</span> Client Open WebUI (spark-02)</a>
+    <a href="#step4" class="nav-item"><span class="num">04</span> Tailscale (both nodes)</a>
+    <a href="#step5" class="nav-item"><span class="num">05</span> Your Hermes (spark-01)</a>
+    <a href="#step6" class="nav-item"><span class="num">06</span> Your n8n (spark-01)</a>
     <a href="#validation-checklist" class="nav-item"><span class="num">—</span> Validation checklist</a>
   </nav>
   <nav class="nav-section">
@@ -537,7 +535,6 @@
   <nav class="nav-section">
     <div class="nav-label">Appendix</div>
     <a href="#appendix-ha" class="nav-item"><span class="num">—</span> Clustered Open WebUI / n8n</a>
-    <a href="#litellm-ui" class="nav-item"><span class="num">—</span> LiteLLM Admin UI</a>
     <a href="#changelog" class="nav-item"><span class="num">—</span> Changelog</a>
   </nav>
 </aside>
@@ -546,12 +543,11 @@
 
   <div class="hero">
     <h1>NVIDIA DGX<br>At-Home AI Stack <span style="font-size:18px;color:var(--text3);font-weight:500;letter-spacing:0;">— split-trust shared compute</span></h1>
-    <p class="hero-desc">Two clustered Nvidia DGX Spark nodes (arm64, Ubuntu 24.04) sharing a 256&nbsp;GB unified memory pool through tensor parallelism (TP=2) over Ray on a 200&nbsp;Gb/s direct-attach copper interconnect — but with <strong>split ownership</strong>. <code>spark-01</code> is <strong>your</strong> node (your LiteLLM, your Open WebUI, your Hermes Agent, your n8n, your Tailscale). <code>spark-02</code> is the <strong>client's</strong> node (their LiteLLM, their Open WebUI, their n8n, their Tailscale). Both LiteLLM proxies talk to the shared vLLM endpoint at <code>spark-01:8000</code> over the DAC; neither application stack sees the other. Read the <a href="#trust-model">Trust model</a> section before deploying — this architecture has specific properties at the API layer that you should understand explicitly.</p>
+    <p class="hero-desc">Two clustered Nvidia DGX Spark nodes (arm64, Ubuntu 24.04) sharing a 256&nbsp;GB unified memory pool through tensor parallelism (TP=2) over Ray on a 200&nbsp;Gb/s direct-attach copper interconnect — but with <strong>split ownership</strong>. <code>spark-01</code> is <strong>your</strong> node (your Open WebUI, your Hermes Agent, your n8n, your Tailscale). <code>spark-02</code> is the <strong>client's</strong> node (their Open WebUI, their n8n, their Tailscale). Both sides' Open WebUI call vLLM's OpenAI-compatible API directly at <code>spark-01:8000</code> over the DAC; neither application stack sees the other. Read the <a href="#trust-model">Trust model</a> section before deploying — this architecture has specific properties at the API layer that you should understand explicitly.</p>
     <div class="stack-pills">
       <span class="pill blue">2× DGX Spark</span>
       <span class="pill blue">vLLM TP=2 · Ray</span>
       <span class="pill blue">Qwen3.5-122B-A10B-FP8</span>
-      <span class="pill">LiteLLM × 2</span>
       <span class="pill">Open WebUI × 2</span>
       <span class="pill">n8n × 2</span>
       <span class="pill">Hermes Agent</span>
@@ -563,10 +559,10 @@
 
   <div class="diagram-section" id="diagram">
     <h2>Architecture</h2>
-    <p style="margin:0 0 16px;font-size:13.5px;color:var(--text2);">Two physically separate DGX Spark nodes share a single tensor-parallel vLLM cluster (TP=2 over Ray on a 200&nbsp;Gb/s DAC link) — but each node runs its own independent application stack owned by a different party. The diagram shows three logical layers: <strong>application stacks</strong> (top, separate per owner), <strong>LiteLLM proxies</strong> (middle, one per side, separate keys and logs), and the <strong>shared compute pool</strong> (bottom, TP=2 across both nodes, served by the vLLM head on <code>spark-01:8000</code>). Tailscale sits as a separate overlay on each node — the DAC link is its own private hardware and does not traverse Tailscale.</p>
+    <p style="margin:0 0 16px;font-size:13.5px;color:var(--text2);">Two physically separate DGX Spark nodes share a single tensor-parallel vLLM cluster (TP=2 over Ray on a 200&nbsp;Gb/s DAC link) — but each node runs its own independent application stack owned by a different party. The diagram shows two logical layers: <strong>application stacks</strong> (top, separate per owner, calling vLLM directly), and the <strong>shared compute pool</strong> (bottom, TP=2 across both nodes, served by the vLLM head on <code>spark-01:8000</code>). Tailscale sits as a separate overlay on each node — the DAC link is its own private hardware and does not traverse Tailscale.</p>
     <div class="diagram-wrap">
-      <svg width="100%" viewBox="0 0 1100 870" role="img" xmlns="http://www.w3.org/2000/svg" aria-labelledby="arch-desc">
-        <desc id="arch-desc">Two-layer split-trust architecture. Top: two independent application stacks. Left = spark-01 (your node) with Your Open WebUI, Your n8n, Your Hermes, and Your LiteLLM, on your Tailscale tailnet. Right = spark-02 (client node) with Client Open WebUI, Client n8n, and Client LiteLLM, on a separate client Tailscale tailnet. Both LiteLLM proxies feed into a single shared compute pool below: vLLM head (Ray master, TP rank 0) on spark-01:8000, vLLM Ray worker (TP rank 1) on spark-02, the Qwen model in 256 GB unified memory, connected via the DAC link (200 Gb/s, enp1s0f0np0, 198.51.100.0/30). Your LiteLLM calls vLLM over localhost:8000; client's LiteLLM calls it over the DAC at 198.51.100.1:8000. NCCL collectives between head and worker flow on the DAC. Tailscale overlays carry application traffic only; the DAC is private physical hardware not routed through either tailnet.</desc>
+      <svg width="100%" viewBox="0 0 1100 720" role="img" xmlns="http://www.w3.org/2000/svg" aria-labelledby="arch-desc">
+        <desc id="arch-desc">Two-layer split-trust architecture. Top: two independent application stacks. Left = spark-01 (your node) with Your Open WebUI, Your n8n, and Your Hermes, on your Tailscale tailnet. Right = spark-02 (client node) with Client Open WebUI and Client n8n, on a separate client Tailscale tailnet. Both stacks call directly into a single shared compute pool below: vLLM head (Ray master, TP rank 0) on spark-01:8000, vLLM Ray worker (TP rank 1) on spark-02, the Qwen model in 256 GB unified memory, connected via the DAC link (200 Gb/s, enp1s0f0np0, 198.51.100.0/30). Your apps call vLLM over localhost:8000; client's apps call it over the DAC at 198.51.100.1:8000. NCCL collectives between head and worker flow on the DAC. Tailscale overlays carry application traffic only; the DAC is private physical hardware not routed through either tailnet. vLLM has no built-in authentication — Tailscale ACLs and host firewall rules are the only access control.</desc>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -602,7 +598,7 @@
         <line x1="830" y1="58" x2="830" y2="90" class="arrow-line" marker-end="url(#arrow)"/>
 
         <!-- ============ spark-01 boundary (your node) ============ -->
-        <rect x="20" y="100" width="520" height="358" rx="10" class="your-boundary"/>
+        <rect x="20" y="100" width="520" height="204" rx="10" class="your-boundary"/>
         <!-- Header rect overlapping top edge -->
         <rect x="32" y="92" width="216" height="22" rx="4" fill="#eff6ff" stroke="#3b82f6" stroke-width="1"/>
         <text x="40" y="107" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#1d4ed8">spark-01 · YOUR NODE</text>
@@ -627,20 +623,15 @@
         <text class="title-text" x="450" y="188" text-anchor="middle" dominant-baseline="central">Your Hermes</text>
         <text class="sub-text" x="450" y="208" text-anchor="middle" dominant-baseline="central">Telegram · skills · memory</text>
 
-        <!-- App → LiteLLM arrows (straight down) -->
-        <line x1="118" y1="224" x2="118" y2="254" class="arrow-line" marker-end="url(#arrow)"/>
-        <line x1="284" y1="224" x2="284" y2="254" class="arrow-line" marker-end="url(#arrow)"/>
-        <line x1="450" y1="224" x2="450" y2="254" class="arrow-line" marker-end="url(#arrow)"/>
-
-        <!-- Your LiteLLM -->
-        <rect x="40" y="254" width="488" height="124" rx="6" class="litellm-rect"/>
-        <text class="title-text" x="284" y="280" text-anchor="middle" dominant-baseline="central">Your LiteLLM · :8001</text>
-        <text class="sub-text" x="284" y="304" text-anchor="middle" dominant-baseline="central">your master_key · your SQLite log corpus</text>
-        <text class="mono-text" x="284" y="324" text-anchor="middle" dominant-baseline="central">api_base = http://localhost:8000/v1</text>
-        <text class="sub-text" x="284" y="354" text-anchor="middle" dominant-baseline="central" fill="#16a34a">↑ from your apps   ↓ to shared vLLM</text>
+        <!-- App → shared pool arrows (straight down, no proxy in between) -->
+        <line x1="118" y1="224" x2="118" y2="342" class="arrow-line" marker-end="url(#arrow)"/>
+        <line x1="284" y1="224" x2="284" y2="342" class="arrow-line" marker-end="url(#arrow)"/>
+        <line x1="450" y1="224" x2="450" y2="342" class="arrow-line" marker-end="url(#arrow)"/>
+        <rect x="220" y="272" width="128" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
+        <text x="284" y="283" text-anchor="middle" class="mono-text" dominant-baseline="central">localhost:8000</text>
 
         <!-- ============ spark-02 boundary (client node) ============ -->
-        <rect x="560" y="100" width="520" height="358" rx="10" class="client-boundary"/>
+        <rect x="560" y="100" width="520" height="204" rx="10" class="client-boundary"/>
         <!-- Header rect -->
         <rect x="572" y="92" width="232" height="22" rx="4" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1"/>
         <text x="580" y="107" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#5b21b6">spark-02 · CLIENT NODE</text>
@@ -661,63 +652,47 @@
         <text class="title-text" x="950" y="188" text-anchor="middle" dominant-baseline="central">Client n8n</text>
         <text class="sub-text" x="950" y="208" text-anchor="middle" dominant-baseline="central">:5678 · client's flows</text>
 
-        <!-- Client app → LiteLLM arrows -->
-        <line x1="700" y1="224" x2="700" y2="254" class="arrow-line" marker-end="url(#arrow)"/>
-        <line x1="950" y1="224" x2="950" y2="254" class="arrow-line" marker-end="url(#arrow)"/>
-
-        <!-- Client LiteLLM -->
-        <rect x="580" y="254" width="490" height="124" rx="6" class="litellm-rect"/>
-        <text class="title-text" x="825" y="280" text-anchor="middle" dominant-baseline="central">Client LiteLLM · :8001</text>
-        <text class="sub-text" x="825" y="304" text-anchor="middle" dominant-baseline="central">client's master_key · client's SQLite log corpus</text>
-        <text class="mono-text" x="825" y="324" text-anchor="middle" dominant-baseline="central">api_base = http://198.51.100.1:8000/v1 (over DAC)</text>
-        <text class="sub-text" x="825" y="354" text-anchor="middle" dominant-baseline="central" fill="#16a34a">↑ from client apps   ↓ to shared vLLM</text>
-
-        <!-- ============ Arrows from each LiteLLM down to the shared pool ============ -->
-        <!-- Your LiteLLM bottom (y=378) → vLLM head top (y=496), with a label pill in the gap -->
-        <line x1="284" y1="378" x2="284" y2="496" class="arrow-line" marker-end="url(#arrow)"/>
-        <rect x="220" y="426" width="128" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
-        <text x="284" y="437" text-anchor="middle" class="mono-text" dominant-baseline="central">localhost:8000</text>
-
-        <!-- Client LiteLLM bottom (y=378) → vLLM head top (y=496), with DAC label pill -->
-        <line x1="825" y1="378" x2="825" y2="496" class="arrow-line" marker-end="url(#arrow)"/>
-        <rect x="715" y="426" width="220" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
-        <text x="825" y="437" text-anchor="middle" class="mono-text" dominant-baseline="central">198.51.100.1:8000 (over DAC)</text>
+        <!-- Client app → shared pool arrows (straight down, no proxy in between) -->
+        <line x1="700" y1="224" x2="700" y2="342" class="arrow-line" marker-end="url(#arrow)"/>
+        <line x1="950" y1="224" x2="950" y2="342" class="arrow-line" marker-end="url(#arrow)"/>
+        <rect x="715" y="272" width="220" height="22" rx="4" fill="#ffffff" stroke="#9ca3af"/>
+        <text x="825" y="283" text-anchor="middle" class="mono-text" dominant-baseline="central">198.51.100.1:8000 (over DAC)</text>
 
         <!-- ============ Shared compute pool ============ -->
-        <rect x="20" y="440" width="1060" height="420" rx="10" class="pool-boundary"/>
-        <rect x="32" y="432" width="270" height="22" rx="4" fill="#fff7ed" stroke="#fdba74" stroke-width="1"/>
-        <text x="40" y="447" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">SHARED COMPUTE POOL · TP=2 over Ray</text>
+        <rect x="20" y="286" width="1060" height="420" rx="10" class="pool-boundary"/>
+        <rect x="32" y="278" width="270" height="22" rx="4" fill="#fff7ed" stroke="#fdba74" stroke-width="1"/>
+        <text x="40" y="293" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">SHARED COMPUTE POOL · TP=2 over Ray</text>
 
         <!-- Pool intro text -->
-        <text x="550" y="478" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412" font-weight="500">single vLLM endpoint at 198.51.100.1:8000 — both LiteLLM proxies talk to it</text>
+        <text x="550" y="324" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#9a3412" font-weight="500">single vLLM endpoint at 198.51.100.1:8000 — both sides' Open WebUI call it directly, no proxy in between</text>
 
         <!-- vLLM head -->
-        <rect x="60" y="496" width="980" height="76" rx="6" class="vllm-rect"/>
-        <text class="title-text" x="550" y="518" text-anchor="middle" dominant-baseline="central">vLLM head (Ray master) · TP rank 0 · spark-01:8000 · :6379 (Ray GCS)</text>
-        <text class="sub-text" x="550" y="538" text-anchor="middle" dominant-baseline="central">--tensor-parallel-size 2 · --distributed-executor-backend ray</text>
-        <text class="mono-text" x="550" y="556" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.1 · NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 · GPU 0</text>
+        <rect x="60" y="342" width="980" height="76" rx="6" class="vllm-rect"/>
+        <text class="title-text" x="550" y="364" text-anchor="middle" dominant-baseline="central">vLLM head (Ray master) · TP rank 0 · spark-01:8000 · :6379 (Ray GCS)</text>
+        <text class="sub-text" x="550" y="384" text-anchor="middle" dominant-baseline="central">--tensor-parallel-size 2 · --distributed-executor-backend ray</text>
+        <text class="mono-text" x="550" y="402" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.1 · NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 · GPU 0</text>
 
         <!-- vLLM worker -->
-        <rect x="60" y="594" width="980" height="76" rx="6" class="vllm-rect"/>
-        <text class="title-text" x="550" y="616" text-anchor="middle" dominant-baseline="central">vLLM Ray worker · TP rank 1 · spark-02 (no API listener)</text>
-        <text class="sub-text" x="550" y="636" text-anchor="middle" dominant-baseline="central">processes tensor activations only — no readable text</text>
-        <text class="mono-text" x="550" y="654" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.2 · NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 · GPU 1</text>
+        <rect x="60" y="440" width="980" height="76" rx="6" class="vllm-rect"/>
+        <text class="title-text" x="550" y="462" text-anchor="middle" dominant-baseline="central">vLLM Ray worker · TP rank 1 · spark-02 (no API listener)</text>
+        <text class="sub-text" x="550" y="482" text-anchor="middle" dominant-baseline="central">processes tensor activations only — no readable text</text>
+        <text class="mono-text" x="550" y="500" text-anchor="middle" dominant-baseline="central">VLLM_HOST_IP=198.51.100.2 · NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 · GPU 1</text>
 
         <!-- NCCL connector between head and worker (drawn outside boxes, on right) -->
-        <path d="M 1050 534 C 1080 534, 1080 632, 1050 632" stroke="#ea580c" stroke-width="3" fill="none"/>
-        <text x="1075" y="579" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#9a3412">NCCL</text>
-        <text x="1075" y="592" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">↕</text>
+        <path d="M 1050 380 C 1080 380, 1080 478, 1050 478" stroke="#ea580c" stroke-width="3" fill="none"/>
+        <text x="1075" y="425" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#9a3412">NCCL</text>
+        <text x="1075" y="438" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#9a3412">↕</text>
 
         <!-- Model -->
-        <rect x="60" y="692" width="980" height="56" rx="6" class="vllm-rect" fill="#fffaf0"/>
-        <text class="title-text" x="550" y="712" text-anchor="middle" dominant-baseline="central">Qwen/Qwen3.5-122B-A10B-FP8 — 256 GB unified memory pool</text>
-        <text class="sub-text" x="550" y="730" text-anchor="middle" dominant-baseline="central">bootstrap fallback: Qwen/Qwen3.6-35B-A3B-FP8</text>
+        <rect x="60" y="538" width="980" height="56" rx="6" class="vllm-rect" fill="#fffaf0"/>
+        <text class="title-text" x="550" y="558" text-anchor="middle" dominant-baseline="central">Qwen/Qwen3.5-122B-A10B-FP8 — 256 GB unified memory pool</text>
+        <text class="sub-text" x="550" y="576" text-anchor="middle" dominant-baseline="central">bootstrap fallback: Qwen/Qwen3.6-35B-A3B-FP8</text>
 
         <!-- DAC link bar -->
-        <rect x="60" y="768" width="980" height="74" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
-        <text x="550" y="790" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#9a3412">DAC · 200 Gb/s direct-attach copper</text>
-        <text x="550" y="810" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#9a3412">enp1s0f0np0 · MTU 9216 · 198.51.100.0/30</text>
-        <text x="550" y="828" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#9a3412">NCCL allreduce over RoCE/RDMA · Ray control · NOT routed through either tailnet · separate from mgmt LAN</text>
+        <rect x="60" y="614" width="980" height="74" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+        <text x="550" y="636" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#9a3412">DAC · 200 Gb/s direct-attach copper</text>
+        <text x="550" y="656" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#9a3412">enp1s0f0np0 · MTU 9216 · 198.51.100.0/30</text>
+        <text x="550" y="674" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#9a3412">NCCL allreduce over RoCE/RDMA · Ray control · NOT routed through either tailnet · separate from mgmt LAN</text>
 
       </svg>
     </div>
@@ -729,13 +704,13 @@
     <p style="margin:0 0 14px;font-size:13.5px;color:var(--text2);">Read this before deploying. The split-trust architecture has specific properties at the API layer that you should understand explicitly. None of this is a new risk introduced by the cluster — it is just the same trust profile you accept any time you use a hosted inference API, made visible.</p>
 
     <h3>API-layer visibility — spark-01 sees all prompts</h3>
-    <p>The vLLM head process runs on <code>spark-01</code> and serves the OpenAI-compatible API on port 8000. <strong>Both</strong> LiteLLM proxies — yours and the client's — call this endpoint. That means the owner of <code>spark-01</code> can, in principle, observe every raw prompt and every model output that crosses the API surface. This is structurally identical to the trust profile of any commercial hosted-inference provider (OpenAI, Anthropic, Together, etc.): the entity running the API server can see traffic at the API layer.</p>
+    <p>The vLLM head process runs on <code>spark-01</code> and serves the OpenAI-compatible API on port 8000. <strong>Both</strong> sides' Open WebUI — yours and the client's — call this endpoint directly. That means the owner of <code>spark-01</code> can, in principle, observe every raw prompt and every model output that crosses the API surface. This is structurally identical to the trust profile of any commercial hosted-inference provider (OpenAI, Anthropic, Together, etc.): the entity running the API server can see traffic at the API layer.</p>
 
     <h3>Tensor-layer isolation — spark-02 sees only floats</h3>
     <p>The Ray worker on <code>spark-02</code> processes <em>tensor activations</em>, not text. It receives intermediate floating-point tensors over NCCL allreduce on the DAC link and contributes its share of the matrix multiplications. The client's node never sees readable prompts or completions; it only sees the mathematical operations its TP rank is responsible for. NCCL traffic on the DAC carries floats, not strings.</p>
 
     <h3>Application-layer isolation — fully separate stacks</h3>
-    <p>Knowledge bases, chat history, RAG pipelines, vector indexes, API keys, request logs, and OAuth tokens are completely separate on each node. Your Open WebUI's database is on <code>spark-01</code>; the client's is on <code>spark-02</code>. Your LiteLLM master key is yours; the client's is the client's. Neither party has access to the other's application stack — there is no cross-mounted volume, no shared Postgres, no shared file system. The only thing that crosses the boundary is the inference call from the client's LiteLLM into <code>spark-01:8000</code>.</p>
+    <p>Knowledge bases, chat history, RAG pipelines, vector indexes, API keys, request logs, and OAuth tokens are completely separate on each node. Your Open WebUI's database is on <code>spark-01</code>; the client's is on <code>spark-02</code>. Neither party has access to the other's application stack — there is no cross-mounted volume, no shared Postgres, no shared file system. The only thing that crosses the boundary is the inference call from the client's Open WebUI directly into <code>spark-01:8000</code>.</p>
 
     <h3>Network isolation — separate tailnets, private DAC</h3>
     <p>Each node joins its owner's Tailscale tailnet independently. ACLs on each tailnet are controlled by that owner. The DAC link (<code>198.51.100.0/30</code>) is private physical hardware between the two nodes — it is not routed through either Tailscale network and is not advertised on either tailnet. Tailscale carries application traffic only (clients reaching their own UIs); compute traffic stays on the DAC.</p>
@@ -756,7 +731,7 @@
 
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div>vLLM on <code>spark-01:8000</code> has no authentication. Tailscale ACLs and host firewall rules are what prevent the client from bypassing their LiteLLM and hitting the unauthenticated endpoint directly. See Step 06 (Tailscale) for the ACL configuration that enforces this.</div>
+      <div><strong>There is no proxy layer anymore — read this carefully.</strong> vLLM on <code>spark-01:8000</code> has no authentication of its own, and both sides' Open WebUI (and Hermes on spark-01) now call it directly. Previously, LiteLLM sat in front of vLLM on each side and provided a second line of defense — per-side master keys, per-side request logging, and a place to enforce rate limits — independent of the network layer. That layer is gone. <strong>Tailscale ACLs and host firewall rules are now the sole access-control mechanism</strong> preventing the client from reaching <code>spark-01:8000</code> (or you from reaching anything on the client's side) — there is no second line of defense if an ACL or firewall rule is misconfigured. Treat the Step 04 (Tailscale) ACL configuration and the host firewall rules as load-bearing security controls, not defense-in-depth. There is also no more per-side API key or request log at the inference layer — if you need to know who sent what, you now have to correlate from each Open WebUI's own logs, not a shared proxy log.</div>
     </div>
   </div>
 
@@ -772,30 +747,30 @@
             <td>You (private)</td>
             <td><code>192.0.2.21</code></td>
             <td><code>198.51.100.1</code></td>
-            <td>vLLM head (Ray master, TP rank 0), Your LiteLLM, Your Open WebUI, Your Hermes Agent, Your n8n, Your Tailscale</td>
+            <td>vLLM head (Ray master, TP rank 0), Your Open WebUI, Your Hermes Agent, Your n8n, Your Tailscale</td>
           </tr>
           <tr>
             <td><code>spark-02</code></td>
             <td>Client (separate ownership)</td>
             <td><code>192.0.2.22</code></td>
             <td><code>198.51.100.2</code></td>
-            <td>vLLM Ray worker (TP rank 1), Client LiteLLM, Client Open WebUI, Client n8n, Client Tailscale</td>
+            <td>vLLM Ray worker (TP rank 1), Client Open WebUI, Client n8n, Client Tailscale</td>
           </tr>
         </tbody>
       </table>
     </div>
     <h3>Interconnects</h3>
     <ul style="font-size:13.5px;color:var(--text2);line-height:1.75;padding-left:20px;display:flex;flex-direction:column;gap:4px;">
-      <li><strong>DAC interconnect</strong> — <code>enp1s0f0np0</code>, MTU 9216, point-to-point <code>198.51.100.0/30</code>. Carries NCCL for tensor-parallel collectives, Ray control, and the client LiteLLM's inference calls into <code>spark-01:8000</code>. Not routed through either Tailscale network.</li>
+      <li><strong>DAC interconnect</strong> — <code>enp1s0f0np0</code>, MTU 9216, point-to-point <code>198.51.100.0/30</code>. Carries NCCL for tensor-parallel collectives, Ray control, and the client's Open WebUI inference calls into <code>spark-01:8000</code>. Not routed through either Tailscale network.</li>
       <li><strong>Mgmt interconnect</strong> — <code>192.0.2.0/24</code> over RJ45, default routes. Used for SSH and node-bootstrap traffic during setup.</li>
       <li><strong>Tailscale (each owner)</strong> — each node independently joins its owner's tailnet. Application traffic (browser → Open WebUI, Telegram → Hermes, etc.) traverses Tailscale. The DAC link is never advertised onto either tailnet.</li>
       <li><strong>SSH</strong> — passwordless both directions between <code>spark-01</code> and <code>spark-02</code> at the mgmt IPs (required for the rsync step in Step 01). After setup, this can be locked down or removed.</li>
     </ul>
     <h3>Architecture principles</h3>
     <ol style="font-size:13.5px;color:var(--text2);line-height:1.75;padding-left:20px;display:flex;flex-direction:column;gap:8px;">
-      <li><strong>Shared compute, split application.</strong> The vLLM cluster is the <em>only</em> shared resource. Application stacks above it (LiteLLM, Open WebUI, Hermes, n8n, Tailscale) are duplicated and independently owned.</li>
-      <li><strong>Both LiteLLMs hit the same vLLM endpoint.</strong> Your LiteLLM uses <code>http://localhost:8000/v1</code>; client's LiteLLM uses <code>http://198.51.100.1:8000/v1</code> over the DAC. Neither proxy goes through the other's stack.</li>
-      <li><strong>Separate keys, separate logs, separate data.</strong> Each LiteLLM has its own master key; each Open WebUI has its own knowledge bases and chat history. Nothing is shared at the application layer.</li>
+      <li><strong>Shared compute, split application.</strong> The vLLM cluster is the <em>only</em> shared resource. Application stacks above it (Open WebUI, Hermes, n8n, Tailscale) are duplicated and independently owned.</li>
+      <li><strong>Both sides' Open WebUI call vLLM directly.</strong> Your Open WebUI uses <code>http://host.docker.internal:8000/v1</code>; client's Open WebUI uses <code>http://198.51.100.1:8000/v1</code> over the DAC. There is no proxy in front of vLLM on either side.</li>
+      <li><strong>Separate data, but no proxy-layer keys or logs anymore.</strong> Each Open WebUI has its own knowledge bases and chat history, and nothing is shared at the application layer — but since there is no LiteLLM in the path, there are no more per-side master keys or per-side inference request logs. Access control now lives entirely at the network layer (Tailscale ACLs + host firewall); see the <a href="#trust-model">Trust model</a> warning above.</li>
       <li><strong>Tailscale is per-owner.</strong> Two separate tailnets, two separate ACL policies. Cross-tailnet traffic only happens if both owners explicitly configure it (which by default they do not).</li>
       <li><strong>Single-instance per side.</strong> No clustered Open WebUI / clustered n8n on either node. HA modes are documented in the <a href="#appendix-ha">appendix</a> only.</li>
     </ol>
@@ -927,18 +902,18 @@
 
       <div class="callout note" style="margin-top:14px;">
         <span class="callout-icon">ℹ</span>
-        <div><strong>Secrets stay manual.</strong> <code>YOUR_MASTER_KEY</code>, <code>YOUR_CLIENT_MASTER_KEY</code>, and <code>YOUR_BRAVE_API_KEY</code> are intentionally not in this worksheet — fill those into the relevant code blocks by hand, and don't paste them into a browser-stored field. The worksheet only handles network identifiers and your username.</div>
+        <div><strong>Secrets stay manual.</strong> <code>YOUR_BRAVE_API_KEY</code> is intentionally not in this worksheet — fill it into the relevant code blocks by hand, and don't paste it into a browser-stored field. The worksheet only handles network identifiers and your username.</div>
       </div>
     </div>
   </div>
 
   <div class="diagram-section" id="tldr">
     <h2>TL;DR — one-shot setup scripts</h2>
-    <p style="margin:0 0 12px;font-size:13.5px;color:var(--text2);">Fill the table below, then run the matching script on each node. The scripts bundle every step in this guide — packages, Docker, RoCE/DAC checks, vLLM cluster image, model download + DAC rsync, LiteLLM + Postgres + Prisma, Open WebUI, n8n, Hermes, Tailscale, and host firewall — into a single idempotent run per node. <strong>spark-01 must complete through the image-copy/rsync stage before spark-02 can finish</strong>; the spark-02 script will pause and wait for the model weights to arrive.</p>
+    <p style="margin:0 0 12px;font-size:13.5px;color:var(--text2);">Fill the table below, then run the matching script on each node. The scripts bundle every step in this guide — packages, Docker, RoCE/DAC checks, vLLM cluster image, model download + DAC rsync, Open WebUI, n8n, Hermes, Tailscale, and host firewall — into a single idempotent run per node. <strong>spark-01 must complete through the image-copy/rsync stage before spark-02 can finish</strong>; the spark-02 script will pause and wait for the model weights to arrive.</p>
 
     <div class="callout warning" style="margin:0 0 14px;">
       <span class="callout-icon">⚠</span>
-      <div><strong>Secrets are session-only.</strong> Values entered below in the <em>Secrets</em> block (HF token, master keys, Tailscale auth keys) are kept in browser <code>sessionStorage</code> — they vanish when you close the tab and are <em>never</em> written to disk. Generate fresh master keys with <code>openssl rand -hex 24</code>.</div>
+      <div><strong>Secrets are session-only.</strong> Values entered below in the <em>Secrets</em> block (HF token, Tailscale auth keys) are kept in browser <code>sessionStorage</code> — they vanish when you close the tab and are <em>never</em> written to disk.</div>
     </div>
     <div class="callout note" style="margin:0 0 14px;">
       <span class="callout-icon">ℹ</span>
@@ -959,20 +934,12 @@
             <input type="password" id="ws-hf-token" data-secret-key="YOUR_HF_TOKEN" placeholder="hf_..." autocomplete="off" spellcheck="false"/>
           </div>
           <div class="worksheet-row">
-            <label for="ws-master-key">Owner master key</label>
-            <input type="password" id="ws-master-key" data-secret-key="YOUR_MASTER_KEY" placeholder="sk-owner-..." autocomplete="off" spellcheck="false"/>
-          </div>
-          <div class="worksheet-row">
             <label for="ws-ts-key1">Tailscale auth key (optional)</label>
             <input type="password" id="ws-ts-key1" data-secret-key="YOUR_NODE1_TS_AUTHKEY" placeholder="tskey-auth-..." autocomplete="off" spellcheck="false"/>
           </div>
         </div>
         <div class="worksheet-col client">
           <h4>spark-02 — client node · secrets &amp; choices</h4>
-          <div class="worksheet-row">
-            <label for="ws-client-master">Client master key</label>
-            <input type="password" id="ws-client-master" data-secret-key="YOUR_CLIENT_MASTER_KEY" placeholder="sk-client-..." autocomplete="off" spellcheck="false"/>
-          </div>
           <div class="worksheet-row">
             <label for="ws-ts-key2">Client Tailscale auth key (optional)</label>
             <input type="password" id="ws-ts-key2" data-secret-key="YOUR_NODE2_TS_AUTHKEY" placeholder="tskey-auth-..." autocomplete="off" spellcheck="false"/>
@@ -1008,7 +975,7 @@
 
       <div class="worksheet-shared">
         <h4 style="font-size:11px;font-weight:600;color:var(--text3);letter-spacing:0.06em;text-transform:uppercase;margin:0 0 6px;">Optional layers — uncheck to skip</h4>
-        <p style="font-size:12px;color:var(--text3);margin:0 0 10px;line-height:1.5;">Core stack — vLLM cluster, LiteLLM, Postgres, Docker, RoCE check — is always installed. Tailscale ships pre-installed on DGX Spark, so uncheck it if you've already configured it (or want to use your existing config). Unchecking a layer also removes its <code>ufw</code> port rule.</p>
+        <p style="font-size:12px;color:var(--text3);margin:0 0 10px;line-height:1.5;">Core stack — vLLM cluster, Docker, RoCE check — is always installed. Tailscale ships pre-installed on DGX Spark, so uncheck it if you've already configured it (or want to use your existing config). Unchecking a layer also removes its <code>ufw</code> port rule.</p>
         <div class="worksheet-grid">
           <div class="worksheet-col you">
             <h4>spark-01 layers</h4>
@@ -1040,9 +1007,9 @@
     <ol style="font-size:13px;color:var(--text2);line-height:1.7;padding-left:20px;margin:0 0 18px;">
       <li><strong>Start <code>setup-spark-02.sh</code> first</strong> (or simultaneously). spark-01 cannot push the vLLM image until Docker is installed on spark-02; the spark-01 script will wait for it.</li>
       <li><strong>Then start <code>setup-spark-01.sh</code></strong> on spark-01. It installs packages, waits up to 5 min for spark-02's Docker to come online over the DAC, builds and pushes the ~19 GB vLLM image to spark-02, downloads the model on spark-01, rsyncs the ~60 GB of weights to spark-02 over the DAC, and brings up the rest of your stack.</li>
-      <li>Meanwhile, <code>setup-spark-02.sh</code> waits up to 10 min for the image, then up to 30 min for the weights, then brings up the client LiteLLM, Open WebUI, n8n, Tailscale, and ufw on its side.</li>
+      <li>Meanwhile, <code>setup-spark-02.sh</code> waits up to 10 min for the image, then up to 30 min for the weights, then brings up the client Open WebUI, n8n, Tailscale, and ufw on its side.</li>
       <li>When both scripts return, run <code>hermes setup</code> interactively on spark-01 — the wizard prompts for the Telegram bot token and user ID, so it can't be safely scripted.</li>
-      <li>Apply the Tailscale ACLs from Step 06 in each owner's admin console.</li>
+      <li>Apply the Tailscale ACLs from Step 04 in each owner's admin console.</li>
     </ol>
 
     <div class="tldr-grid">
@@ -1056,7 +1023,7 @@
           <pre><code id="tldr-script-1">#!/usr/bin/env bash
 # DGX AI Stack — spark-01 (owner / Ray head) one-shot setup
 # Bundles: bootstrap · GUI disable · RoCE check · vLLM image build + DAC copy ·
-# model download + rsync · LiteLLM + Postgres + Prisma · Open WebUI · n8n ·
+# model download + rsync · Open WebUI · n8n ·
 # Hermes install · Hermes dashboard · Tailscale · ufw.
 # Re-running is safe: every step is guarded.
 set -euo pipefail
@@ -1069,7 +1036,6 @@ NODE2_DAC_IP="YOUR_NODE2_DAC_IP"
 USERNAME="YOUR_USERNAME"
 TAILNET_HOSTNAME="YOUR_TAILNET_HOSTNAME"
 HF_TOKEN="YOUR_HF_TOKEN"
-MASTER_KEY="YOUR_MASTER_KEY"
 TS_AUTHKEY="YOUR_NODE1_TS_AUTHKEY"
 MODEL_RECIPE="MODEL_RECIPE"
 SERVED_MODEL_NAME="SERVED_MODEL_NAME"
@@ -1083,7 +1049,6 @@ die() { echo "✗ $*" &gt;&amp;2; exit 1; }
 [[ "$(whoami)" == "$USERNAME" ]] || die "expected user $USERNAME, got $(whoami)"
 
 # Fail-fast if critical worksheet placeholders weren't filled.
-[[ "$MASTER_KEY" != "YOUR_MASTER_KEY" &amp;&amp; -n "$MASTER_KEY" ]] || die "MASTER_KEY not set — fill the TL;DR secrets block in the guide"
 [[ "$HF_TOKEN"   != "YOUR_HF_TOKEN"   &amp;&amp; -n "$HF_TOKEN"   ]] || die "HF_TOKEN not set — fill the TL;DR secrets block in the guide"
 [[ "$NODE1_DAC_IP" != "YOUR_NODE1_DAC_IP" &amp;&amp; "$NODE2_DAC_IP" != "YOUR_NODE2_DAC_IP" ]] || die "fill the DAC IPs in the network worksheet"
 [[ "$USERNAME" != "YOUR_USERNAME" ]] || die "fill USERNAME in the network worksheet"
@@ -1202,97 +1167,11 @@ rsync -avP -e "ssh -b $NODE1_DAC_IP" \
   "$HOME/.cache/huggingface/hub/$HF_MODEL_DIR/" \
   "$NODE2_DAC_IP:.cache/huggingface/hub/$HF_MODEL_DIR/"
 
-# ───── 10. LiteLLM + Prisma ─────
-log "pip — litellm[proxy] + prisma"
-pip3 install --break-system-packages 'litellm[proxy]' prisma &gt;/dev/null
-grep -q 'HOME/.local/bin' "$HOME/.bashrc" || \
-  echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; "$HOME/.bashrc"
-
-# ───── 11. spark-ai-stack — postgres compose ─────
-log "spark-ai-stack directory + postgres"
+# ───── 10. spark-ai-stack directory ─────
+log "spark-ai-stack directory"
 mkdir -p "$HOME/spark-ai-stack/logs" "$HOME/workspace"
-cd "$HOME/spark-ai-stack"
 
-cat &gt; docker-compose.yml &lt;&lt;'YAML'
-services:
-  litellm-db:
-    image: postgres:16
-    container_name: litellm-db
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=litellm
-      - POSTGRES_PASSWORD=litellm
-      - POSTGRES_DB=litellm
-    volumes:
-      - litellm_db:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-volumes:
-  litellm_db:
-YAML
-
-docker compose up -d litellm-db
-for i in {1..40}; do
-  docker exec litellm-db pg_isready -U litellm &gt;/dev/null 2>&amp;1 &amp;&amp; break
-  sleep 2
-done
-docker exec litellm-db pg_isready -U litellm &gt;/dev/null 2>&amp;1 \
-  || die "postgres (litellm-db) never became ready — check 'docker logs litellm-db'"
-
-# ───── 12. litellm-config.yaml (owner) ─────
-log "litellm-config.yaml"
-cat &gt; "$HOME/spark-ai-stack/litellm-config.yaml" &lt;&lt;EOF
-model_list:
-  - model_name: Qwen3.5-122B-Non-Reasoning
-    litellm_params:
-      model: openai/$SERVED_MODEL_NAME
-      api_base: http://localhost:8000/v1
-      api_key: "not-needed"
-      max_tokens: 8192
-      extra_body:
-        chat_template_kwargs:
-          enable_thinking: false
-    model_info:
-      supports_function_calling: true
-      supports_tool_choice: true
-      max_context_window: 262144
-      max_input_tokens: 229376
-      max_output_tokens: 8192
-  - model_name: Qwen3.5-122B-Reasoning
-    litellm_params:
-      model: openai/$SERVED_MODEL_NAME
-      api_base: http://localhost:8000/v1
-      api_key: "not-needed"
-      max_tokens: 32768
-      extra_body:
-        chat_template_kwargs:
-          enable_thinking: true
-    model_info:
-      supports_function_calling: true
-      supports_tool_choice: true
-      max_context_window: 262144
-      max_input_tokens: 229376
-      max_output_tokens: 32768
-litellm_settings:
-  verbose: true
-  store_model_in_db: true
-  default_system_message: "You are a highly capable AI assistant. Be direct, accurate, and concise. Answer immediately without preamble. For coding: produce complete, working code. State definitive answers first then explain."
-router_settings:
-  num_retries: 0
-  timeout: 600
-general_settings:
-  master_key: $MASTER_KEY
-  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
-  mcp_settings:
-    allow_all_keys: true
-EOF
-
-log "prisma db push"
-PRISMA_SCHEMA="$(python3 -c 'import litellm,os;print(os.path.join(os.path.dirname(litellm.__file__),"proxy","schema.prisma"))')"
-DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
-  "$HOME/.local/bin/prisma" db push --schema "$PRISMA_SCHEMA"
-
-# ───── 13. systemd — vllm-cluster + litellm ─────
+# ───── 11. systemd — vllm-cluster ─────
 log "systemd units"
 sudo tee /etc/systemd/system/vllm-cluster.service &gt;/dev/null &lt;&lt;EOF
 [Unit]
@@ -1315,40 +1194,20 @@ TimeoutStopSec=60
 WantedBy=multi-user.target
 EOF
 
-sudo tee /etc/systemd/system/litellm.service &gt;/dev/null &lt;&lt;EOF
-[Unit]
-Description=LiteLLM Proxy (owner)
-After=network.target docker.service
-Wants=docker.service
-
-[Service]
-Type=simple
-User=$USERNAME
-WorkingDirectory=/home/$USERNAME/spark-ai-stack
-ExecStart=/home/$USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 sudo systemctl daemon-reload
-sudo systemctl enable vllm-cluster litellm
+sudo systemctl enable vllm-cluster
 # --no-block: oneshot units block on ExecStart; model load takes minutes.
 sudo systemctl start --no-block vllm-cluster
-sleep 10
-sudo systemctl start litellm
 
 # >>>OPT:openwebui
-# ───── 14. Open WebUI ─────
+# ───── 12. Open WebUI ─────
 log "open-webui container"
 docker rm -f open-webui 2>/dev/null || true
 docker run -d --name open-webui --restart unless-stopped \
   -p 8080:8080 \
   -v open-webui:/app/backend/data \
-  -e OPENAI_API_BASE_URL="http://host.docker.internal:8001/v1" \
-  -e OPENAI_API_KEY="$MASTER_KEY" \
+  -e OPENAI_API_BASE_URL="http://host.docker.internal:8000/v1" \
+  -e OPENAI_API_KEY="not-needed" \
   -e WEBUI_AUTH=True \
   -e ENABLE_OLLAMA_API=False \
   --add-host=host.docker.internal:host-gateway \
@@ -1356,7 +1215,7 @@ docker run -d --name open-webui --restart unless-stopped \
 # <<<OPT:openwebui
 
 # >>>OPT:n8n
-# ───── 15. n8n compose ─────
+# ───── 13. n8n compose ─────
 log "n8n compose"
 # Fall back to plain 'spark-01' if the worksheet hostname is blank or unfilled.
 WEBHOOK_HOST="$TAILNET_HOSTNAME"
@@ -1388,7 +1247,7 @@ docker compose -f "$HOME/spark-ai-stack/n8n.yml" up -d
 # <<<OPT:n8n
 
 # >>>OPT:hermes
-# ───── 16. Hermes Agent + Dashboard ─────
+# ───── 14. Hermes Agent + Dashboard ─────
 log "hermes install (run 'hermes setup' interactively after this script)"
 sudo apt install -y ripgrep ffmpeg
 curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash || true
@@ -1418,7 +1277,7 @@ sudo systemctl start hermes-dashboard
 # <<<OPT:hermes
 
 # >>>OPT:tailscale
-# ───── 17. Tailscale (owner tailnet) ─────
+# ───── 15. Tailscale (owner tailnet) ─────
 # Prereqs in the OWNER tailnet:
 #   1. tag:owner must be declared in tagOwners in the policy file.
 #   2. The auth key must be generated WITH tag:owner selected (Admin → Settings → Keys).
@@ -1435,12 +1294,11 @@ fi
 # <<<OPT:tailscale
 
 # >>>OPT:ufw
-# ───── 18. host firewall ─────
+# ───── 16. host firewall ─────
 log "ufw"
 sudo ufw --force default deny incoming
 sudo ufw default allow outgoing
 # >>>OPT:tailscale
-sudo ufw allow in on tailscale0 to any port 8001 proto tcp
 # >>>OPT:openwebui
 sudo ufw allow in on tailscale0 to any port 8080 proto tcp
 # <<<OPT:openwebui
@@ -1461,9 +1319,9 @@ log "spark-01 setup complete"
 cat &lt;&lt;DONE
 Next manual steps:
   1. Run 'hermes setup' interactively to wire up the agent (Telegram bot token + user ID).
-  2. Apply the owner Tailscale ACL from Step 06 in the admin console.
+  2. Apply the owner Tailscale ACL from Step 04 in the admin console.
   3. Verify:
-       curl http://localhost:8001/v1/models -H "Authorization: Bearer $MASTER_KEY"
+       curl http://localhost:8000/v1/models
        docker exec vllm_node ray status     # expect 2 nodes, 2.0/2.0 GPU
 DONE
 </code></pre>
@@ -1480,7 +1338,7 @@ DONE
           <pre><code id="tldr-script-2">#!/usr/bin/env bash
 # DGX AI Stack — spark-02 (client / Ray worker) one-shot setup
 # Bundles: bootstrap · GUI disable · RoCE check · wait-for-image · wait-for-weights ·
-# client LiteLLM + Postgres + Prisma · client Open WebUI · client n8n ·
+# client Open WebUI · client n8n ·
 # Tailscale (client tailnet) · ufw.
 # Re-running is safe: every step is guarded.
 set -euo pipefail
@@ -1492,7 +1350,6 @@ NODE2_MGMT_IP="YOUR_NODE2_MGMT_IP"
 NODE2_DAC_IP="YOUR_NODE2_DAC_IP"
 USERNAME="YOUR_USERNAME"
 CLIENT_TAILNET_HOSTNAME="CLIENT_TAILNET_HOSTNAME"
-CLIENT_MASTER_KEY="YOUR_CLIENT_MASTER_KEY"
 TS_AUTHKEY="YOUR_NODE2_TS_AUTHKEY"
 SERVED_MODEL_NAME="SERVED_MODEL_NAME"
 HF_MODEL_DIR="HF_MODEL_DIR"
@@ -1504,7 +1361,6 @@ die() { echo "✗ $*" &gt;&amp;2; exit 1; }
 [[ "$(whoami)" == "$USERNAME" ]] || die "expected user $USERNAME, got $(whoami)"
 
 # Fail-fast if critical worksheet placeholders weren't filled.
-[[ "$CLIENT_MASTER_KEY" != "YOUR_CLIENT_MASTER_KEY" &amp;&amp; -n "$CLIENT_MASTER_KEY" ]] || die "CLIENT_MASTER_KEY not set — fill the TL;DR secrets block in the guide"
 [[ "$NODE1_DAC_IP" != "YOUR_NODE1_DAC_IP" &amp;&amp; "$NODE2_DAC_IP" != "YOUR_NODE2_DAC_IP" ]] || die "fill the DAC IPs in the network worksheet"
 [[ "$USERNAME" != "YOUR_USERNAME" ]] || die "fill USERNAME in the network worksheet"
 
@@ -1570,120 +1426,19 @@ for i in {1..180}; do  # 180 × 10s = 30 min cap
   sleep 10
 done
 
-# ───── 7. LiteLLM + Prisma ─────
-log "pip — litellm[proxy] + prisma"
-pip3 install --break-system-packages 'litellm[proxy]' prisma &gt;/dev/null
-grep -q 'HOME/.local/bin' "$HOME/.bashrc" || \
-  echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; "$HOME/.bashrc"
-export PATH="$HOME/.local/bin:$PATH"
-
-# ───── 8. spark-ai-stack + standalone postgres ─────
-log "spark-ai-stack + postgres"
+# ───── 7. spark-ai-stack directory ─────
+log "spark-ai-stack directory"
 mkdir -p "$HOME/spark-ai-stack/logs"
-cd "$HOME/spark-ai-stack"
-
-docker rm -f litellm-db 2>/dev/null || true
-docker run -d --name litellm-db --restart unless-stopped \
-  -e POSTGRES_USER=litellm \
-  -e POSTGRES_PASSWORD=litellm \
-  -e POSTGRES_DB=litellm \
-  -p 5432:5432 \
-  -v litellm_db:/var/lib/postgresql/data \
-  postgres:16
-
-for i in {1..40}; do
-  docker exec litellm-db pg_isready -U litellm &gt;/dev/null 2>&amp;1 &amp;&amp; break
-  sleep 2
-done
-docker exec litellm-db pg_isready -U litellm &gt;/dev/null 2>&amp;1 \
-  || die "postgres (litellm-db) never became ready — check 'docker logs litellm-db'"
-
-# ───── 9. client litellm-config.yaml (points DAC → vLLM) ─────
-log "client litellm-config.yaml"
-cat &gt; "$HOME/spark-ai-stack/litellm-config.yaml" &lt;&lt;EOF
-model_list:
-  - model_name: Qwen3.5-122B-Non-Reasoning
-    litellm_params:
-      model: openai/$SERVED_MODEL_NAME
-      api_base: http://$NODE1_DAC_IP:8000/v1
-      api_key: "not-needed"
-      max_tokens: 8192
-      extra_body:
-        chat_template_kwargs:
-          enable_thinking: false
-    model_info:
-      supports_function_calling: true
-      supports_tool_choice: true
-      max_context_window: 262144
-      max_input_tokens: 229376
-      max_output_tokens: 8192
-  - model_name: Qwen3.5-122B-Reasoning
-    litellm_params:
-      model: openai/$SERVED_MODEL_NAME
-      api_base: http://$NODE1_DAC_IP:8000/v1
-      api_key: "not-needed"
-      max_tokens: 32768
-      extra_body:
-        chat_template_kwargs:
-          enable_thinking: true
-    model_info:
-      supports_function_calling: true
-      supports_tool_choice: true
-      max_context_window: 262144
-      max_input_tokens: 229376
-      max_output_tokens: 32768
-litellm_settings:
-  verbose: true
-  store_model_in_db: true
-  log_config:
-    level: INFO
-    format: json
-    filepath: /home/$USERNAME/spark-ai-stack/logs/litellm.log
-router_settings:
-  num_retries: 0
-  timeout: 600
-general_settings:
-  master_key: $CLIENT_MASTER_KEY
-  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
-EOF
-
-log "prisma db push"
-PRISMA_SCHEMA="$(python3 -c 'import litellm,os;print(os.path.join(os.path.dirname(litellm.__file__),"proxy","schema.prisma"))')"
-DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
-  "$HOME/.local/bin/prisma" db push --schema "$PRISMA_SCHEMA"
-
-# ───── 10. client litellm systemd ─────
-log "systemd — litellm (client)"
-sudo tee /etc/systemd/system/litellm.service &gt;/dev/null &lt;&lt;EOF
-[Unit]
-Description=LiteLLM Proxy (client)
-After=network.target docker.service
-Wants=docker.service
-
-[Service]
-Type=simple
-User=$USERNAME
-WorkingDirectory=/home/$USERNAME/spark-ai-stack
-ExecStart=/home/$USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now litellm
 
 # >>>OPT:openwebui
-# ───── 11. client Open WebUI ─────
+# ───── 8. client Open WebUI ─────
 log "client open-webui"
 docker rm -f open-webui 2>/dev/null || true
 docker run -d --name open-webui --restart unless-stopped \
   -p 8080:8080 \
   -v open-webui:/app/backend/data \
-  -e OPENAI_API_BASE_URL="http://host.docker.internal:8001/v1" \
-  -e OPENAI_API_KEY="$CLIENT_MASTER_KEY" \
+  -e OPENAI_API_BASE_URL="http://$NODE1_DAC_IP:8000/v1" \
+  -e OPENAI_API_KEY="not-needed" \
   -e WEBUI_AUTH=True \
   -e ENABLE_OLLAMA_API=False \
   --add-host=host.docker.internal:host-gateway \
@@ -1691,7 +1446,7 @@ docker run -d --name open-webui --restart unless-stopped \
 # <<<OPT:openwebui
 
 # >>>OPT:n8n
-# ───── 12. client n8n ─────
+# ───── 9. client n8n ─────
 log "client n8n"
 # Fall back to plain 'spark-02' if the worksheet field is blank or unfilled.
 WEBHOOK_HOST="$CLIENT_TAILNET_HOSTNAME"
@@ -1711,7 +1466,7 @@ docker run -d --name n8n --restart unless-stopped \
 # <<<OPT:n8n
 
 # >>>OPT:tailscale
-# ───── 13. Tailscale (client tailnet) ─────
+# ───── 10. Tailscale (client tailnet) ─────
 # Prereqs in the CLIENT tailnet:
 #   1. tag:client-ai must be declared in tagOwners in the client's policy file.
 #   2. The auth key must be generated WITH tag:client-ai selected (Admin → Settings → Keys).
@@ -1728,12 +1483,11 @@ fi
 # <<<OPT:tailscale
 
 # >>>OPT:ufw
-# ───── 14. host firewall ─────
+# ───── 11. host firewall ─────
 log "ufw"
 sudo ufw --force default deny incoming
 sudo ufw default allow outgoing
 # >>>OPT:tailscale
-sudo ufw allow in on tailscale0 to any port 8001 proto tcp
 # >>>OPT:openwebui
 sudo ufw allow in on tailscale0 to any port 8080 proto tcp
 # <<<OPT:openwebui
@@ -1749,14 +1503,13 @@ sudo ufw --force enable
 log "spark-02 setup complete"
 cat &lt;&lt;DONE
 Next manual steps:
-  1. Apply the client Tailscale ACL (Step 06) — restrict tag:client-ai to tcp:8001,8080,5678.
+  1. Apply the client Tailscale ACL (Step 04) — restrict tag:client-ai to tcp:8080,5678. Do NOT expose spark-01's tcp:8000 onto this tailnet.
   2. Disable key expiry on spark-02 in the client's Tailscale admin.
   3. Verify:
-       curl http://localhost:8001/v1/models -H "Authorization: Bearer $CLIENT_MASTER_KEY"
-       curl http://localhost:8001/v1/chat/completions \\
-         -H "Authorization: Bearer $CLIENT_MASTER_KEY" \\
+       curl http://$NODE1_DAC_IP:8000/v1/models
+       curl http://$NODE1_DAC_IP:8000/v1/chat/completions \\
          -H 'Content-Type: application/json' \\
-         -d '{"model":"Qwen3.5-122B-Non-Reasoning","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
+         -d '{"model":"$SERVED_MODEL_NAME","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
 DONE
 </code></pre>
         </div>
@@ -1765,7 +1518,7 @@ DONE
 
     <div class="callout note" style="margin:14px 0 0;">
       <span class="callout-icon">ℹ</span>
-      <div><strong>Curl-from-gist pattern (optional).</strong> If you'd rather not <code>scp</code> the scripts, click <em>download</em>, push the file to a private gist or your own host, then on each node: <code>curl -fsSL https://&lt;your-host&gt;/setup-spark-01.sh | bash</code>. The downloaded scripts have the worksheet values baked in, so anyone who can read the URL can also read your secrets — use a one-time gist or self-host behind auth, and rotate the master keys after the run.</div>
+      <div><strong>Curl-from-gist pattern (optional).</strong> If you'd rather not <code>scp</code> the scripts, click <em>download</em>, push the file to a private gist or your own host, then on each node: <code>curl -fsSL https://&lt;your-host&gt;/setup-spark-01.sh | bash</code>. The downloaded scripts have the worksheet values baked in, so anyone who can read the URL can also read your HF token and Tailscale auth keys — use a one-time gist or self-host behind auth.</div>
     </div>
   </div>
 
@@ -2100,363 +1853,14 @@ docker logs -f vllm_node</code></pre>
   --served-model-name qwen3.6-35b \
   --default-chat-template-kwargs '{"enable_thinking": false}'</code></pre>
     </div>
-    <p>Update <code>--served-model-name</code> in the LiteLLM config in Step 02 (and the client's LiteLLM in Step 03) to match if you fall back.</p>
+    <p>Update <code>--served-model-name</code> to match if you fall back — it's the only place the name is set now (there's no LiteLLM config to also update). Open WebUI's model selector on both sides will pick up the new name automatically since it queries vLLM's <code>/v1/models</code> directly.</p>
   </div>
 
   <div class="step" id="step2">
-    <div class="step-header"><span class="step-num">STEP 02</span><h2>Your LiteLLM proxy on spark-01</h2></div>
-    <p>This is <strong>your</strong> LiteLLM proxy — your master key, your SQLite log corpus, your routing rules. It serves only your application stack on <code>spark-01</code> (your Open WebUI, your Hermes, your n8n). The client gets their own separate LiteLLM in Step 03.</p>
-    <p>Your LiteLLM lives on the same node as the vLLM head and points at <code>localhost:8000</code>. The clustered vLLM presents one logical OpenAI-compatible endpoint — LiteLLM doesn't need to know there are two physical nodes behind it.</p>
+    <div class="step-header"><span class="step-num">STEP 02</span><h2>Your Open WebUI on spark-01</h2></div>
+    <p>Your daily-driver chat interface, owned by you, on your node. It points <strong>directly at vLLM</strong> at <code>http://localhost:8000/v1</code> — there is no proxy in between. The client gets their own Open WebUI on <code>spark-02</code> in Step 03 — neither side can see the other's chat history, knowledge bases, RAG documents, or API keys.</p>
 
-    <div class="callout note"><span class="callout-icon">ℹ</span><span>LiteLLM has no arm64 Docker image — install via pip directly on the host. This is unchanged from a single-node setup.</span></div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — directories and install</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/spark-ai-stack/logs
-cd ~/spark-ai-stack
-
-pip3 install litellm[proxy] --break-system-packages
-echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc</code></pre>
-    </div>
-    <div class="verify">Verify: <code>~/.local/bin/litellm --version</code></div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — config (single backend pointing at the local clustered vLLM)</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/spark-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
-model_list:
-  # Default — thinking off. Used by all clients unless they explicitly select the reasoning model.
-  - model_name: Qwen3.5-122B-Non-Reasoning
-    litellm_params:
-      model: openai/qwen3.5-122b
-      api_base: http://localhost:8000/v1
-      api_key: "not-needed"
-      max_tokens: 8192
-      extra_body:
-        chat_template_kwargs:
-          enable_thinking: false
-    model_info:
-      supports_function_calling: true
-      supports_tool_choice: true
-      max_context_window: 262144
-      max_input_tokens: 229376
-      max_output_tokens: 8192
-
-  # Opt-in reasoning — user selects this model explicitly for complex tasks.
-  - model_name: Qwen3.5-122B-Reasoning
-    litellm_params:
-      model: openai/qwen3.5-122b
-      api_base: http://localhost:8000/v1
-      api_key: "not-needed"
-      max_tokens: 32768
-      extra_body:
-        chat_template_kwargs:
-          enable_thinking: true
-    model_info:
-      supports_function_calling: true
-      supports_tool_choice: true
-      max_context_window: 262144
-      max_input_tokens: 229376
-      max_output_tokens: 32768
-
-litellm_settings:
-  verbose: true
-  store_model_in_db: true
-  default_system_message: "You are a highly capable AI assistant. Be direct,
-    accurate, and concise. Answer immediately without preamble. Never deliberate
-    out loud about whether or how to answer. For coding: produce complete,
-    working code. State definitive answers first then explain."
-
-router_settings:
-  num_retries: 0
-  timeout: 600
-
-general_settings:
-  master_key: YOUR_MASTER_KEY
-  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
-  mcp_settings:
-    allow_all_keys: true
-EOF</code></pre>
-    </div>
-    <div class="callout note">
-      <span class="callout-icon">ℹ</span>
-      <div>Two model entries point at the same vLLM backend. Thinking is disabled by default — vLLM disables it at the container level via <code>--default-chat-template-kwargs</code>, and LiteLLM reinforces this per-entry via <code>extra_body</code>. Users select <code>Qwen3.5-122B-Reasoning</code> in Open WebUI, n8n, or any frontend when they need extended reasoning. All other requests use <code>Qwen3.5-122B-Non-Reasoning</code>.</div>
-    </div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — systemd service</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>sudo tee /etc/systemd/system/litellm.service &lt;&lt; 'EOF'
-[Unit]
-Description=LiteLLM Proxy
-After=network.target docker.service
-Wants=docker.service
-
-[Service]
-Type=simple
-User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/spark-ai-stack
-ExecStart=/home/YOUR_USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable litellm
-sudo systemctl start litellm</code></pre>
-    </div>
-
-    <div class="verify">Verify from spark-01: <code>curl http://localhost:8001/v1/models</code> (no key needed if you didn't set <code>master_key</code> yet, otherwise use <code>-H "Authorization: Bearer YOUR_MASTER_KEY"</code>)</div>
-    <div class="callout note"><span class="callout-icon">ℹ</span><span>Your LiteLLM should NOT be reachable from <code>spark-02</code>. If you are using Tailscale ACLs (Step 06), only your tailnet should reach <code>spark-01:8001</code>. The client uses their own LiteLLM (Step 03) — they never call yours.</span></div>
-
-    <h3>Step 2d — PostgreSQL for the Admin UI and virtual keys (required)</h3>
-    <p>The LiteLLM Admin UI and virtual key system require PostgreSQL — this is why the step exists. LiteLLM's Prisma schema is hardcoded for PostgreSQL, and the Admin UI, virtual key generation, and model management all write to the PostgreSQL metadata database.</p>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — bring up the litellm-db postgres container</h4>
-    <p>On spark-01 the postgres container lives in <code>~/spark-ai-stack/docker-compose.yml</code> alongside <code>n8n</code>:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>services:
-  litellm-db:
-    image: postgres:16
-    container_name: litellm-db
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=litellm
-      - POSTGRES_PASSWORD=litellm
-      - POSTGRES_DB=litellm
-    volumes:
-      - litellm_db:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-volumes:
-  litellm_db:</code></pre>
-    </div>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cd ~/spark-ai-stack
-docker compose up -d litellm-db
-docker compose ps litellm-db</code></pre>
-    </div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — apply the Prisma schema</h4>
-    <p>Install the Prisma CLI if missing, then push the LiteLLM Prisma schema into the new database. This must run once on spark-01 before LiteLLM starts, otherwise the UI will return <code>table public.LiteLLM_UserTable does not exist</code>.</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>pip install prisma --break-system-packages
-
-DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
-  prisma db push \
-  --schema /home/YOUR_USERNAME/.local/lib/python3.12/site-packages/litellm/proxy/schema.prisma</code></pre>
-    </div>
-    <div class="verify">Expected: <code>Your database is now in sync with your Prisma schema. Done in &lt;Ns&gt;</code></div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — wire the database into litellm-config.yaml</h4>
-    <p>Add the <code>database_url</code> to <code>general_settings</code> (<strong>not</strong> at the top level — see troubleshooting) and enable model-in-DB storage so the UI can edit the model list:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>general_settings:
-  master_key: YOUR_MASTER_KEY
-  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
-
-litellm_settings:
-  store_model_in_db: true</code></pre>
-    </div>
-    <p>Restart and verify:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>sudo systemctl restart litellm
-sudo systemctl status litellm --no-pager
-curl -s http://localhost:8001/health/readiness | head</code></pre>
-    </div>
-    <div class="verify">UI is at <code>http://spark-01:8001/ui</code> — log in with <code>admin</code> and your master key. Generate per-service virtual keys from the <strong>Virtual Keys</strong> tab (one for Open WebUI, one for n8n, one for Hermes — never paste the master key into a downstream service).</div>
-  </div>
-
-  <div class="step" id="step3">
-    <div class="step-header"><span class="step-num">STEP 03</span><h2>Client LiteLLM proxy on spark-02</h2></div>
-    <p>The client gets their own LiteLLM proxy on <code>spark-02</code>, with their own master key, their own log corpus, and their own routing rules. It points at the shared vLLM endpoint over the DAC link. <strong>This is not a copy of spark-01's LiteLLM</strong> — it has no shared config, no shared key, no shared logs. The client controls their own master key and never shares it with you.</p>
-
-    <div class="callout note"><span class="callout-icon">ℹ</span><span>If you are setting up <code>spark-02</code> on behalf of the client, hand off the master-key generation step (or have them rotate the key the moment they take over). The point of split trust is that you do not hold the client's API credentials.</span></div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — install</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>mkdir -p ~/spark-ai-stack/logs
-cd ~/spark-ai-stack
-
-pip3 install litellm[proxy] --break-system-packages
-echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc</code></pre>
-    </div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — generate the client master key</h4>
-    <p>Run on the client's terminal — store this key only on <code>spark-02</code>:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>echo "sk-client-$(openssl rand -hex 16)"</code></pre>
-    </div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — config (points at vLLM over the DAC)</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cat &gt; ~/spark-ai-stack/litellm-config.yaml &lt;&lt; 'EOF'
-model_list:
-  - model_name: Qwen3.5-122B-Non-Reasoning
-    litellm_params:
-      model: openai/qwen3.5-122b
-      api_base: http://YOUR_NODE1_DAC_IP:8000/v1
-      api_key: "not-needed"
-      max_tokens: 8192
-      extra_body:
-        chat_template_kwargs:
-          enable_thinking: false
-    model_info:
-      supports_function_calling: true
-      supports_tool_choice: true
-      max_context_window: 262144
-      max_input_tokens: 229376
-      max_output_tokens: 8192
-
-  - model_name: Qwen3.5-122B-Reasoning
-    litellm_params:
-      model: openai/qwen3.5-122b
-      api_base: http://YOUR_NODE1_DAC_IP:8000/v1
-      api_key: "not-needed"
-      max_tokens: 32768
-      extra_body:
-        chat_template_kwargs:
-          enable_thinking: true
-    model_info:
-      supports_function_calling: true
-      supports_tool_choice: true
-      max_context_window: 262144
-      max_input_tokens: 229376
-      max_output_tokens: 32768
-
-litellm_settings:
-  verbose: true
-  database:
-    type: sqlite
-    path: /home/YOUR_USERNAME/spark-ai-stack/logs/litellm.db
-  log_config:
-    level: INFO
-    format: json
-    filepath: /home/YOUR_USERNAME/spark-ai-stack/logs/litellm.log
-
-general_settings:
-  master_key: YOUR_CLIENT_MASTER_KEY    # set to the sk-client-... value above
-
-router_settings:
-  num_retries: 0
-  timeout: 600
-EOF</code></pre>
-    </div>
-    <div class="callout note">
-      <span class="callout-icon">ℹ</span>
-      <div>The DAC is the fastest path between the two nodes — substantially lower latency than going over the mgmt LAN. Do not point the client LiteLLM at <code>YOUR_NODE1_MGMT_IP:8000</code> unless the DAC is down.</div>
-    </div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — systemd service (independent of spark-01)</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>sudo tee /etc/systemd/system/litellm.service &lt;&lt; 'EOF'
-[Unit]
-Description=LiteLLM Proxy (client)
-After=network.target docker.service
-Wants=docker.service
-
-[Service]
-Type=simple
-User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/spark-ai-stack
-ExecStart=/home/YOUR_USERNAME/.local/bin/litellm --config litellm-config.yaml --port 8001 --host 0.0.0.0
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable litellm
-sudo systemctl start litellm
-sudo systemctl status litellm --no-pager</code></pre>
-    </div>
-
-    <h3>Verification — confirm the request hits spark-01:8000</h3>
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — local LiteLLM responds with the client key</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>curl http://localhost:8001/v1/models \
-  -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY"</code></pre>
-    </div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — inference round-trip through the shared backend</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>curl http://localhost:8001/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"qwen3.5-122b","messages":[{"role":"user","content":"hi from client"}],"max_tokens":16}'</code></pre>
-    </div>
-    <div class="verify">On spark-01, <code>tail -f ~/spark-ai-stack/logs/litellm.log</code> shows <strong>nothing</strong> — your LiteLLM is not in the path. Instead, run <code>docker logs --tail 20 vllm_node</code> on spark-01 — you should see the new request reach the vLLM head.</div>
-
-    <h3>Step 3d — PostgreSQL for the client Admin UI and virtual keys (required)</h3>
-    <p>The LiteLLM Admin UI and virtual key system require PostgreSQL — same requirement as Step 02. Set up PostgreSQL on spark-02 so the client's Admin UI, virtual key generation, and model management work correctly. spark-02 doesn't run a docker-compose stack, so we use a standalone postgres container.</p>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — standalone postgres container</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>docker run -d --name litellm-db --restart unless-stopped \
-  -e POSTGRES_USER=litellm \
-  -e POSTGRES_PASSWORD=litellm \
-  -e POSTGRES_DB=litellm \
-  -p 5432:5432 \
-  -v litellm_db:/var/lib/postgresql/data \
-  postgres:16</code></pre>
-    </div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — apply the Prisma schema</h4>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>pip install prisma --break-system-packages
-
-DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
-  prisma db push \
-  --schema /home/YOUR_USERNAME/.local/lib/python3.12/site-packages/litellm/proxy/schema.prisma</code></pre>
-    </div>
-    <div class="verify">Expected: <code>Your database is now in sync with your Prisma schema.</code></div>
-
-    <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — wire the database into the client litellm-config.yaml</h4>
-    <p><code>database_url</code> goes under <code>general_settings</code>, alongside the existing <code>master_key</code>. Add <code>store_model_in_db: true</code> under <code>litellm_settings</code>:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>general_settings:
-  master_key: YOUR_CLIENT_MASTER_KEY
-  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"
-
-litellm_settings:
-  store_model_in_db: true</code></pre>
-    </div>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>sudo systemctl restart litellm
-sudo systemctl status litellm --no-pager</code></pre>
-    </div>
-    <div class="verify">Client UI is at <code>http://spark-02:8001/ui</code> — log in with <code>admin</code> and the client master key. The client generates their own per-app virtual keys from the <strong>Virtual Keys</strong> tab; you never see them.</div>
-    <div class="callout warning">
-      <span class="callout-icon">⚠</span>
-      <div>If a virtual key was generated <em>before</em> the schema was fully applied (e.g. you generated a key, then re-ran <code>prisma db push</code>), the old key will appear in the UI but lookups will fail with <code>Virtual key not found in LiteLLM_VerificationTokenTable</code>. Delete it in the UI, restart LiteLLM, then generate a new one.</div>
-    </div>
-  </div>
-
-  <div class="step" id="step4">
-    <div class="step-header"><span class="step-num">STEP 04</span><h2>Your Open WebUI on spark-01</h2></div>
-    <p>Your daily-driver chat interface, owned by you, on your node. It points at <strong>your</strong> LiteLLM at <code>http://localhost:8001/v1</code>. The client gets their own Open WebUI on <code>spark-02</code> in Step 05 — neither side can see the other's chat history, knowledge bases, RAG documents, or API keys.</p>
+    <div class="callout warning"><span class="callout-icon">⚠</span><span>vLLM has no authentication of its own. <code>OPENAI_API_KEY</code> below is a placeholder string only — Open WebUI requires some non-empty value in that field, but vLLM does not check it. Access control for this endpoint is entirely at the network layer; see the <a href="#trust-model">Trust model</a> section.</span></div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — directory and run</h4>
     <div class="code-block">
@@ -2469,32 +1873,34 @@ docker run -d \
   --restart unless-stopped \
   -p 8080:8080 \
   -v open-webui:/app/backend/data \
-  -e OPENAI_API_BASE_URL="http://host.docker.internal:8001/v1" \
-  -e OPENAI_API_KEY="YOUR_MASTER_KEY" \
+  -e OPENAI_API_BASE_URL="http://host.docker.internal:8000/v1" \
+  -e OPENAI_API_KEY="not-needed" \
   -e WEBUI_AUTH=True \
   -e ENABLE_OLLAMA_API=False \
   --add-host=host.docker.internal:host-gateway \
   ghcr.io/open-webui/open-webui:main</code></pre>
     </div>
-    <p>Visit <code>http://localhost:8080</code> from <code>spark-01</code> (or via your tailnet — see Step 06), create your admin account, and confirm in <strong>Settings → Connections → OpenAI API</strong>:</p>
+    <p>Visit <code>http://localhost:8080</code> from <code>spark-01</code> (or via your tailnet — see Step 04), create your admin account, and confirm in <strong>Settings → Connections → OpenAI API</strong>:</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Setting</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td>API Base URL</td><td><code>http://host.docker.internal:8001/v1</code></td></tr>
-          <tr><td>API Key</td><td>your master_key</td></tr>
-          <tr><td>Default model</td><td><code>Qwen3.5-122B-Non-Reasoning</code></td></tr>
+          <tr><td>API Base URL</td><td><code>http://host.docker.internal:8000/v1</code></td></tr>
+          <tr><td>API Key</td><td><code>not-needed</code> (vLLM does not check it)</td></tr>
+          <tr><td>Default model</td><td><code>qwen3.5-122b</code> (the vLLM <code>--served-model-name</code>)</td></tr>
           <tr><td>Memory</td><td>Toggle ON (Settings → Personalization)</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="verify">Send a chat message — it should stream back via your LiteLLM (Step 02) → vLLM head (Step 01).</div>
+    <div class="verify">Send a chat message — it should stream back directly from the vLLM head (Step 01).</div>
   </div>
 
-  <div class="step" id="step5">
-    <div class="step-header"><span class="step-num">STEP 05</span><h2>Client Open WebUI on spark-02</h2></div>
-    <p>The client's daily-driver chat interface, owned by the client, on the client's node. It points at the <strong>client's</strong> LiteLLM at <code>http://localhost:8001/v1</code> — which in turn calls the shared vLLM head on <code>spark-01:8000</code> over the DAC.</p>
+  <div class="step" id="step3">
+    <div class="step-header"><span class="step-num">STEP 03</span><h2>Client Open WebUI on spark-02</h2></div>
+    <p>The client's daily-driver chat interface, owned by the client, on the client's node. It points <strong>directly at the shared vLLM head</strong> on <code>spark-01:8000</code> over the DAC link — there is no proxy on either side anymore.</p>
     <p><strong>The client's data lives on the client's node.</strong> Their Open WebUI database, knowledge bases, RAG document store, embedding indexes, conversation history, attached files, and account list — all of it is in the <code>open-webui</code> Docker volume on <code>spark-02</code>. None of it is replicated to <code>spark-01</code>. If you spin <code>spark-02</code> down, the client's UI state goes with it; if you image <code>spark-01</code>, the client's state is not in your image.</p>
+
+    <div class="callout warning"><span class="callout-icon">⚠</span><span>The client's Open WebUI now calls your node's vLLM endpoint directly, unauthenticated, over the DAC. Tailscale ACLs and host firewall rules (Step 04) are the only thing preventing this from becoming a wider exposure — there is no proxy-layer key or log anymore. Do not skip the negative tests in the validation checklist.</span></div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — directory and run</h4>
     <div class="code-block">
@@ -2507,25 +1913,25 @@ docker run -d \
   --restart unless-stopped \
   -p 8080:8080 \
   -v open-webui:/app/backend/data \
-  -e OPENAI_API_BASE_URL="http://host.docker.internal:8001/v1" \
-  -e OPENAI_API_KEY="YOUR_CLIENT_MASTER_KEY" \
+  -e OPENAI_API_BASE_URL="http://YOUR_NODE1_DAC_IP:8000/v1" \
+  -e OPENAI_API_KEY="not-needed" \
   -e WEBUI_AUTH=True \
   -e ENABLE_OLLAMA_API=False \
   --add-host=host.docker.internal:host-gateway \
   ghcr.io/open-webui/open-webui:main</code></pre>
     </div>
-    <p>Visit <code>http://localhost:8080</code> from <code>spark-02</code> (or via the client's tailnet — see Step 06), create the client's admin account, and confirm:</p>
+    <p>Visit <code>http://localhost:8080</code> from <code>spark-02</code> (or via the client's tailnet — see Step 04), create the client's admin account, and confirm:</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Setting</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td>API Base URL</td><td><code>http://host.docker.internal:8001/v1</code> (client's LiteLLM)</td></tr>
-          <tr><td>API Key</td><td>client's master_key</td></tr>
-          <tr><td>Default model</td><td><code>Qwen3.5-122B-Non-Reasoning</code></td></tr>
+          <tr><td>API Base URL</td><td><code>http://YOUR_NODE1_DAC_IP:8000/v1</code> (spark-01's vLLM head, over the DAC)</td></tr>
+          <tr><td>API Key</td><td><code>not-needed</code> (vLLM does not check it)</td></tr>
+          <tr><td>Default model</td><td><code>qwen3.5-122b</code> (the vLLM <code>--served-model-name</code>)</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="verify">Send a chat message — completions stream back through the client's LiteLLM (Step 03) and the shared vLLM head on spark-01 (Step 01). On spark-01, your LiteLLM logs show nothing — the client's traffic does not enter your stack.</div>
+    <div class="verify">Send a chat message — completions stream back directly from the shared vLLM head on spark-01 (Step 01) over the DAC. On spark-01, <code>docker logs --tail 20 vllm_node</code> should show the request arrive.</div>
 
     <h3>Recommended Open WebUI system prompt</h3>
     <p>Set this once in <strong>Settings → General → System Prompt</strong>. It pairs with <code>--default-chat-template-kwargs '{"enable_thinking": false}'</code> on the vLLM head (Step 01): the model answers directly by default, and users can opt into extended reasoning per-message by prefixing the prompt with <code>/think</code>. Apply the same prompt on both Open WebUIs (yours on spark-01 and the client's on spark-02) — they share the underlying model.</p>
@@ -2544,8 +1950,8 @@ Rules:
 - Match response length to question complexity</code></pre>
     </div>
 
-    <h3>Step 5b — All client services on spark-02 at a glance</h3>
-    <p>Three client-facing services run on <code>spark-02</code>: <strong>LiteLLM</strong> (Step 03), <strong>Open WebUI</strong> (Step 05 above), and <strong>n8n</strong>. All three are reachable on the client's tailnet via <code>tag:client-ai</code> (see Step 06). The n8n container below is not covered elsewhere — bring it up after the client's LiteLLM is healthy:</p>
+    <h3>Step 3b — All client services on spark-02 at a glance</h3>
+    <p>Two client-facing services run on <code>spark-02</code>: <strong>Open WebUI</strong> (above) and <strong>n8n</strong>. Both are reachable on the client's tailnet via <code>tag:client-ai</code> (see Step 04). The n8n container below is not covered elsewhere:</p>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — n8n container</h4>
     <div class="code-block">
@@ -2568,18 +1974,11 @@ Rules:
         <thead><tr><th>Service</th><th>Port</th><th>How it runs</th><th>Backend / api_base</th><th>Auth secret</th></tr></thead>
         <tbody>
           <tr>
-            <td><strong>LiteLLM</strong></td>
-            <td><code>8001</code></td>
-            <td>systemd (same structure as spark-01)</td>
-            <td><code>http://YOUR_NODE1_DAC_IP:8000/v1</code> (DAC link)</td>
-            <td>Client master key at <code>~/.spark02-litellm-key</code> (<code>chmod 600</code>)</td>
-          </tr>
-          <tr>
             <td><strong>Open WebUI</strong></td>
             <td><code>8080</code></td>
             <td><code>docker run --restart unless-stopped</code></td>
-            <td><code>OPENAI_API_BASE_URL=http://host.docker.internal:8001/v1</code></td>
-            <td>Client master key (or virtual key)</td>
+            <td><code>OPENAI_API_BASE_URL=http://YOUR_NODE1_DAC_IP:8000/v1</code></td>
+            <td>none (vLLM is unauthenticated)</td>
           </tr>
           <tr>
             <td><strong>n8n</strong></td>
@@ -2593,21 +1992,17 @@ Rules:
     </div>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
-      <div>All three services are reachable from the client's tailnet via <code>tag:client-ai</code> on TCP 8001 / 8080 / 5678 (see the ACL grants in Step 06). They are <em>not</em> reachable from your tailnet — split-trust by construction.</div>
-    </div>
-    <div class="callout warning">
-      <span class="callout-icon">⚠</span>
-      <div>Store the client master key at <code>~/.spark02-litellm-key</code> with <code>chmod 600</code>. Reference it from the LiteLLM systemd unit via <code>EnvironmentFile=</code> rather than embedding it in <code>litellm-config.yaml</code>, so the file on disk does not contain the secret.</div>
+      <div>Both services are reachable from the client's tailnet via <code>tag:client-ai</code> on TCP 8080 / 5678 (see the ACL grants in Step 04). They are <em>not</em> reachable from your tailnet — split-trust by construction. Neither service has a proxy-layer credential anymore; the DAC link and Tailscale ACLs are what stand between the client and spark-01's raw vLLM port.</div>
     </div>
   </div>
 
-  <div class="step" id="step6">
-    <div class="step-header"><span class="step-num">STEP 06</span><h2>Tailscale (both nodes, separate tailnets)</h2></div>
+  <div class="step" id="step4">
+    <div class="step-header"><span class="step-num">STEP 04</span><h2>Tailscale (both nodes, separate tailnets)</h2></div>
     <p>Each node joins its owner's tailnet independently. Two separate tailnets, two separate ACL policies, two separate sets of users. The DAC link (<code>198.51.100.0/30</code>) is private physical hardware between the two nodes — it is <strong>not</strong> advertised onto either tailnet, and it is not used for any cross-tailnet routing.</p>
 
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div><strong>Security-critical:</strong> vLLM on <code>spark-01:8000</code> has no authentication. Once Tailscale is configured, ensure your Tailscale ACLs do <em>not</em> expose port <code>8000</code> to the client's tailnet (and the client's ACLs do not expose your node's <code>8000</code> port to anyone either). The client must only reach <code>spark-02:8001</code> (their own LiteLLM). If they can reach <code>spark-01:8000</code> directly, they bypass their LiteLLM entirely and have unauthenticated inference access — which also means no key-scoped logging, no rate limit, and no audit trail.</div>
+      <div><strong>Security-critical — this is the entire access-control layer now.</strong> vLLM on <code>spark-01:8000</code> has no authentication, and both sides' Open WebUI call it directly — there is no proxy in front of it anymore. The client's Open WebUI is <em>meant</em> to reach <code>spark-01:8000</code>, but only over the DAC link, from the DAC IP, and nowhere else. Your Tailscale ACLs must <em>not</em> expose port <code>8000</code> onto the client's tailnet (and the client's ACLs must not expose their node's ports to anyone but their own users). The DAC-scoped ufw rule below is what makes the DAC path work while keeping port 8000 off both tailnets — get this rule wrong and either the client's Open WebUI breaks, or port 8000 leaks somewhere it shouldn't.</div>
     </div>
 
     <h3>spark-01 — your tailnet</h3>
@@ -2618,14 +2013,14 @@ Rules:
 sudo tailscale up --hostname=spark-01 --advertise-tags=tag:owner
 tailscale ip -4   # note this address — your apps will be reachable here</code></pre>
     </div>
-    <p>In your tailnet's ACL policy (Tailscale admin console), expose your Open WebUI, your LiteLLM, and your other apps only to your own users. Example ACL fragment:</p>
+    <p>In your tailnet's ACL policy (Tailscale admin console), expose your Open WebUI and your other apps only to your own users. Example ACL fragment:</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>{
   "acls": [
     { "action": "accept",
       "src":    ["group:owner-users"],
-      "dst":    ["tag:owner:8080", "tag:owner:8001", "tag:owner:5678", "tag:owner:9119"]
+      "dst":    ["tag:owner:8080", "tag:owner:5678", "tag:owner:9119"]
     },
     { "action": "accept",
       "src":    ["group:owner-users"],
@@ -2640,7 +2035,7 @@ tailscale ip -4   # note this address — your apps will be reachable here</code
   }
 }</code></pre>
     </div>
-    <p><strong>Do NOT</strong> add <code>tag:owner:8000</code> to any allow rule. Port 8000 (vLLM) is unauthenticated and must remain reachable only from <code>localhost</code> (your LiteLLM in Step 02) and the DAC IP <code>198.51.100.1</code> (the client's LiteLLM in Step 03).</p>
+    <p><strong>Do NOT</strong> add <code>tag:owner:8000</code> to any allow rule. Port 8000 (vLLM) is unauthenticated and must remain reachable only from <code>localhost</code> (your Open WebUI and Hermes in Steps 02/05) and the DAC IP <code>198.51.100.1</code> (the client's Open WebUI in Step 03) — the DAC-scoped ufw rule below enforces the latter; Tailscale never sees port 8000 at all on your side.</p>
 
     <h3>spark-02 — client's tailnet</h3>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-02 — install + join (client's auth key)</h4>
@@ -2654,7 +2049,7 @@ sudo tailscale up \
 
 tailscale ip -4   # client's apps will be reachable here, only on their tailnet</code></pre>
     </div>
-    <p>The client's tailnet ACLs are theirs to author. Mirror the structure above with their own users and tags. The client should expose <code>:8080</code> (their Open WebUI), <code>:8001</code> (their LiteLLM, only if they want programmatic access from elsewhere), and <code>:5678</code> (their n8n).</p>
+    <p>The client's tailnet ACLs are theirs to author. Mirror the structure above with their own users and tags. The client should expose <code>:8080</code> (their Open WebUI) and <code>:5678</code> (their n8n) — and nothing else.</p>
 
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
@@ -2662,7 +2057,7 @@ tailscale ip -4   # client's apps will be reachable here, only on their tailnet<
     </div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### Client tailnet ACL — replace the default allow-all</h4>
-    <p>The default Tailscale policy allows everything between everyone. Replace it with this <code>grants</code>-based policy. It leaves all non-server devices unrestricted (so the client's existing fleet is untouched), keeps <code>tag:client-server</code> open (their existing Dell server stays as-is), and restricts <code>tag:client-ai</code> (this node) to only the three service ports — 8001 (LiteLLM), 8080 (Open WebUI), 5678 (n8n).</p>
+    <p>The default Tailscale policy allows everything between everyone. Replace it with this <code>grants</code>-based policy. It leaves all non-server devices unrestricted (so the client's existing fleet is untouched), keeps <code>tag:client-server</code> open (their existing Dell server stays as-is), and restricts <code>tag:client-ai</code> (this node) to only its two service ports — 8080 (Open WebUI), 5678 (n8n).</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>{
@@ -2680,7 +2075,7 @@ tailscale ip -4   # client's apps will be reachable here, only on their tailnet<
     {
       "src": ["*"],
       "dst": ["tag:client-ai"],
-      "ip": ["tcp:8001", "tcp:8080", "tcp:5678"]
+      "ip": ["tcp:8080", "tcp:5678"]
     }
   ],
   "tagOwners": {
@@ -2689,25 +2084,24 @@ tailscale ip -4   # client's apps will be reachable here, only on their tailnet<
   }
 }</code></pre>
     </div>
-    <div class="verify">After applying, from a client device on the same tailnet: <code>nc -zv spark-02 8001</code>, <code>nc -zv spark-02 8080</code>, and <code>nc -zv spark-02 5678</code> all succeed. <code>nc -zv spark-02 22</code> (SSH) and <code>nc -zv spark-02 8000</code> (raw vLLM) both fail — proving the ACL is in effect.</div>
+    <div class="verify">After applying, from a client device on the same tailnet: <code>nc -zv spark-02 8080</code> and <code>nc -zv spark-02 5678</code> both succeed. <code>nc -zv spark-02 22</code> (SSH) and <code>nc -zv spark-02 8000</code> (raw vLLM — spark-02 doesn't even run this port, but confirm it's not accidentally forwarded) both fail — proving the ACL is in effect.</div>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <div><code>tag:client-ai</code> is intentionally not given <code>tcp:8000</code>. Port 8000 is the raw, unauthenticated vLLM head on <code>spark-01</code> reached over the DAC; it must never be exposed onto the client's tailnet. The client only ever calls their own LiteLLM on <code>spark-02:8001</code>.</div>
+      <div><code>tag:client-ai</code> is intentionally not given <code>tcp:8000</code> on spark-01's side either. Port 8000 is the raw, unauthenticated vLLM head on <code>spark-01</code>, reached by the client's Open WebUI only over the DAC — it must never be exposed onto either tailnet. This is now the <em>only</em> access-control boundary protecting spark-01's inference endpoint; there is no LiteLLM key to fall back on if this ACL is wrong.</div>
     </div>
 
     <h3>Lock down host firewalls</h3>
-    <p>Tailscale ACLs are policy; the host firewall is enforcement. Apply ufw rules on <strong>both</strong> nodes so that even if Tailscale is misconfigured, ports 8000 and 8001 cannot leak to the wrong network.</p>
+    <p>Tailscale ACLs are policy; the host firewall is enforcement. Apply ufw rules on <strong>both</strong> nodes so that even if Tailscale is misconfigured, port 8000 cannot leak to the wrong network. With no proxy layer left, these firewall rules — together with the Tailscale ACLs above — are the entire access-control story for this cluster.</p>
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — host firewall</h4>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code># Allow from your tailnet (interface tailscale0) and DAC peer only
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw allow in on tailscale0 to any port 8001 proto tcp           # your LiteLLM
 sudo ufw allow in on tailscale0 to any port 8080 proto tcp           # your Open WebUI
 sudo ufw allow in on tailscale0 to any port 5678 proto tcp           # your n8n
 sudo ufw allow in on tailscale0 to any port 9119 proto tcp           # your Hermes dashboard
-sudo ufw allow in on enp1s0f0np0 from YOUR_NODE2_DAC_IP to any port 8000 proto tcp   # client LiteLLM → vLLM only
+sudo ufw allow in on enp1s0f0np0 from YOUR_NODE2_DAC_IP to any port 8000 proto tcp   # client Open WebUI → vLLM only, over DAC
 sudo ufw allow in on enp1s0f0np0 from YOUR_NODE2_DAC_IP to any port 6379 proto tcp   # Ray GCS over DAC
 sudo ufw allow ssh                                                   # mgmt LAN ssh
 sudo ufw enable</code></pre>
@@ -2717,22 +2111,21 @@ sudo ufw enable</code></pre>
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw allow in on tailscale0 to any port 8001 proto tcp           # client LiteLLM
 sudo ufw allow in on tailscale0 to any port 8080 proto tcp           # client Open WebUI
 sudo ufw allow in on tailscale0 to any port 5678 proto tcp           # client n8n
 sudo ufw allow in on enp1s0f0np0 from YOUR_NODE1_DAC_IP                  # NCCL/Ray over DAC
 sudo ufw allow ssh
 sudo ufw enable</code></pre>
     </div>
-    <div class="verify">From the client's tailnet, <code>nc -zv spark-01-tailscale-ip 8000</code> should fail with "connection refused" or "filtered". From the client's tailnet, <code>curl http://spark-02-tailscale-ip:8001/v1/models -H "Authorization: Bearer CLIENT_KEY"</code> should succeed.</div>
+    <div class="verify">From the client's tailnet, <code>nc -zv spark-01-tailscale-ip 8000</code> should fail with "connection refused" or "filtered". From spark-02 itself, <code>curl http://YOUR_NODE1_DAC_IP:8000/v1/models</code> (over the DAC) should succeed with no auth header — that's the client's Open WebUI's own path, and it should work only over the DAC, never over Tailscale.</div>
   </div>
 
-  <div class="step" id="step7">
-    <div class="step-header"><span class="step-num">STEP 07</span><h2>Your Hermes Agent on spark-01</h2></div>
-    <p>Hermes is your autonomous agent layer (skills, memory, cron, gateways). It runs on <strong>your</strong> node and talks to <strong>your</strong> LiteLLM. The client does not get a Hermes — they have their own Open WebUI and n8n on <code>spark-02</code>; if they want an agent they install their own.</p>
+  <div class="step" id="step5">
+    <div class="step-header"><span class="step-num">STEP 05</span><h2>Your Hermes Agent on spark-01</h2></div>
+    <p>Hermes is your autonomous agent layer (skills, memory, cron, gateways). It runs on <strong>your</strong> node and talks <strong>directly to vLLM</strong> on <code>localhost:8000</code> — no proxy in between. The client does not get a Hermes — they have their own Open WebUI and n8n on <code>spark-02</code>; if they want an agent they install their own.</p>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <span><strong>Not Ollama.</strong> The official NVIDIA DGX reference playbook for Hermes assumes Ollama at <code>localhost:11434</code>. This stack does not run Ollama — Hermes points at LiteLLM at <code>localhost:8001</code> as a custom OpenAI-compatible endpoint. Ignore any Ollama references in the NVIDIA guide; the wizard answers in this step are the correct ones for this stack.</span>
+      <span><strong>Not Ollama.</strong> The official NVIDIA DGX reference playbook for Hermes assumes Ollama at <code>localhost:11434</code>. This stack does not run Ollama — Hermes points at vLLM's OpenAI-compatible API directly at <code>localhost:8000</code> as a custom endpoint. Ignore any Ollama references in the NVIDIA guide; the wizard answers in this step are the correct ones for this stack.</span>
     </div>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — install</h4>
@@ -2771,9 +2164,9 @@ hermes --version</code></pre>
         <tbody>
           <tr><td>Setup type</td><td>Full setup</td></tr>
           <tr><td>Provider</td><td>Custom endpoint</td></tr>
-          <tr><td>API base URL</td><td><code>http://localhost:8001/v1</code></td></tr>
-          <tr><td>API key</td><td>A virtual key scoped to Hermes from the LiteLLM Admin UI (recommended — gives a per-service audit trail). The master key also works but grants unrestricted access.</td></tr>
-          <tr><td>Model</td><td><code>Qwen3.5-122B-Non-Reasoning</code> (the LiteLLM model alias — Hermes calls LiteLLM, which maps this to the vLLM backend)</td></tr>
+          <tr><td>API base URL</td><td><code>http://localhost:8000/v1</code></td></tr>
+          <tr><td>API key</td><td><code>not-needed</code> — vLLM has no authentication, so any non-empty placeholder works. There is no virtual-key or audit-trail mechanism at this layer anymore.</td></tr>
+          <tr><td>Model</td><td><code>qwen3.5-122b</code> (the vLLM <code>--served-model-name</code>, called directly)</td></tr>
           <tr><td>Terminal backend</td><td>Local — set workspace to <code>~/workspace</code> (limits shell tool scope to a safe directory)</td></tr>
           <tr><td>Session reset mode</td><td>Inactivity + daily reset</td></tr>
           <tr><td>Search provider</td><td>Skip (or Brave Search if configured — see Brave Search MCP section)</td></tr>
@@ -2781,7 +2174,7 @@ hermes --version</code></pre>
         </tbody>
       </table>
     </div>
-    <p>The wizard writes <code>~/.hermes/config.yaml</code>. <code>base_url</code> is local — Hermes and your LiteLLM both live on <code>spark-01</code>.</p>
+    <p>The wizard writes <code>~/.hermes/config.yaml</code>. <code>base_url</code> is local — Hermes and the vLLM head both live on <code>spark-01</code>.</p>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
       <span><strong>Tip — Customize agent tone:</strong> Edit <code>~/.hermes/SOUL.md</code> to define Hermes' personality. This file is re-read on every message — changes take effect immediately without restarting the gateway. Leave it empty to use the default personality.<br><br>
@@ -2850,7 +2243,7 @@ sudo systemctl enable hermes-dashboard
 sudo systemctl start hermes-dashboard
 sudo systemctl status hermes-dashboard --no-pager</code></pre>
     </div>
-    <p>The <code>--insecure</code> flag is required to bind to <code>0.0.0.0</code> instead of localhost. Protect port 9119 with Tailscale ACLs (Step 06) — it should only be reachable from your tailnet, not the open internet.</p>
+    <p>The <code>--insecure</code> flag is required to bind to <code>0.0.0.0</code> instead of localhost. Protect port 9119 with Tailscale ACLs (Step 04) — it should only be reachable from your tailnet, not the open internet.</p>
     <div class="verify">Dashboard is at <code>http://YOUR_NODE1_TAILSCALE_IP:9119</code> from any device on your tailnet.</div>
 
     <div class="callout warning">
@@ -2943,8 +2336,8 @@ sudo systemctl status hermes-gateway --no-pager</code></pre>
     </div>
   </div>
 
-  <div class="step" id="step8">
-    <div class="step-header"><span class="step-num">STEP 08</span><h2>Your n8n on spark-01</h2></div>
+  <div class="step" id="step6">
+    <div class="step-header"><span class="step-num">STEP 06</span><h2>Your n8n on spark-01</h2></div>
     <p>Your single-instance n8n on <code>spark-01</code>. The client runs their own n8n on <code>spark-02</code> independently — different workflows, different credentials, different Postgres-vs-SQLite state. Neither side can read the other's flows.</p>
 
     <h4 style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:14px 0 4px;">#### spark-01 — docker-compose for n8n</h4>
@@ -2979,19 +2372,19 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
     </div>
     <div class="verify">Visit <code>http://localhost:5678</code> on spark-01 (or your tailnet hostname) and create the owner account.</div>
 
-    <h3>Wire your n8n to your LiteLLM</h3>
-    <p>In n8n, add an OpenAI credential pointing at <em>your</em> LiteLLM (local on spark-01):</p>
+    <h3>Wire your n8n directly to vLLM</h3>
+    <p>In n8n, add an OpenAI credential pointing <em>directly at vLLM</em> (local on spark-01, no proxy):</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Field</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td>API URL</td><td><code>http://host.docker.internal:8001/v1</code></td></tr>
-          <tr><td>API Key</td><td>your master_key</td></tr>
+          <tr><td>API URL</td><td><code>http://host.docker.internal:8000/v1</code></td></tr>
+          <tr><td>API Key</td><td><code>not-needed</code> — vLLM has no authentication</td></tr>
           <tr><td>Default model</td><td><code>qwen3.5-122b</code></td></tr>
         </tbody>
       </table>
     </div>
-    <div class="callout note"><span class="callout-icon">ℹ</span><span>The client's n8n on <code>spark-02</code> follows the same pattern but points at <em>their</em> LiteLLM (<code>http://host.docker.internal:8001/v1</code> from inside their n8n container) with the client's master key. Step 03 covers the client's LiteLLM; the client deploys their n8n the same way you deploy yours.</span></div>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>The client's n8n on <code>spark-02</code> follows the same pattern but points at the shared vLLM head over the DAC (<code>http://YOUR_NODE1_DAC_IP:8000/v1</code> from inside their n8n container), also with no API key required. Step 03 covers the client's Open WebUI; the client deploys their n8n the same way you deploy yours.</span></div>
   </div>
   <div class="step" id="validation-checklist">
     <div class="step-header"><span class="step-num">CHECKLIST</span><h2>Stack Validation Checklist</h2></div>
@@ -3008,11 +2401,11 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
 
     <h3>Your side (spark-01)</h3>
     <ul class="validation-checklist">
-      <li><strong>spark-01:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_MASTER_KEY"</code> returns <code>qwen3.5-122b</code> through your LiteLLM.</li>
-      <li><strong>spark-01:</strong> <code>sudo systemctl status litellm hermes-gateway</code> — both <strong>active (running)</strong>.</li>
+      <li><strong>spark-01:</strong> <code>curl http://localhost:8000/v1/models</code> returns <code>qwen3.5-122b</code> — no auth header needed, this is the vLLM head your Open WebUI and Hermes call directly.</li>
+      <li><strong>spark-01:</strong> <code>sudo systemctl status hermes-gateway</code> — <strong>active (running)</strong>.</li>
       <li><strong>spark-01:</strong> <code>docker ps</code> shows <code>vllm_node</code>, <code>open-webui</code>, and <code>n8n</code> all <em>Up</em>. <code>sudo systemctl status hermes-dashboard</code> is <strong>active (running)</strong>.</li>
-      <li><strong>spark-01:</strong> Open <code>http://localhost:8080</code> (or your tailnet hostname), send a chat message — completion streams back. Your LiteLLM log records the request.</li>
-      <li><strong>spark-01:</strong> Send a Telegram message — Hermes responds. End-to-end your-side path: Telegram → Hermes → your LiteLLM → vLLM TP=2. Confirm in LiteLLM logs that the request arrived on the Hermes virtual key, not the master key.</li>
+      <li><strong>spark-01:</strong> Open <code>http://localhost:8080</code> (or your tailnet hostname), send a chat message — completion streams back directly from vLLM.</li>
+      <li><strong>spark-01:</strong> Send a Telegram message — Hermes responds. End-to-end your-side path: Telegram → Hermes → vLLM TP=2, directly, no proxy hop.</li>
       <li><strong>spark-01:</strong> <code>hermes --version</code> returns a version string. If MCP servers are configured: <code>hermes mcp test &lt;server-name&gt;</code> verifies MCP connectivity.</li>
       <li><strong>spark-01:</strong> <code>sudo systemctl status hermes-gateway hermes-dashboard</code> — both <strong>active (running)</strong>.</li>
       <li><strong>spark-01:</strong> <code>~/.hermes/SOUL.md</code> exists (created by installer). <code>~/.hermes/skills/</code> is populated with bundled skills seeded by the installer.</li>
@@ -3020,20 +2413,20 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
 
     <h3>Client side (spark-02)</h3>
     <ul class="validation-checklist">
-      <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/models -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY"</code> returns <code>qwen3.5-122b</code> through the client's LiteLLM.</li>
-      <li><strong>spark-02:</strong> <code>curl http://localhost:8001/v1/chat/completions -H "Authorization: Bearer YOUR_CLIENT_MASTER_KEY" ...</code> returns a completion.</li>
-      <li><strong>spark-02:</strong> <code>sudo systemctl status litellm</code> — <strong>active (running)</strong>. Logs are written to <code>~/spark-ai-stack/logs/litellm.log</code> on <code>spark-02</code>, separate from your logs.</li>
+      <li><strong>spark-02:</strong> <code>curl http://YOUR_NODE1_DAC_IP:8000/v1/models</code> (over the DAC, no auth header) returns <code>qwen3.5-122b</code> — this is the exact path the client's Open WebUI uses.</li>
+      <li><strong>spark-02:</strong> <code>curl http://YOUR_NODE1_DAC_IP:8000/v1/chat/completions -H 'Content-Type: application/json' -d '...'</code> returns a completion.</li>
       <li><strong>spark-02:</strong> <code>docker ps</code> shows <code>vllm_node</code> (the worker), <code>open-webui</code>, and <code>n8n</code> all <em>Up</em>. (No Hermes container.)</li>
-      <li><strong>spark-02:</strong> Open <code>http://localhost:8080</code> (or the client's tailnet hostname), send a chat message — completion streams back. Client's LiteLLM log records the request; your LiteLLM log on spark-01 does <em>not</em>.</li>
+      <li><strong>spark-02:</strong> Open <code>http://localhost:8080</code> (or the client's tailnet hostname), send a chat message — completion streams back over the DAC from spark-01's vLLM head. On spark-01, <code>docker logs --tail 20 vllm_node</code> shows the request arrive.</li>
     </ul>
 
     <h3>Cross-stack isolation (the negative tests)</h3>
+    <p style="font-size:13px;color:var(--text2);margin:0 0 10px;">These are now the <strong>only</strong> tests standing between "working as designed" and "the client has unrestricted access to your node" — there is no proxy-layer key to fall back on if any of these fail. Run every one of them.</p>
     <ul class="validation-checklist">
-      <li><strong>From client's tailnet:</strong> <code>curl http://YOUR_NODE1_TAILSCALE_IP:8001/v1/models</code> should fail (timeout or "no route to host"). Your LiteLLM is not exposed to the client's tailnet.</li>
-      <li><strong>From client's tailnet:</strong> <code>curl http://YOUR_NODE1_TAILSCALE_IP:8000/v1/models</code> should fail. The unauthenticated vLLM endpoint is not reachable from the client's tailnet.</li>
+      <li><strong>From client's tailnet:</strong> <code>curl http://YOUR_NODE1_TAILSCALE_IP:8000/v1/models</code> should fail (timeout or "no route to host"). The unauthenticated vLLM endpoint must not be reachable from the client's tailnet — only from the DAC IP.</li>
       <li><strong>From client's tailnet:</strong> <code>curl http://YOUR_NODE1_TAILSCALE_IP:8080</code> should fail. Your Open WebUI is not reachable from the client's tailnet.</li>
       <li><strong>From your tailnet:</strong> <code>curl http://YOUR_NODE2_TAILSCALE_IP:8080</code> should fail. The client's Open WebUI is not reachable from your tailnet.</li>
-      <li><strong>spark-01:</strong> <code>tail -f ~/spark-ai-stack/logs/litellm.log</code> while the client sends a chat message → your log is silent. Client's traffic does not enter your stack.</li>
+      <li><strong>From any host other than spark-02's DAC IP:</strong> <code>curl http://YOUR_NODE1_MGMT_IP:8000/v1/models</code> (mgmt LAN, not DAC) should fail. Only the DAC interface, from the client's DAC IP specifically, may reach port 8000.</li>
+      <li><strong>spark-01:</strong> <code>docker logs --tail 0 -f vllm_node</code> while the client sends a chat message → you should see the request land, since there is no proxy log to check separately anymore. This is the only per-request visibility left on either side — plan accordingly if you need an audit trail.</li>
     </ul>
 
     <h3>DAC traffic during inference</h3>
@@ -3059,9 +2452,8 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
     <div class="step-header"><span class="step-num">REF</span><h2>Port reference</h2></div>
     <h3>spark-01 (your node)</h3>
     <div class="port-grid">
-      <div class="port-card"><div class="port-num">8000</div><div class="port-name">vLLM head</div><div class="port-note">Shared compute — localhost + DAC peer only · NO TAILSCALE</div></div>
+      <div class="port-card"><div class="port-num">8000</div><div class="port-name">vLLM head</div><div class="port-note">Shared compute, unauthenticated — localhost + DAC peer only · NO TAILSCALE</div></div>
       <div class="port-card"><div class="port-num">6379</div><div class="port-name">Ray GCS</div><div class="port-note">DAC peer only</div></div>
-      <div class="port-card"><div class="port-num">8001</div><div class="port-name">Your LiteLLM</div><div class="port-note">Your tailnet only · your master_key</div></div>
       <div class="port-card"><div class="port-num">8080</div><div class="port-name">Your Open WebUI</div><div class="port-note">Your tailnet only</div></div>
       <div class="port-card"><div class="port-num">5678</div><div class="port-name">Your n8n</div><div class="port-note">Your tailnet only</div></div>
       <div class="port-card"><div class="port-num">9119</div><div class="port-name">hermes-dashboard</div><div class="port-note">Hermes built-in dashboard — config, keys, sessions · Your tailnet only</div></div>
@@ -3070,13 +2462,12 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
     <h3 style="margin-top:18px;">spark-02 (client node)</h3>
     <div class="port-grid">
       <div class="port-card"><div class="port-num">—</div><div class="port-name">vLLM worker</div><div class="port-note">No API listener — Ray join over DAC only</div></div>
-      <div class="port-card"><div class="port-num">8001</div><div class="port-name">Client LiteLLM</div><div class="port-note">Client's tailnet only · client's master_key</div></div>
       <div class="port-card"><div class="port-num">8080</div><div class="port-name">Client Open WebUI</div><div class="port-note">Client's tailnet only</div></div>
       <div class="port-card"><div class="port-num">5678</div><div class="port-name">Client n8n</div><div class="port-note">Client's tailnet only</div></div>
     </div>
     <div class="callout warning" style="margin-top:14px;">
       <span class="callout-icon">⚠</span>
-      <div>Port <strong>8000 on spark-01</strong> must NEVER be advertised to either tailnet. The client's only path to it is through <em>their own LiteLLM</em>, which calls it over the DAC. If port 8000 leaks onto a tailnet, the client (or anyone else on that tailnet) gets unauthenticated inference access. The host firewall rules in Step 06 enforce this.</div>
+      <div>Port <strong>8000 on spark-01</strong> must NEVER be advertised to either tailnet. The client's only path to it is directly from their Open WebUI over the DAC, allowed by a DAC-scoped ufw rule. There is no proxy in front of this port anymore — if it leaks onto a tailnet, the client (or anyone else on that tailnet) gets unauthenticated inference access with no key, no rate limit, and no separate audit trail. The host firewall rules and Tailscale ACLs in Step 04 are what enforce this, and they are now the only thing enforcing it.</div>
     </div>
   </div>
 
@@ -3090,11 +2481,8 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       ├── run-recipe.sh               <span class="comment"># launches Ray + vllm serve from the chosen recipe</span><br>
       └── launch-cluster.sh           <span class="comment"># stop/teardown helper invoked by systemd</span><br><br>
       <span class="dir">~/spark-ai-stack/</span><br>
-      ├── litellm-config.yaml         <span class="comment"># YOUR LiteLLM — your master_key, localhost:8000</span><br>
       ├── n8n.yml                     <span class="comment"># compose for your n8n</span><br>
-      └── logs/<br>
-      &nbsp;&nbsp;&nbsp;&nbsp;├── litellm.db             <span class="comment"># YOUR SQLite request log</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;└── litellm.log            <span class="comment"># YOUR text log</span><br><br>
+      └── logs/                       <span class="comment"># reserved — no proxy log lives here anymore</span><br><br>
       <span class="dir">~/.hermes/</span>                      <span class="comment"># YOUR Hermes config, memory, skills</span><br>
       <span class="dir">~/workspace/</span>                    <span class="comment"># YOUR Hermes file workspace</span><br><br>
       Docker volumes:<br>
@@ -3102,8 +2490,6 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       └── n8n_data                    <span class="comment"># YOUR n8n flows + credentials</span><br><br>
       /etc/systemd/system/<br>
       ├── vllm-cluster.service        <span class="comment"># vLLM cluster auto-start (head SSHes to worker)</span><br>
-      ├── litellm.service             <span class="comment"># YOUR LiteLLM auto-start</span><br>
-      ├── litellm.service.d/override.conf  <span class="comment"># PYTHONPATH only</span><br>
       ├── hermes-gateway.service      <span class="comment"># YOUR Telegram gateway auto-start</span><br>
       └── hermes-dashboard.service    <span class="comment"># YOUR Hermes dashboard auto-start</span>
     </div>
@@ -3113,18 +2499,12 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       <span class="dir">~/.cache/huggingface/hub/</span>       <span class="comment"># model weights rsync'd from spark-01 over DAC</span><br>
       &nbsp;&nbsp;&nbsp;&nbsp;└── models--Qwen--Qwen3.5-122B-A10B-FP8/<br><br>
       <span class="dir">~/spark-ai-stack/</span><br>
-      ├── litellm-config.yaml         <span class="comment"># CLIENT LiteLLM — client's master_key, points DAC → vLLM</span><br>
-      ├── n8n.yml                     <span class="comment"># compose for client's n8n</span><br>
-      └── logs/<br>
-      &nbsp;&nbsp;&nbsp;&nbsp;├── litellm.db             <span class="comment"># CLIENT SQLite log — separate corpus</span><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;└── litellm.log            <span class="comment"># CLIENT text log</span><br><br>
+      └── n8n.yml                     <span class="comment"># compose for client's n8n — no proxy config here anymore</span><br><br>
       Docker image (pushed from spark-01):<br>
       └── vllm-node-tf5:latest        <span class="comment"># identical image as spark-01; worker container started by spark-01's launcher over SSH</span><br><br>
       Docker volumes:<br>
       ├── open-webui                  <span class="comment"># CLIENT Open WebUI database, knowledge bases, RAG</span><br>
-      └── n8n_data                    <span class="comment"># CLIENT n8n flows + credentials</span><br><br>
-      /etc/systemd/system/<br>
-      └── litellm.service             <span class="comment"># CLIENT LiteLLM auto-start</span>
+      └── n8n_data                    <span class="comment"># CLIENT n8n flows + credentials</span>
     </div>
 
     <h3>Backup targets</h3>
@@ -3132,14 +2512,13 @@ docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
       <table>
         <thead><tr><th>Node / Owner</th><th>Path</th><th>Contents</th></tr></thead>
         <tbody>
-          <tr><td>spark-01 — you</td><td><code>~/spark-ai-stack/logs/</code></td><td>Your LiteLLM corpus</td></tr>
           <tr><td>spark-01 — you</td><td><code>~/.hermes/</code></td><td>Your Hermes memory, sessions, skills</td></tr>
           <tr><td>spark-01 — you</td><td>Docker volumes <code>open-webui</code>, <code>n8n_data</code></td><td>Your UI state — chat history, knowledge bases, flows</td></tr>
-          <tr><td>spark-02 — client</td><td><code>~/spark-ai-stack/logs/</code></td><td>Client's LiteLLM corpus (their backup, not yours)</td></tr>
           <tr><td>spark-02 — client</td><td>Docker volumes <code>open-webui</code>, <code>n8n_data</code></td><td>Client's UI state (their backup, not yours)</td></tr>
         </tbody>
       </table>
     </div>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>There is no proxy-layer request log on either node anymore. If you need an audit trail of inference requests, it now has to come from each Open WebUI's own logs/database, or from <code>docker logs vllm_node</code> on spark-01 (which is unstructured and not scoped per-caller).</span></div>
     <div class="callout note"><span class="callout-icon">ℹ</span><span>Backups are owner-specific. Don't pull the client's volumes into your backup pipeline — that defeats the application-layer isolation. Each owner backs up their own node's state.</span></div>
   </div>
 
@@ -3245,13 +2624,6 @@ newgrp docker</code></pre></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">LiteLLM <code>httpx.ConnectError</code> on startup</div>
-      <div class="issue-sym"><span>Symptom</span><span>LiteLLM systemd service won't start. Logs show <code>httpx.ConnectError</code> against either Postgres or a model endpoint.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>Two common causes: (1) a stale <code>STORE_MODEL_IN_DB=True</code> + <code>DATABASE_URL</code> in <code>/etc/systemd/system/litellm.service.d/override.conf</code> still pointing at a Postgres that no longer runs, or (2) <code>litellm-config.yaml</code> includes a model with <code>api_base</code> pointing at a dead port (e.g. <code>localhost:8002</code> from a previous dual-model setup).</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Reset the override.conf to contain only <code>PYTHONPATH</code> (see Step 02). Audit <code>litellm-config.yaml</code> for any <code>localhost:8002</code> or other dead endpoints and remove them — every model in <code>model_list</code> must have a live <code>api_base</code>.</span></div>
-    </div>
-
-    <div class="issue">
       <div class="issue-title">vLLM container fails to start after power loss — HF DNS resolution error</div>
       <div class="issue-sym"><span>Symptom</span><span>After a power outage, the <code>vllm_node</code> container on spark-01 exits immediately. <code>docker logs vllm_node</code> shows repeated <code>[Errno -3] Temporary failure in name resolution</code> against <code>huggingface.co</code>, followed by <code>huggingface_hub.errors.LocalEntryNotFoundError</code> and an <code>OSError</code> about being unable to connect to HF to load files.</span></div>
       <div class="issue-sym"><span>Cause</span><span>On container start, vLLM attempts to contact <code>huggingface.co</code> to check for model config updates — even when the weights are already in the local cache. If Docker's internal DNS resolver hasn't recovered by the time the container starts (common immediately after a power cycle), the resolution fails and vLLM exits rather than falling back to the cached files.</span></div>
@@ -3263,10 +2635,10 @@ sudo journalctl -u vllm-cluster.service -f</code></pre></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">Client LiteLLM can't reach vLLM</div>
-      <div class="issue-sym"><span>Symptom</span><span>Client LiteLLM on spark-02 returns <code>connection refused</code> or <code>connect timeout</code> on every request. <code>~/spark-ai-stack/logs/litellm.log</code> on spark-02 shows <code>httpx.ConnectError</code> against <code>198.51.100.1:8000</code>.</span></div>
+      <div class="issue-title">Client's Open WebUI can't reach vLLM</div>
+      <div class="issue-sym"><span>Symptom</span><span>Client Open WebUI on spark-02 returns a connection error on every chat message. Its <strong>Settings → Connections → OpenAI API</strong> health check fails.</span></div>
       <div class="issue-sym"><span>Cause</span><span>Either (a) the DAC link is down, (b) the vLLM head container on spark-01 is not running, or (c) the host firewall on spark-01 is blocking the DAC peer from reaching port 8000.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>The Step 06 ufw rule should explicitly allow <code>YOUR_NODE2_DAC_IP</code> on port 8000 over <code>enp1s0f0np0</code>. Work through the chain:
+      <div class="issue-fix"><span>Fix</span><span>The Step 04 ufw rule should explicitly allow <code>YOUR_NODE2_DAC_IP</code> on port 8000 over <code>enp1s0f0np0</code>. Work through the chain:
           <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-02</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>ping -c 3 YOUR_NODE1_DAC_IP          # DAC link reachable?
 nc -zv YOUR_NODE1_DAC_IP 8000        # port open?</code></pre></div>
           <div class="code-block" style="margin:6px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>docker ps | grep vllm_node           # container running?
@@ -3275,31 +2647,14 @@ sudo ufw status | grep 8000          # firewall rule present?</code></pre></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">Client sees spark-01:8000 directly without auth</div>
-      <div class="issue-sym"><span>Symptom</span><span>From the client's tailnet, <code>curl http://YOUR_NODE1_TAILSCALE_IP:8000/v1/models</code> succeeds — meaning the client could bypass their LiteLLM and hit the unauthenticated vLLM directly.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>vLLM has no auth. Either (a) Tailscale ACLs on spark-01 inadvertently expose port 8000, or (b) the host firewall on spark-01 is allowing inbound on <code>tailscale0</code> for port 8000, or (c) ufw is disabled.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Audit the ACL JSON on spark-01's tailnet — there must be no <code>tag:owner:8000</code> entry anywhere. Only the explicit DAC-peer rule should appear for port 8000. If you find a leak, fix the ACL and ufw, then re-run the negative tests in the validation checklist.
+      <div class="issue-title">spark-01:8000 is reachable from the wrong tailnet</div>
+      <div class="issue-sym"><span>Symptom</span><span>From <em>your own</em> tailnet, <code>curl http://YOUR_NODE1_TAILSCALE_IP:8000/v1/models</code> succeeds — which is expected. But the same curl from the <em>client's</em> tailnet (using a client-owned Tailscale IP or hostname) also succeeds — which is not: since there is no proxy in front of vLLM anymore, this means the client's tailnet has unauthenticated, unaudited inference access to your node through a path other than the DAC link that Step 04 intends.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Either (a) Tailscale ACLs on spark-01 inadvertently expose port 8000 to <code>tag:client-ai</code> or beyond, or (b) the host firewall on spark-01 is allowing inbound on <code>tailscale0</code> for port 8000, or (c) ufw is disabled.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Audit the ACL JSON on spark-01's tailnet — there must be no <code>tag:owner:8000</code> (or any rule reachable by the client's devices) entry anywhere. Only the explicit DAC-peer ufw rule should ever expose port 8000, and it should be scoped to the DAC interface, not <code>tailscale0</code>. If you find a leak, fix the ACL and ufw immediately — this is now the only thing standing between the client and raw, unaudited model access — then re-run the negative tests in the validation checklist.
           <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo ufw status verbose | grep 8000
 # Only this rule should appear for 8000:
 # ALLOW IN  enp1s0f0np0  from YOUR_NODE2_DAC_IP  to any port 8000</code></pre></div>
         </span></div>
-    </div>
-
-    <div class="issue">
-      <div class="issue-title">Both LiteLLMs collide on port 8001 over the mgmt LAN</div>
-      <div class="issue-sym"><span>Symptom</span><span>You expected to <code>curl http://YOUR_NODE2_MGMT_IP:8001/v1/models</code> from spark-01 and get the client's LiteLLM, and it works — leaking the client's API surface to your mgmt LAN.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>By design, both LiteLLMs bind to <code>0.0.0.0:8001</code> so each is reachable from its own tailnet. Your firewall must restrict inbound on the mgmt-LAN interface to deny port 8001 cross-node — Tailscale ACLs alone don't help here because the mgmt LAN is not part of any tailnet.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>The Step 06 ufw rules restrict 8001 to <code>tailscale0</code> only. Confirm no rule allows 8001 on the wildcard or mgmt interface:
-          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · both nodes</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo ufw status verbose | grep 8001
-# Should only show: ALLOW IN  tailscale0  to any port 8001</code></pre></div>
-        </span></div>
-    </div>
-
-    <div class="issue">
-      <div class="issue-title">Client can see your LiteLLM logs (or vice versa)</div>
-      <div class="issue-sym"><span>Symptom</span><span>You find an entry in <code>~/spark-ai-stack/logs/litellm.log</code> on spark-01 that you didn't make. Or the client reports a request in their log that they didn't send.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>Almost always: someone reused a master key across the two LiteLLMs, or the Open WebUI on one side is misconfigured to point at the other side's LiteLLM.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Confirm <code>master_key</code> values are unique on each node — they should never match. Then check each Open WebUI's API base URL: yours should be <code>http://host.docker.internal:8001/v1</code> (your local LiteLLM); client's should be the same hostname (their local LiteLLM, not your tailnet IP). If you find cross-pointing, fix it and rotate both master keys.</span></div>
     </div>
 
     <div class="issue">
@@ -3323,39 +2678,33 @@ sudo ufw status | grep 8000          # firewall rule present?</code></pre></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">LiteLLM UI shows: <code>table public.LiteLLM_UserTable does not exist</code></div>
-      <div class="issue-sym"><span>Symptom</span><span>The LiteLLM Admin UI loads but every page (Users, Virtual Keys, Models) returns an error referencing a missing <code>LiteLLM_*</code> table in the <code>public</code> schema.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>The Postgres database is up and the connection succeeded, but the Prisma schema has not been pushed yet — the database is empty.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Push the Prisma schema, then restart LiteLLM. See Step 2d / 3d.
-          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
-  prisma db push \
-  --schema /home/YOUR_USERNAME/.local/lib/python3.12/site-packages/litellm/proxy/schema.prisma
-
-sudo systemctl restart litellm</code></pre></div>
+      <div class="issue-title">Service reports success but <code>vllm_node</code> was never created &mdash; stale "already running" check</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>systemctl restart vllm-cluster.service</code> completes and shows <code>active (exited)</code> with no error, but <code>curl http://localhost:8000/v1/models</code> refuses the connection. <code>docker ps -a</code> on spark-01 shows no <code>vllm_node</code> container at all. <code>journalctl -u vllm-cluster.service</code> shows <code>Warning: Container 'vllm_node' is already running on worker node</code> followed almost immediately by <code>Error response from daemon: No such container: vllm_node</code>.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>A stale <code>vllm_node</code> container name was left registered on spark-02 (worker) from a previous run. <code>launch-cluster.sh</code>'s cluster-running check sees that and concludes the whole cluster is already up, so it skips <code>start_cluster()</code> entirely &mdash; including the <code>docker run</code> on spark-01 (head) that creates the head's own <code>vllm_node</code> container. The launcher then tries to <code>docker exec</code> the <code>vllm serve</code> command into a head container that was never created this run, fails with "No such container," but doesn't propagate that failure &mdash; so systemd reports success anyway.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Clear any stale <code>vllm_node</code> containers on both nodes before restarting, so <code>start_cluster()</code> actually runs fresh on both sides:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash &middot; spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>cd ~/spark-vllm-docker
+./launch-cluster.sh stop
+docker rm -f vllm_node 2>/dev/null
+ssh YOUR_NODE2_DAC_IP "docker rm -f vllm_node" 2>/dev/null
+sudo systemctl restart vllm-cluster.service</code></pre></div>
+          Then confirm it actually came up before trusting it &mdash; <code>systemctl status</code> alone is not sufficient, since this exact failure mode reports <code>active (exited)</code> with no container running:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash &middot; spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>docker ps -a | grep vllm_node
+docker logs -f vllm_node   # watch for the Uvicorn "running on 0.0.0.0:8000" line
+curl http://localhost:8000/v1/models</code></pre></div>
         </span></div>
     </div>
 
     <div class="issue">
-      <div class="issue-title">LiteLLM UI shows: <code>Not connected to DB</code></div>
-      <div class="issue-sym"><span>Symptom</span><span>The Admin UI banner reports "Not connected to DB" even though Postgres is running and reachable on <code>localhost:5432</code>.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>Either (a) <code>database_url</code> is at the top level of <code>litellm-config.yaml</code> instead of nested under <code>general_settings</code> — LiteLLM only reads it from <code>general_settings</code>, or (b) the config still points at SQLite. SQLite is not supported for the UI; the Prisma schema is hardcoded for PostgreSQL.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Move <code>database_url</code> under <code>general_settings</code> in <code>litellm-config.yaml</code>, then restart and confirm:
-          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>general_settings:
-  master_key: YOUR_MASTER_KEY
-  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"</code></pre></div>
-          <div class="code-block" style="margin:6px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo systemctl restart litellm
-journalctl -u litellm -n 50 --no-pager
-# Look for: Successfully connected to postgres DB</code></pre></div>
-        </span></div>
-    </div>
+      <div class="issue-title">Open WebUI shows "OpenAI: Network Problem" even though vLLM is confirmed healthy</div>
+      <div class="issue-sym"><span>Symptom</span><span><code>curl http://localhost:8000/v1/models</code> succeeds on spark-01, but Open WebUI's Settings &rarr; Connections still shows a red "OpenAI: Network Problem" toast, and "Verify Connection" on the OpenAI API entry fails.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Almost always a URL mismatch for whichever node's Open WebUI you're looking at. spark-01's Open WebUI must use <code>http://host.docker.internal:8000/v1</code> &mdash; Docker's host-gateway alias resolves to spark-01 itself, where vLLM's head is listening. spark-02's Open WebUI must instead use the head node's DAC IP directly, <code>http://YOUR_NODE1_DAC_IP:8000/v1</code> &mdash; because on spark-02, <code>host.docker.internal</code> resolves to spark-02 itself, and nothing listens on port 8000 there (vLLM's OpenAI-compatible API only binds on the head node, spark-01). This is an easy copy-paste mistake between the two Open WebUI setups in Steps 02 and 03.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Isolate the failure with two curl checks before touching any config &mdash; this tells you whether vLLM itself is down or whether it's purely a wrong-URL problem:
+          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash &middot; the node in question</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code># confirms vLLM is reachable at all from this node's host
+curl http://&lt;url-host&gt;:8000/v1/models
 
-    <div class="issue">
-      <div class="issue-title">Virtual key not found in <code>LiteLLM_VerificationTokenTable</code></div>
-      <div class="issue-sym"><span>Symptom</span><span>A virtual key generated from the UI is rejected on use with a <code>VerificationToken not found</code> error, but the key is still visible in the <strong>Virtual Keys</strong> tab.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>The key was generated against the database before the schema was fully initialized (e.g. you generated a key, then re-ran <code>prisma db push</code>, which dropped/recreated the verification token table).</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Delete the orphaned key in the UI, restart LiteLLM, then generate a fresh key. The new key will be inserted into the current schema and will validate correctly.
-          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo systemctl restart litellm</code></pre></div>
-        </span></div>
+# confirms the Open WebUI container itself can reach it
+docker exec open-webui curl -s http://&lt;same-url&gt;/v1/models</code></pre></div>
+          If both succeed but the toast persists, it's stale UI state &mdash; dismiss the toast, click "Verify Connection" again now that vLLM is actually up, or hard-refresh the browser. If the second check fails while the first succeeds, the Open WebUI container isn't using the URL you think it is &mdash; check <code>docker inspect open-webui | grep OPENAI_API_BASE_URL</code> against what Settings &rarr; Connections shows; the two can drift if the container was started with one value and the UI was later edited to another.</span></div>
     </div>
   </div>
 
@@ -3384,14 +2733,6 @@ grep "speculative" ~/spark-vllm-docker/recipes/qwen3.5-122b-fp8.yaml || echo "Re
       <div class="issue-fix"><span>Workaround</span><span>Do not attempt NVFP4 with TP=2 multi-node until community support is confirmed. Use <code>Qwen/Qwen3.5-122B-A10B-FP8</code> for multi-node inference — the Step 01 production recipe is built around this. See the NVFP4 stall entry in <a href="#issues">Cluster issues</a> for the symptom on the bad path.</span></div>
     </div>
     <div class="issue">
-      <div class="issue-title">LiteLLM port already in use</div>
-      <div class="issue-sym"><span>Symptom</span><span>systemd shows <code>[Errno 98] address already in use</code></span></div>
-      <div class="issue-fix"><span>Fix</span><span>Kill the stale process and restart the service:
-          <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>pkill -f litellm
-sudo systemctl restart litellm</code></pre></div>
-        </span></div>
-    </div>
-    <div class="issue">
       <div class="issue-title">hermes: command not found</div>
       <div class="issue-sym"><span>Symptom</span><span>Hermes installed but shell can't find it</span></div>
       <div class="issue-fix"><span>Fix</span><span>Reload the shell rc, or invoke with the full path:
@@ -3410,10 +2751,10 @@ sudo systemctl status hermes-gateway --no-pager</code></pre></div>
         </span></div>
     </div>
     <div class="issue">
-      <div class="issue-title">MCP stdio servers fail health check — <code>npx</code> not in LiteLLM's PATH</div>
-      <div class="issue-sym"><span>Symptom</span><span>Adding a stdio-based MCP server (e.g. Brave Search) via the LiteLLM UI succeeds but the health check after saving fails. No error is shown — the check just doesn't pass.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>Node.js was installed via <code>nvm</code> or a user-local installer, which places binaries in <code>~/.local/bin</code> and adds that path to the user's shell rc file (<code>.bashrc</code>). LiteLLM — running as a systemd service — never sources <code>.bashrc</code>, so it gets a clean environment with no <code>~/.local/bin</code> in PATH and cannot find <code>npx</code> when it tries to spawn the stdio MCP server process.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Either symlink the user-local binaries into a system-wide path, or install Node system-wide via NodeSource. After either fix, retry the health check in the LiteLLM UI.
+      <div class="issue-title">MCP stdio servers fail to spawn — <code>npx</code> not in mcpo's or Hermes' PATH</div>
+      <div class="issue-sym"><span>Symptom</span><span>Adding a stdio-based MCP server (e.g. Brave Search, Playwright) to mcpo's <code>config.json</code> or Hermes' <code>mcp_servers</code> block succeeds but the tool never comes up — mcpo's <code>/docs</code> page for that tool 404s, or <code>hermes mcp test</code> hangs/fails.</span></div>
+      <div class="issue-sym"><span>Cause</span><span>Node.js was installed via <code>nvm</code> or a user-local installer, which places binaries in <code>~/.local/bin</code> and adds that path to the user's shell rc file (<code>.bashrc</code>). mcpo and Hermes — both running as systemd services — never source <code>.bashrc</code>, so they get a clean environment with no <code>~/.local/bin</code> in PATH and cannot find <code>npx</code> when they try to spawn the stdio MCP server process.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Either symlink the user-local binaries into a system-wide path, or install Node system-wide via NodeSource. After either fix, restart mcpo and/or Hermes and retry.
           <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash · option A — symlink existing install</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>sudo ln -sf /home/YOUR_USERNAME/.local/bin/node /usr/local/bin/node
 sudo ln -sf /home/YOUR_USERNAME/.local/bin/npx  /usr/local/bin/npx</code></pre></div>
           <div class="code-block" style="margin:6px 0 0;"><div class="code-header"><span class="code-lang">bash · option B — install Node system-wide via NodeSource</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
@@ -3442,7 +2783,7 @@ sudo systemctl restart vllm-cluster.service
 docker logs -f vllm_node</code></pre></div>
         <br>Correct restart policies for this stack:<br>
         <code>vllm_node</code> → <code>restart: no</code> (systemd-managed — must never self-restart)<br>
-        <code>n8n</code>, <code>open-webui</code>, <code>litellm-db</code> → <code>restart: unless-stopped</code>
+        <code>n8n</code>, <code>open-webui</code> → <code>restart: unless-stopped</code>
         <br><br>Post-outage startup order: (1) confirm spark-02 <code>vllm_node</code> is absent (<code>docker ps | grep vllm_node</code>), (2) spark-01: <code>sudo systemctl restart vllm-cluster.service</code>, (3) monitor: <code>docker logs -f vllm_node</code>.
         </span></div>
     </div>
@@ -3457,11 +2798,18 @@ docker logs -f vllm_node</code></pre></div>
     <div class="issue">
       <div class="issue-title">Hermes crashes on startup — MCP server connection failing</div>
       <div class="issue-sym"><span>Symptom</span><span>Hermes exits during startup with a stack trace mentioning <code>mcp_servers</code> or a failed MCP client handshake. Logs reference an <code>asyncio</code> error or a TCP/stdio connection that never opened.</span></div>
-      <div class="issue-sym"><span>Cause</span><span>This stack proxies all MCP traffic through LiteLLM (see Step 02). Hermes does not need a direct <code>mcp_servers</code> block in <code>~/.hermes/config.yaml</code> — it talks to LiteLLM's MCP endpoint over the LiteLLM API. A <code>mcp_servers</code> block in Hermes config is only correct in a <strong>direct-MCP</strong> (non-LiteLLM-proxied) topology, and on this stack it points Hermes at servers it can't reach.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Remove the <code>mcp_servers</code> block from <code>~/.hermes/config.yaml</code> entirely. MCP tool calls continue to work because LiteLLM is in the path. Validate and restart:
+      <div class="issue-sym"><span>Cause</span><span>Hermes is a direct MCP client on this stack (see the MCP Servers appendix sections) — its <code>mcp_servers</code> block in <code>~/.hermes/config.yaml</code> must list every server Hermes uses, and it will fail to start if an entry points at an unreachable URL, a stdio command that isn't on PATH, or has a transport/protocol_version mismatch (e.g. a <code>streamableHttp</code> server that needs an explicit <code>protocol_version</code>).</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Validate the YAML first, then check each entry individually — a bad server blocks Hermes from starting at all, so isolate which one:
           <div class="code-block" style="margin:8px 0 0;"><div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><pre><code>python3 -c "import yaml; yaml.safe_load(open('/home/YOUR_USERNAME/.hermes/config.yaml')); print('YAML valid')"
+
+# test each mcp_servers entry individually
+hermes mcp test obsidian
+hermes mcp test brave-search
+hermes mcp test playwright
+hermes mcp test home-assistant
+
 systemctl --user restart hermes</code></pre></div>
-        </span></div>
+          If one entry fails, fix or temporarily comment out that entry rather than removing the whole block — Hermes needs <code>mcp_servers</code> populated to reach any of the tools documented in this appendix.</span></div>
     </div>
 
     <div class="issue">
@@ -3475,7 +2823,7 @@ systemctl --user restart hermes</code></pre></div>
             <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
             <pre><code>custom_providers:
   - name: MyProvider
-    base_url: http://localhost:8001/v1
+    base_url: http://localhost:8000/v1
     model: my-model</code></pre>
           </div>
         </span>
@@ -3542,13 +2890,15 @@ git submodule update --init --recursive
 
   <div class="step" id="obsidian-vault-sync">
     <div class="step-header"><span class="step-num">OBSIDIAN VAULT SYNC + MCP</span><h2>Architecture</h2></div>
-    <p>Obsidian vault sync runs on a dedicated Ubuntu 24.04 LXC (hostname: <code>YOUR_LXC_HOSTNAME</code>, IP: <code>YOUR_LXC_IP</code>) on the Proxmox homelab. Syncthing syncs the vault from Mac/Android to <code>/vault</code> on the LXC. <code>@modelcontextprotocol/server-filesystem</code> exposes the vault as a filesystem MCP server, wrapped by <code>supergateway</code> with streamableHttp transport on port 3000. LiteLLM on spark-01 connects to it at <code>http://YOUR_LXC_IP:3000/mcp</code>.</p>
+    <p>Obsidian vault sync runs on a dedicated Ubuntu 24.04 LXC (hostname: <code>YOUR_LXC_HOSTNAME</code>, IP: <code>YOUR_LXC_IP</code>) on the Proxmox homelab. Syncthing syncs the vault from Mac/Android to <code>/vault</code> on the LXC. <code>@modelcontextprotocol/server-filesystem</code> exposes the vault as a filesystem MCP server, wrapped by <code>supergateway</code> with streamableHttp transport on port 3000. There is no more central LiteLLM MCP proxy, so this endpoint now has two independent consumers on spark-01: Hermes connects to it directly as a native MCP client, and Your Open WebUI reaches it through <code>mcpo</code> (an MCP-to-OpenAPI bridge), since Open WebUI's Tools UI speaks OpenAPI, not raw MCP.</p>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
       <span><strong>Why not obsidian-mcp?</strong> <code>obsidian-mcp</code> (StevenStavrakis) requires the Obsidian desktop app to be running in the LXC — not viable headless. <code>@modelcontextprotocol/server-filesystem</code> exposes the vault directory directly with no app dependency.</span>
     </div>
     <div class="diagram-wrap" style="margin-top:12px;">
-      <pre style="background:transparent;padding:0;"><code>Obsidian (Mac/Android) &lt;-&gt; Syncthing &lt;-&gt; /vault on LXC &lt;-&gt; server-filesystem &lt;-&gt; supergateway :3000 &lt;-&gt; LiteLLM MCP client</code></pre>
+      <pre style="background:transparent;padding:0;"><code>Obsidian (Mac/Android) &lt;-&gt; Syncthing &lt;-&gt; /vault on LXC &lt;-&gt; server-filesystem &lt;-&gt; supergateway :3000
+                                                                                    ├─&gt; Hermes (direct MCP client, spark-01)
+                                                                                    └─&gt; mcpo :8000 &lt;-&gt; Your Open WebUI (spark-01)</code></pre>
     </div>
 
     <h3>LXC setup</h3>
@@ -3639,10 +2989,10 @@ systemctl start obsidian-mcp</code></pre>
       <li>Connect Mac Obsidian Syncthing client to the LXC Syncthing device</li>
     </ul>
 
-    <h3>LiteLLM connection</h3>
-    <p>Via <code>litellm-config.yaml</code> at the top level (not nested under <code>litellm_settings</code>). The <code>protocol_version</code> must be explicit — <code>server-filesystem</code> ignores <code>2025-11-25</code> and the handshake fails silently without it:</p>
+    <h3>Hermes connection (direct MCP client)</h3>
+    <p>Hermes speaks MCP natively — no proxy needed. Add the server directly to <code>~/.hermes/config.yaml</code>. The <code>protocol_version</code> must be explicit — <code>server-filesystem</code> ignores <code>2025-11-25</code> and the handshake fails silently without it:</p>
     <div class="code-block">
-      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <div class="code-header"><span class="code-lang">yaml · ~/.hermes/config.yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mcp_servers:
   - name: obsidian
     url: http://YOUR_LXC_IP:3000/mcp
@@ -3651,9 +3001,51 @@ systemctl start obsidian-mcp</code></pre>
     </div>
     <div class="callout note">
       <span class="callout-icon">ℹ</span>
-      <span>The server is stateless — no <code>mcp-session-id</code> header is needed. Clients must send <code>Accept: application/json, text/event-stream</code> — missing this returns <code>-32000 Not Acceptable</code>. LiteLLM sends the correct header automatically when <code>transport: streamableHttp</code> is set.</span>
+      <span>The server is stateless — no <code>mcp-session-id</code> header is needed. Clients must send <code>Accept: application/json, text/event-stream</code> — missing this returns <code>-32000 Not Acceptable</code>. Hermes sends the correct header automatically when <code>transport: streamableHttp</code> is set.</span>
     </div>
-    <div class="verify">Verify: <code>curl -s -H "Accept: application/json, text/event-stream" http://YOUR_LXC_IP:3000/mcp</code> — expected: JSON with <code>method: "initialize"</code> response. A <code>-32000</code> error means the Accept header is missing.</div>
+    <div class="verify">Verify: <code>curl -s -H "Accept: application/json, text/event-stream" http://YOUR_LXC_IP:3000/mcp</code> — expected: JSON with <code>method: "initialize"</code> response. A <code>-32000</code> error means the Accept header is missing. Also run <code>hermes mcp test obsidian</code>.</div>
+
+    <h3>mcpo — install once on spark-01, for Open WebUI</h3>
+    <p>Open WebUI's Tools UI speaks OpenAPI, not raw MCP, so it needs a bridge. <a href="https://github.com/open-webui/mcpo" target="_blank" rel="noopener">mcpo</a> wraps one or more MCP servers (stdio, SSE, or streamable-http) and re-exposes each as an OpenAPI tool endpoint. Install it once — the Brave Search, Playwright, and Home Assistant sections below all add entries to the same <code>config.json</code> rather than standing up a second instance.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>pipx install mcpo   # or: uv tool install mcpo
+mkdir -p ~/.mcpo
+cat &gt; ~/.mcpo/config.json &lt;&lt; 'EOF'
+{
+  "mcpServers": {
+    "obsidian": {
+      "type": "streamable-http",
+      "url": "http://YOUR_LXC_IP:3000/mcp"
+    }
+  }
+}
+EOF</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">ini · /etc/systemd/system/mcpo.service</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>[Unit]
+Description=mcpo — MCP-to-OpenAPI bridge for Open WebUI
+After=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+ExecStart=/home/YOUR_USERNAME/.local/bin/mcpo --port 8000 --api-key "YOUR_MCPO_API_KEY" --config /home/YOUR_USERNAME/.mcpo/config.json --hot-reload
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo systemctl daemon-reload
+sudo systemctl enable --now mcpo</code></pre>
+    </div>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>mcpo's OpenAPI port (8000 in this example) is unrelated to vLLM's port 8000 — mcpo binds on spark-01's Docker host network, not inside a container, so pick a free port if 8000 is already taken locally, or bind mcpo to a different port and adjust the Open WebUI registration below to match.</span></div>
+    <p>In Your Open WebUI: <strong>Settings → Tools → Add Connection</strong>, URL <code>http://host.docker.internal:&lt;mcpo-port&gt;/obsidian</code>, API key <code>YOUR_MCPO_API_KEY</code>. Confirm the tool list populates.</p>
+    <div class="verify">Verify: <code>curl -s http://localhost:&lt;mcpo-port&gt;/obsidian/docs</code> returns the auto-generated OpenAPI docs page for the obsidian tool.</div>
   </div>
 
   <div class="step" id="obsidian-vault-bugs">
@@ -3662,13 +3054,13 @@ systemctl start obsidian-mcp</code></pre>
     <div class="issue">
       <div class="issue-title">1 — <code>-32000 Not Acceptable</code> on MCP POST requests</div>
       <div class="issue-sym"><span>Symptom</span><span>POSTs to <code>/mcp</code> return <code>{"error": {"code": -32000, "message": "Not Acceptable"}}</code>.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>The request is missing the <code>Accept: application/json, text/event-stream</code> header. LiteLLM sends it automatically — this error usually means a client (curl test, custom integration) is omitting it. Add <code>-H "Accept: application/json, text/event-stream"</code> to any manual curl calls.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>The request is missing the <code>Accept: application/json, text/event-stream</code> header. Hermes and mcpo both send it automatically — this error usually means a client (curl test, custom integration) is omitting it. Add <code>-H "Accept: application/json, text/event-stream"</code> to any manual curl calls.</span></div>
     </div>
 
     <div class="issue">
       <div class="issue-title">2 — Protocol version mismatch / silent handshake failure</div>
       <div class="issue-sym"><span>Symptom</span><span>MCP server connects but tool calls return no results or the session never initializes.</span></div>
-      <div class="issue-fix"><span>Fix</span><span>Set <code>protocol_version: "2024-11-05"</code> in the LiteLLM MCP server config. <code>@modelcontextprotocol/server-filesystem</code> does not respond correctly to <code>2025-11-25</code> — the handshake succeeds at the transport level but tool listing returns empty.</span></div>
+      <div class="issue-fix"><span>Fix</span><span>Set <code>protocol_version: "2024-11-05"</code> in Hermes' <code>mcp_servers</code> entry (mcpo negotiates protocol version automatically and doesn't need this). <code>@modelcontextprotocol/server-filesystem</code> does not respond correctly to <code>2025-11-25</code> — the handshake succeeds at the transport level but tool listing returns empty.</span></div>
     </div>
 
     <div class="issue">
@@ -3690,7 +3082,7 @@ systemctl start obsidian-mcp</code></pre>
 
   <div class="step" id="brave-search-mcp">
     <div class="step-header"><span class="step-num">BRAVE SEARCH MCP</span><h2>Web Search Tool Use</h2></div>
-    <p>Adds live web search as a callable tool — the AI model can run Brave Search queries during a conversation in response to tool calls from Open WebUI and other clients. LiteLLM spawns the server on demand via stdio using an API key you supply.</p>
+    <p>Adds live web search as a callable tool — the AI model can run Brave Search queries during a conversation in response to tool calls from Open WebUI and Hermes. Each client spawns the stdio server itself now: mcpo spawns it for Open WebUI, Hermes spawns it directly for its own conversations.</p>
 
     <h3>Step 1 — Get a Brave Search API key</h3>
     <p>Go to <a href="https://api.search.brave.com/" target="_blank" rel="noopener">api.search.brave.com</a>, create a free account, and generate an API key under the Data for AI plan (free tier supports up to 2,000 queries/month).</p>
@@ -3704,34 +3096,40 @@ sudo apt install -y nodejs</code></pre>
     </div>
     <div class="verify">Verify: <code>which npx</code> — expected output: <code>/usr/bin/npx</code></div>
 
-    <h3>Step 3 — Add Brave Search MCP server in LiteLLM UI</h3>
-    <p>Navigate to <code>http://YOUR_NODE1_MGMT_IP:8001/ui</code> → MCP Servers → Add New MCP Server. (LiteLLM lives on <code>spark-01</code>.)</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Field</th><th>Value</th></tr></thead>
-        <tbody>
-          <tr><td>Name</td><td><code>brave-search</code></td></tr>
-          <tr><td>Alias</td><td><code>brave-search</code></td></tr>
-          <tr><td>Transport Type</td><td><code>Standard Input/Output (stdio)</code></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>Set Stdio Configuration (JSON) — replace <code>YOUR_BRAVE_API_KEY</code> with your actual key:</p>
+    <h3>Step 3 — Add to mcpo's config.json (for Open WebUI)</h3>
+    <p>Add a <code>brave-search</code> entry to <code>~/.mcpo/config.json</code> on spark-01 (set up in the Obsidian section above), replacing <code>YOUR_BRAVE_API_KEY</code> with your actual key, then restart mcpo — <code>--hot-reload</code> should pick it up automatically, but restart if it doesn't:</p>
     <div class="code-block">
-      <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <div class="code-header"><span class="code-lang">json · ~/.mcpo/config.json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>{
-  "command": "npx",
-  "args": [
-    "-y",
-    "@modelcontextprotocol/server-brave-search"
-  ],
-  "env": {
-    "BRAVE_API_KEY": "YOUR_BRAVE_API_KEY"
+  "mcpServers": {
+    "obsidian": { "...": "unchanged" },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": { "BRAVE_API_KEY": "YOUR_BRAVE_API_KEY" }
+    }
   }
 }</code></pre>
     </div>
-    <p>Save and confirm Health Status shows <strong>Healthy</strong>.</p>
-    <div class="callout note"><span class="callout-icon">ℹ</span><span>If the health check fails, verify that <code>npx</code> resolves to <code>/usr/bin/npx</code> (system-wide install) and not a user-local path. See the Known Issues section — MCP stdio servers fail health check — for the full diagnosis.</span></div>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo systemctl restart mcpo</code></pre>
+    </div>
+    <p>In Your Open WebUI: <strong>Settings → Tools → Add Connection</strong>, URL <code>http://host.docker.internal:&lt;mcpo-port&gt;/brave-search</code>, same API key as the Obsidian connection. Confirm the tool list populates.</p>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>If mcpo fails to spawn the server, verify that <code>npx</code> resolves to <code>/usr/bin/npx</code> (system-wide install) and not a user-local path. See the Known Issues section — MCP stdio servers fail — for the full diagnosis.</span></div>
+
+    <h3>Step 4 — Add to Hermes (optional, for Hermes' own tool use)</h3>
+    <p>Add the same stdio server directly to <code>~/.hermes/config.yaml</code> — Hermes spawns it itself, no mcpo involved:</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml · ~/.hermes/config.yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>mcp_servers:
+  - name: brave-search
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-brave-search"]
+    env:
+      BRAVE_API_KEY: YOUR_BRAVE_API_KEY</code></pre>
+    </div>
+    <div class="verify">Verify: <code>hermes mcp test brave-search</code></div>
 
     <h3>Validation</h3>
     <p>In Open WebUI, send the following prompt:</p>
@@ -3741,10 +3139,10 @@ sudo apt install -y nodejs</code></pre>
 
   <div class="step" id="playwright-mcp">
     <div class="step-header"><span class="step-num">PLAYWRIGHT MCP</span><h2>Browser Automation</h2></div>
-    <p>Adds browser automation tool use to the stack — the AI model can navigate pages, take screenshots, and scrape content via tool calls in Open WebUI and other clients. LiteLLM spawns a headless Chromium process on demand via stdio; no persistent port is required.</p>
+    <p>Adds browser automation tool use to the stack — the AI model can navigate pages, take screenshots, and scrape content via tool calls in Open WebUI and Hermes. mcpo spawns a headless Chromium process on demand via stdio for Open WebUI; Hermes spawns its own separately. No persistent port is required by the browser process itself.</p>
 
     <h3>Step 1 — Install Node.js system-wide</h3>
-    <p>LiteLLM runs as a systemd service and does not source <code>.bashrc</code>. Node.js must be installed system-wide so <code>npx</code> is available in LiteLLM's PATH.</p>
+    <p>mcpo runs as a systemd service and does not source <code>.bashrc</code>. Node.js must be installed system-wide so <code>npx</code> is available in mcpo's PATH.</p>
     <div class="code-block">
       <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
@@ -3761,54 +3159,38 @@ sudo apt install -y nodejs</code></pre>
     </div>
     <div class="verify">Verify: <code>ls ~/.cache/ms-playwright/</code> — expected: a <code>chromium-XXXX</code> directory is present.</div>
 
-    <h3>Step 3 — Update litellm-config.yaml</h3>
-    <p>Add <code>model_info</code> blocks to all model entries. Without these, LiteLLM does not advertise function calling support and tool calls will not execute.</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>model_list:
-  - model_name: qwen3.5-122b
-    litellm_params:
-      model: openai/qwen3.5-122b
-      api_base: http://localhost:8000/v1
-      api_key: "not-needed"
-      max_tokens: 8192
-    model_info:
-      supports_function_calling: true
-      supports_tool_choice: true</code></pre>
-    </div>
-    <p>Restart LiteLLM after saving:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>sudo systemctl restart litellm</code></pre>
-    </div>
+    <div class="callout note"><span class="callout-icon">ℹ</span><span>vLLM's tool-calling support (needed for the model to actually emit tool calls, not just for the tool server to exist) is now configured directly on the vLLM launch flags in Step 01 — <code>--enable-auto-tool-choice</code> plus a <code>--tool-call-parser</code> matching your model family — rather than a LiteLLM <code>model_info</code> block. Check vLLM's current list of supported tool-call parsers against the recipe in Step 01 if tool calls aren't executing.</span></div>
 
-    <h3>Step 4 — Add Playwright MCP server in LiteLLM UI</h3>
-    <p>Navigate to <code>http://YOUR_NODE1_MGMT_IP:8001/ui</code> → MCP Servers → Add New MCP Server. (LiteLLM lives on <code>spark-01</code>.)</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Field</th><th>Value</th></tr></thead>
-        <tbody>
-          <tr><td>Name</td><td><code>playwright</code></td></tr>
-          <tr><td>Alias</td><td><code>playwright</code></td></tr>
-          <tr><td>Transport Type</td><td><code>Standard Input/Output (stdio)</code></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>Set Stdio Configuration (JSON):</p>
+    <h3>Step 3 — Add to mcpo's config.json (for Open WebUI)</h3>
+    <p>Add a <code>playwright</code> entry to <code>~/.mcpo/config.json</code> on spark-01, then restart mcpo:</p>
     <div class="code-block">
-      <div class="code-header"><span class="code-lang">json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <div class="code-header"><span class="code-lang">json · ~/.mcpo/config.json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>{
-  "command": "npx",
-  "args": [
-    "-y",
-    "@playwright/mcp@latest",
-    "--browser",
-    "chromium",
-    "--headless"
-  ]
+  "mcpServers": {
+    "obsidian": { "...": "unchanged" },
+    "brave-search": { "...": "unchanged" },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--browser", "chromium", "--headless"]
+    }
+  }
 }</code></pre>
     </div>
-    <p>Save and confirm Health Status shows <strong>Healthy</strong>.</p>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo systemctl restart mcpo</code></pre>
+    </div>
+    <p>In Your Open WebUI: <strong>Settings → Tools → Add Connection</strong>, URL <code>http://host.docker.internal:&lt;mcpo-port&gt;/playwright</code>, same API key as the other mcpo connections.</p>
+
+    <h3>Step 4 — Add to Hermes (optional, for Hermes' own tool use)</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">yaml · ~/.hermes/config.yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>mcp_servers:
+  - name: playwright
+    command: npx
+    args: ["-y", "@playwright/mcp@latest", "--browser", "chromium", "--headless"]</code></pre>
+    </div>
+    <div class="verify">Verify: <code>hermes mcp test playwright</code></div>
 
     <h3>Validation</h3>
     <p>In Open WebUI, send the following prompt:</p>
@@ -3818,7 +3200,7 @@ sudo apt install -y nodejs</code></pre>
 
   <div class="step" id="home-assistant-mcp">
     <div class="step-header"><span class="step-num">HOME ASSISTANT MCP</span><h2>Home Assistant tool integration</h2></div>
-    <p>Home Assistant exposes its own MCP endpoint at <code>/api/mcp</code> using Streamable HTTP transport. This lets Hermes (via LiteLLM) call HA as a tool — controlling devices, querying states, reading automations.</p>
+    <p>Home Assistant exposes its own MCP endpoint at <code>/api/mcp</code> using Streamable HTTP transport. This lets Hermes call HA as a tool directly — controlling devices, querying states, reading automations — and lets Your Open WebUI do the same through mcpo.</p>
 
     <h3>Step 1 — Enable the integration in Home Assistant</h3>
     <p><strong>Settings → Devices &amp; Services → Add Integration → search "Model Context Protocol Server"</strong></p>
@@ -3837,12 +3219,12 @@ sudo apt install -y nodejs</code></pre>
     <p>In Home Assistant: <strong>Profile → Long-Lived Access Tokens → Create Token</strong>. Copy the full token — it is only shown once.</p>
     <div class="callout warning">
       <span class="callout-icon">⚠</span>
-      <span>Pass the token as the <code>API_ACCESS_TOKEN</code> environment variable when configuring the MCP server in LiteLLM, not inline as a bearer token header — inline tokens get truncated by the LiteLLM UI field length limit.</span>
+      <span>Keep the full token intact when pasting it into either config below — a truncated token fails auth silently in some MCP clients rather than returning a clear 401.</span>
     </div>
 
-    <h3>Step 3 — Add to LiteLLM MCP config</h3>
+    <h3>Step 3 — Add to Hermes (direct MCP client)</h3>
     <div class="code-block">
-      <div class="code-header"><span class="code-lang">yaml · litellm-config.yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <div class="code-header"><span class="code-lang">yaml · ~/.hermes/config.yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
       <pre><code>mcp_servers:
   - name: home-assistant
     url: http://YOUR_HA_IP:8123/api/mcp
@@ -3850,101 +3232,30 @@ sudo apt install -y nodejs</code></pre>
     headers:
       Authorization: "Bearer YOUR_HA_LONG_LIVED_TOKEN"</code></pre>
     </div>
-    <div class="verify">Verify: in Open WebUI or Hermes, ask the model to list your Home Assistant entities. Expected: device list returned as a tool call result.</div>
-  </div>
+    <div class="verify">Verify: <code>hermes mcp test home-assistant</code>, or ask Hermes to list your Home Assistant entities.</div>
 
-  <div class="step" id="litellm-ui">
-    <div class="step-header"><span class="step-num">TROUBLESHOOTING</span><h2>LiteLLM Admin UI</h2></div>
-    <p>The LiteLLM proxy ships with a built-in web UI at <code>/ui</code>. It requires a master key and a PostgreSQL database — SQLite is not supported for the UI auth layer. The following documents every error encountered during setup, in order.</p>
-
-    <h3>Step 1 — Set a master key</h3>
-    <p>All commands below run on <strong><code>spark-01</code></strong> (where LiteLLM lives). Add to <code>~/spark-ai-stack/litellm-config.yaml</code>:</p>
+    <h3>Step 4 — Add to mcpo's config.json (for Open WebUI)</h3>
     <div class="code-block">
-      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>general_settings:
-  master_key: sk-yourkey
-  database_url: "postgresql://litellm:litellm@localhost:5432/litellm"</code></pre>
-    </div>
-    <p>Generate a secure key:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>echo "sk-$(openssl rand -hex 16)"</code></pre>
-    </div>
-
-    <h3>Step 2 — Add PostgreSQL to a compose file on spark-01</h3>
-    <p>Run Postgres on the same node as LiteLLM. Putting it on <code>spark-02</code> would re-introduce the very latency-disturbance pattern this architecture is designed to avoid. Add to a new <code>~/spark-ai-stack/litellm-db.yml</code> on <code>spark-01</code>:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">yaml</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>  litellm-db:
-    image: postgres:16
-    container_name: litellm-db
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=litellm
-      - POSTGRES_PASSWORD=litellm
-      - POSTGRES_DB=litellm
-    ports:
-      - "5432:5432"
-    volumes:
-      - litellm_db:/var/lib/postgresql/data
-
-volumes:
-  litellm_db:</code></pre>
+      <div class="code-header"><span class="code-lang">json · ~/.mcpo/config.json</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>{
+  "mcpServers": {
+    "obsidian": { "...": "unchanged" },
+    "brave-search": { "...": "unchanged" },
+    "playwright": { "...": "unchanged" },
+    "home-assistant": {
+      "type": "streamable-http",
+      "url": "http://YOUR_HA_IP:8123/api/mcp",
+      "headers": { "Authorization": "Bearer YOUR_HA_LONG_LIVED_TOKEN" }
+    }
+  }
+}</code></pre>
     </div>
     <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>docker compose up -d litellm-db</code></pre>
+      <div class="code-header"><span class="code-lang">bash · spark-01</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
+      <pre><code>sudo systemctl restart mcpo</code></pre>
     </div>
-    <div class="callout note"><span class="callout-icon">ℹ</span><span><code>restart: unless-stopped</code> combined with <code>sudo systemctl enable docker</code> ensures the container survives reboots automatically — no additional systemd unit needed.</span></div>
-
-    <h3>Step 3 — Install Prisma</h3>
-    <p>LiteLLM uses Prisma as its database ORM. It is not included in the base <code>pip install litellm</code> package.</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>pip install prisma --break-system-packages</code></pre>
-    </div>
-    <p><code>--break-system-packages</code> bypasses a Python 3.12 restriction that prevents pip from installing into the system Python environment. It is safe on a dedicated AI server where system tools do not depend on conflicting packages.</p>
-
-    <h3>Step 4 — Generate Prisma binaries</h3>
-    <p>After installing the package, the binaries must be generated from LiteLLM's bundled schema:</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>cd ~/.local/lib/python3.12/site-packages/litellm/proxy
-prisma generate --schema schema.prisma</code></pre>
-    </div>
-
-    <h3>Step 5 — Apply the database schema</h3>
-    <p>The Postgres database exists but has no tables yet. Push the schema. <code>DATABASE_URL</code> must be passed inline — Prisma reads it directly from the environment, not from <code>litellm-config.yaml</code>.</p>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>DATABASE_URL="postgresql://litellm:litellm@localhost:5432/litellm" \
-prisma db push --schema schema.prisma</code></pre>
-    </div>
-
-    <h3>Step 6 — Restart LiteLLM</h3>
-    <div class="code-block">
-      <div class="code-header"><span class="code-lang">bash</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div>
-      <pre><code>sudo systemctl daemon-reload
-sudo systemctl restart litellm
-sudo systemctl status litellm</code></pre>
-    </div>
-
-    <h3>Errors encountered in order</h3>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Error</th><th>Cause</th><th>Fix</th></tr></thead>
-        <tbody>
-          <tr><td><code>Authentication Error, Not connected to DB</code></td><td>No PostgreSQL configured</td><td>Add <code>database_url</code> to <code>general_settings</code></td></tr>
-          <tr><td><code>ModuleNotFoundError: No module named 'prisma'</code></td><td>Prisma not installed</td><td><code>pip install prisma --break-system-packages</code></td></tr>
-          <tr><td><code>Unable to find Prisma binaries</code></td><td><code>prisma generate</code> not run</td><td>Run <code>prisma generate --schema schema.prisma</code></td></tr>
-          <tr><td><code>The table 'public.LiteLLM_UserTable' does not exist</code></td><td>Schema not applied to DB</td><td>Run <code>prisma db push --schema schema.prisma</code></td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h3>Accessing the UI</h3>
-    <p>Navigate to <code>http://YOUR_NODE1_MGMT_IP:8001/ui</code>. Username: <code>admin</code>. Password: your <code>master_key</code> value.</p>
-    <div class="verify">UI loads and accepts login with master key credentials</div>
+    <p>In Your Open WebUI: <strong>Settings → Tools → Add Connection</strong>, URL <code>http://host.docker.internal:&lt;mcpo-port&gt;/home-assistant</code>, same API key as the other mcpo connections.</p>
+    <div class="verify">Verify: in Open WebUI, ask the model to list your Home Assistant entities. Expected: device list returned as a tool call result.</div>
   </div>
 
   <div class="step" id="changelog">
@@ -3964,6 +3275,7 @@ sudo systemctl status litellm</code></pre>
           <tr><td>June 11</td><td>Obsidian MCP — obsidian-mcp → @modelcontextprotocol/server-filesystem migration</td></tr>
           <tr><td>June 12</td><td>Hermes memory limits raised (memory_char_limit 6000, user_char_limit 3000); dashboard auto-restart via ExecStartPost + sudoers</td></tr>
           <tr><td>June 15</td><td>Power outage recovery — orphaned vllm-qwen container (restart:always on port 8000) identified and removed</td></tr>
+          <tr><td>August 15, 2026</td><td>v5.0 — Removed the LiteLLM proxy layer entirely. Both sides' Open WebUI (and Hermes on spark-01) now call vLLM's OpenAI-compatible API directly instead of going through a per-side LiteLLM proxy. vLLM has no built-in authentication, so Tailscale ACLs and host firewall rules are now the sole access-control layer — previously LiteLLM provided a second line of defense via per-side master keys, per-side request logging, and rate limiting, independent of the network layer. See the <a href="#trust-model">Trust model</a> section for the updated security posture.</td></tr>
         </tbody>
       </table>
     </div>
@@ -3973,8 +3285,8 @@ sudo systemctl status litellm</code></pre>
 </div>
 
 <footer>
-  <span>NVIDIA DGX: At-Home AI Stack · split-trust shared compute · arm64 · Ubuntu 24.04 · v3.0</span>
-  <span>vLLM TP=2 · Ray · 2× LiteLLM · 2× Open WebUI · 2× n8n · 2× Tailscale · Hermes Agent</span>
+  <span>NVIDIA DGX: At-Home AI Stack · split-trust shared compute · arm64 · Ubuntu 24.04 · v5.0</span>
+  <span>vLLM TP=2 · Ray · 2× Open WebUI · 2× n8n · 2× Tailscale · Hermes Agent</span>
 </footer>
 
 <script>
@@ -4154,7 +3466,7 @@ document.querySelectorAll('[id]').forEach(el => observer.observe(el));
   var OPT_KEY = 'dgx-ai-stack-tldr-opts';
   // Keys live in sessionStorage only (cleared on tab close); some have safe defaults.
   var SECRET_KEYS = [
-    'YOUR_HF_TOKEN', 'YOUR_MASTER_KEY', 'YOUR_CLIENT_MASTER_KEY',
+    'YOUR_HF_TOKEN',
     'YOUR_NODE1_TS_AUTHKEY', 'YOUR_NODE2_TS_AUTHKEY',
     'CLIENT_TAILNET_HOSTNAME',
     'MODEL_RECIPE', 'SERVED_MODEL_NAME', 'HF_MODEL_REPO', 'HF_MODEL_DIR'
@@ -4237,7 +3549,7 @@ document.querySelectorAll('[id]').forEach(el => observer.observe(el));
     var allKeys = [
       'YOUR_NODE1_MGMT_IP','YOUR_NODE1_DAC_IP','YOUR_NODE1_TAILSCALE_IP','YOUR_NODE1_TS_AUTHKEY',
       'YOUR_NODE2_MGMT_IP','YOUR_NODE2_DAC_IP','YOUR_NODE2_TAILSCALE_IP','YOUR_NODE2_TS_AUTHKEY',
-      'YOUR_USERNAME','YOUR_TAILNET_HOSTNAME','YOUR_HF_TOKEN','YOUR_MASTER_KEY','YOUR_CLIENT_MASTER_KEY',
+      'YOUR_USERNAME','YOUR_TAILNET_HOSTNAME','YOUR_HF_TOKEN',
       'CLIENT_TAILNET_HOSTNAME',
       'HF_MODEL_REPO','HF_MODEL_DIR','MODEL_RECIPE','SERVED_MODEL_NAME',
       'YOUR_LXC_IP','YOUR_LXC_HOSTNAME'

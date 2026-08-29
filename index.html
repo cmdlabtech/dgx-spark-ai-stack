@@ -1893,6 +1893,7 @@ docker run -d \
       </table>
     </div>
     <div class="verify">Send a chat message — it should stream back directly from the vLLM head (Step 01).</div>
+    <div class="callout note" style="margin-top:10px;"><span class="callout-icon">ℹ</span><span><code>OPENAI_API_BASE_URL</code> above only seeds the connection on first boot. Open WebUI persists the live value in <strong>Settings → Connections</strong>, stored in the <code>open-webui</code> volume — that's the source of truth from then on, independent of the container's env vars. If the container is ever recreated without <code>-e OPENAI_API_BASE_URL=...</code>, <code>docker inspect</code> will show it blank even though the UI still has the working value saved. Verify the running config in the UI, not just the env var, if something seems off.</span></div>
   </div>
 
   <div class="step" id="step3">
@@ -1932,6 +1933,7 @@ docker run -d \
       </table>
     </div>
     <div class="verify">Send a chat message — completions stream back directly from the shared vLLM head on spark-01 (Step 01) over the DAC. On spark-01, <code>docker logs --tail 20 vllm_node</code> should show the request arrive.</div>
+    <div class="callout note" style="margin-top:10px;"><span class="callout-icon">ℹ</span><span><code>OPENAI_API_BASE_URL</code> above only seeds the connection on first boot. Open WebUI persists the live value in <strong>Settings → Connections</strong>, stored in the <code>open-webui</code> volume — that's the source of truth from then on, independent of the container's env vars. If the container is ever recreated without <code>-e OPENAI_API_BASE_URL=...</code>, <code>docker inspect</code> will show it blank even though the UI still has the working value saved. Verify the running config in the UI, not just the env var, if something seems off.</span></div>
 
     <h3>Recommended Open WebUI system prompt</h3>
     <p>Set this once in <strong>Settings → General → System Prompt</strong>. It pairs with <code>--default-chat-template-kwargs '{"enable_thinking": false}'</code> on the vLLM head (Step 01): the model answers directly by default, and users can opt into extended reasoning per-message by prefixing the prompt with <code>/think</code>. Apply the same prompt on both Open WebUIs (yours on spark-01 and the client's on spark-02) — they share the underlying model.</p>
@@ -2371,6 +2373,8 @@ EOF
 docker compose -f ~/spark-ai-stack/n8n.yml up -d</code></pre>
     </div>
     <div class="verify">Visit <code>http://localhost:5678</code> on spark-01 (or your tailnet hostname) and create the owner account.</div>
+
+    <div class="callout note"><span class="callout-icon">ℹ</span><span><strong>Alternative: real public domain, for external (non-Tailscale) webhook senders.</strong> The tailnet-hostname pattern above only works for services that can reach a <code>.ts.net</code> address. If a workflow needs to receive webhooks from a service that can't join your tailnet (Telegram, a calendar provider, a payment processor, etc.), point a real domain at spark-01 instead and switch n8n to terminate HTTPS itself: <code>N8N_PROTOCOL=https</code>, <code>WEBHOOK_URL=https://your-domain.example/</code>, plus a cert-issuance tool (e.g. <code>acme.sh</code>) mounted into the container to keep a Let's Encrypt cert current for that domain. If you take this route, make sure whatever exposes the port publicly (host firewall / port-forward / reverse proxy) is deliberate — the "your tailnet only" assumption in the port table below no longer holds for this node once a public domain is in play.</span></div>
 
     <h3>Wire your n8n directly to vLLM</h3>
     <p>In n8n, add an OpenAI credential pointing <em>directly at vLLM</em> (local on spark-01, no proxy):</p>

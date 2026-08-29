@@ -17,21 +17,8 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
-  hermes-webui:
-    image: ghcr.io/nesquena/hermes-webui:latest
-    container_name: hermes-webui
-    restart: unless-stopped
-    environment:
-      - WANTED_UID=1000
-      - WANTED_GID=1000
-      - HERMES_WEBUI_STATE_DIR=/home/hermeswebui/.hermes/webui-mvp
-    volumes:
-      - /home/YOUR_USERNAME/.hermes:/home/hermeswebui/.hermes
-      - /home/YOUR_USERNAME/workspace:/workspace
-    ports:
-      - "8787:8787"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+# Hermes runs natively via the `hermes-dashboard` systemd service (see index.html
+# Step 07), not as a container — there is no hermes-webui service here anymore.
 
 volumes:
   n8n_data:

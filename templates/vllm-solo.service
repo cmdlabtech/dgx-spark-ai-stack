@@ -3,6 +3,11 @@
 #          sudo systemctl daemon-reload && sudo systemctl enable vllm-solo.service
 # Do not start this unit while a healthy vllm_node already serves :8000 unless you intend a bounce.
 # Disable any vllm-cluster.service on this host first.
+#
+# Use only the supported max-model-len for the recipe on one GB10:
+#   INT4 122B-class  -> 32768
+#   27B FP8          -> 65536
+# Do not use the recipe file default (262144). That OOMs solo.
 
 [Unit]
 Description=vLLM solo (TP=1)

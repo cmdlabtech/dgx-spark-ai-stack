@@ -1,0 +1,24 @@
+# Head node only. Architecture A.
+# Install: sudo cp templates/vllm-cluster.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now vllm-cluster.service
+# Substitute RECIPE and paths. Do not enable this unit on a node that should stay solo.
+
+[Unit]
+Description=vLLM clustered (TP=2)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=YOUR_USERNAME
+WorkingDirectory=/home/YOUR_USERNAME/spark-vllm-docker
+ExecStart=/home/YOUR_USERNAME/spark-vllm-docker/run-recipe.sh RECIPE -d -- \
+  --served-model-name SERVED_ID \
+  --gpu-memory-utilization 0.80
+ExecStop=/home/YOUR_USERNAME/spark-vllm-docker/launch-cluster.sh stop
+TimeoutStartSec=0
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

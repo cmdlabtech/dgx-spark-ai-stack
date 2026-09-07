@@ -1,19 +1,23 @@
-## Hermes Agent installer (NousResearch, 2026-05)
-- Installer script: https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh
-- Python runtime: uv manages Python 3.11 venv at ~/.hermes/hermes-agent/venv/
-- Node.js: 22 LTS, downloaded to ~/.hermes/node/, symlinked to ~/.local/bin/
-- Submodules: mini-swe-agent (terminal tools), tinker-atropos (RL skill training)
-- System deps installed via apt: ripgrep, ffmpeg
-- Config layout: ~/.hermes/config.yaml, ~/.hermes/.env, ~/.hermes/SOUL.md (all top-level)
-- Skills: bundled skills seeded to ~/.hermes/skills/ via skills_sync.py on install
-- hermes CLI: ~/.hermes/hermes-agent/venv/bin/hermes → symlinked to ~/.local/bin/hermes
-- Gateway: systemd service (hermes-gateway.service) — `hermes gateway install --system`
-- Update: `hermes update` pulls latest, restarts gateway
-- SOUL.md: hot-reloaded per message, no restart needed
-- This stack does NOT use Ollama — Hermes points at LiteLLM :8001 as custom OpenAI endpoint
-- NVIDIA DGX playbook for Hermes assumes Ollama :11434 — ignore for this stack
-- `hermes mcp test <server-name>` is canonical for verifying MCP server connectivity
+## Hermes Agent installer (NousResearch)
 
-## vLLM cluster restart footguns (2026-08)
-- `launch-cluster.sh` has a stale-state bug: if a `vllm_node` container name is still registered on the worker (spark-02) from a prior run, it concludes the whole cluster is "already running" and skips launching the head container on spark-01 — then fails silently trying to `docker exec` into a head container that was never created. `systemctl status` still reports `active (exited)` with no error. Fix: `docker rm -f vllm_node` on both nodes before restarting the service, then verify with `docker ps -a` + `curl localhost:8000/v1/models`, not just systemctl status.
-- Open WebUI "OpenAI: Network Problem" toast is almost always a wrong URL, not a broken connection: spark-01 uses `http://host.docker.internal:8000/v1` (resolves to itself); spark-02 must use the head node's DAC IP directly (`http://<spark-01-dac-ip>:8000/v1`) — `host.docker.internal` on spark-02 resolves to spark-02, where nothing listens on 8000. Isolate with `curl` on the host first, then `docker exec open-webui curl ...` from inside the container, before touching UI config.
+- Installer: upstream `install.sh`
+- Runtime: uv-managed Python 3.11 venv under `~/.hermes/hermes-agent/venv/`
+- Gateway: systemd `hermes-gateway.service`
+- Dashboard often `PartOf=` the gateway; restart the gateway after `config.yaml` edits
+- Update: `hermes update` then confirm provider ids still match the local served name
+- This stack does not use Ollama. Point Hermes at vLLM `:8000/v1` (Architecture B) or the documented inference URL (Architecture A)
+- `model.max_tokens` must sit under the top-level `model:` key. Values under a fan-out / MoA block are ignored by the custom provider
+- If the custom provider defaults `max_tokens` to the full context window, vLLM 400s and some builds enter a compression cooldown even with `compression.enabled: false`
+- `skills.disabled` matches skill *names* (frontmatter `name` or the parent directory of `SKILL.md`), not category folder names. Nested skills stay indexed unless each name is listed
+
+## vLLM restart footguns
+
+- `launch-cluster.sh` can treat a leftover `vllm_node` name on the worker as “cluster already up” and skip creating the head. `systemctl` may still show `active`. Fix: `docker rm -f vllm_node` on both nodes, then `curl` `:8000/v1/models`, not status alone
+- Open WebUI “OpenAI: Network Problem” is usually the URL. On the node that runs vLLM, `host.docker.internal:8000` works only after `--add-host=host.docker.internal:host-gateway`. On Architecture A, the workload node's container must use the head DAC address, not `host.docker.internal` (that name is the workload node itself)
+- Solo and cluster both use the container name `vllm_node`. Remove it before switching layouts
+- Disable the cluster unit on boot before leaving a node in solo mode
+
+## Parser and context
+
+- Qwen3.5 tool loops that emit coder-style calls need `--tool-call-parser qwen3_coder`, not `qwen3_xml`
+- Cap `--max-model-len` on the first solo window. Recipe defaults near 262k plus `gpu-memory-utilization 0.7` can OOM a single GB10

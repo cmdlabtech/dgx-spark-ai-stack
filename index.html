@@ -12,8 +12,7 @@
     --bg: #0b1220; --surface: #121a2b; --border: #1f2937;
     --text: #e5e7eb; --text2: #9ca3af; --text3: #6b7280;
     --accent: #60a5fa; --accent-bg: #172554;
-    --green: #34d399; --green-bg: #064e3b;
-    --amber: #fbbf24; --amber-bg: #451a03;
+    --green: #34d399; --amber: #fbbf24; --amber-bg: #451a03;
     --mono: "JetBrains Mono", ui-monospace, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -45,6 +44,7 @@
   .worksheet-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
   label { font-size: 11.5px; color: var(--text3); }
   input[type=text], input[type=password] { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; font: 13px var(--mono); }
+  input[readonly] { color: var(--text3); }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
   button.ws-btn { background: var(--accent-bg); border: 1px solid #1d4ed8; color: var(--text); padding: 8px 12px; border-radius: 6px; cursor: pointer; font: 600 12.5px Inter, sans-serif; }
   button.reset { border-color: var(--border); background: transparent; color: var(--text2); }
@@ -89,17 +89,13 @@
   <section id="architectures">
     <h2>Architectures</h2>
     <div class="grid2">
-      <div class="card"><h3>A — Clustered</h3><p>One vLLM, TP=2 over Ray on the DAC. Head on node-a :8000. Worker on node-b has no API. Typical recipe: 122B-class FP8 (often cluster_only).</p></div>
-      <div class="card"><h3>B — Isolated solo</h3><p>Each node runs run-recipe.sh RECIPE --solo -d --tp 1. Cluster unit disabled on boot. INT4 122B-class and/or dense ~27B FP8. Each UI points at its own host.</p></div>
+      <div class="card"><h3>A — Clustered</h3><p>One vLLM, TP=2 over Ray on the DAC. Head on node-a :8000. Worker on node-b has no API. Typical recipe: 122B-class FP8 (often cluster_only). Supported window: 262144.</p></div>
+      <div class="card"><h3>B — Isolated solo</h3><p>Each node runs run-recipe.sh RECIPE --solo -d --tp 1. Cluster unit disabled on boot. Supported windows: INT4 122B-class 32768; dense 27B FP8 65536. Do not raise those values.</p></div>
     </div>
-    <pre style="margin-top:16px;">A                          B
-node-a apps → :8000 head    node-a apps → local :8000
-node-b apps → DAC → head    node-b apps → local :8000
-        ↘ TP=2 / Ray                 (no shared listener)</pre>
   </section>
   <section id="setup">
     <h2>Setup generator</h2>
-    <p>Pick the layout and model first. That tab fills recipe fields. Then complete the table. Downloads bake those values into a per-node script. Secrets stay in sessionStorage only.</p>
+    <p>Pick the layout and model first. That tab sets the supported <code>max-model-len</code> — it is not editable. Then fill the node table. Downloads bake those values in. Secrets stay in sessionStorage only.</p>
     <div class="tabs" role="tablist">
       <button type="button" class="tab active" data-preset="a-fp8">A · clustered 122B FP8</button>
       <button type="button" class="tab" data-preset="b-int4">B · solo 122B INT4</button>
@@ -115,7 +111,7 @@ node-b apps → DAC → head    node-b apps → local :8000
         <div class="worksheet-row"><label>Served name</label><input type="text" id="f-served"></div>
         <div class="worksheet-row"><label>HF repo</label><input type="text" id="f-repo"></div>
         <div class="worksheet-row"><label>HF cache dir</label><input type="text" id="f-dir"></div>
-        <div class="worksheet-row"><label>max-model-len</label><input type="text" id="f-len"></div>
+        <div class="worksheet-row"><label>max-model-len (supported only)</label><input type="text" id="f-len" readonly></div>
         <div class="worksheet-row"><label>tool-call-parser</label><input type="text" id="f-parser"></div>
       </div>
     </div>
@@ -139,7 +135,7 @@ node-b apps → DAC → head    node-b apps → local :8000
           <label class="opt-row"><input type="checkbox" id="o-ufw" checked> host firewall</label>
         </div>
       </div>
-      <div class="note warn">Documentation addresses only until you type real ones. Do not publish filled scripts. Port 8000 must not land on an overlay.</div>
+      <div class="note warn">max-model-len is the supported window for the selected tab. Raising it OOMs a single GB10. Port 8000 stays off overlays.</div>
       <div class="actions">
         <button class="ws-btn" type="button" onclick="downloadNode('a')">download setup-node-a.sh</button>
         <button class="ws-btn" type="button" onclick="downloadNode('b')">download setup-node-b.sh</button>
@@ -166,9 +162,9 @@ node-b apps → DAC → head    node-b apps → local :8000
 </div>
 <script>
 var PRESETS = {
-  'a-fp8': {layout:'A clustered TP=2',flags:'-d',recipe:'qwen3.5-122b-fp8',served:'qwen3.5-122b',repo:'Qwen/Qwen3.5-122B-A10B-FP8',dir:'models--Qwen--Qwen3.5-122B-A10B-FP8',len:'262144',parser:'qwen3_coder',blurb:'Shared head on node-a. Worker on node-b. FP8 122B recipes are often cluster_only — do not pass --solo.'},
-  'b-int4': {layout:'B isolated solo TP=1',flags:'--solo -d --tp 1',recipe:'qwen3.5-122b-int4-autoround',served:'qwen3.5-122b',repo:'Intel/Qwen3.5-122B-A10B-int4-AutoRound',dir:'models--Intel--Qwen3.5-122B-A10B-int4-AutoRound',len:'32768',parser:'qwen3_coder',blurb:'Each node owns :8000. Cap max-model-len. Open WebUI needs host.docker.internal. Disable cluster unit on boot.'},
-  'b-27b': {layout:'B isolated solo TP=1',flags:'--solo -d --tp 1',recipe:'qwen3.8-27b-fp8',served:'qwen3.8-27b',repo:'Qwen/Qwen3.8-27B-FP8',dir:'models--Qwen--Qwen3.8-27B-FP8',len:'65536',parser:'qwen3_coder',blurb:'Personal-node lane. Hermes model.max_tokens must be 8192 under model: so vLLM is not asked for a full-window completion.'}
+  'a-fp8': {layout:'A clustered TP=2',flags:'-d',recipe:'qwen3.5-122b-fp8',served:'qwen3.5-122b',repo:'Qwen/Qwen3.5-122B-A10B-FP8',dir:'models--Qwen--Qwen3.5-122B-A10B-FP8',len:'262144',parser:'qwen3_coder',blurb:'Supported max-model-len is 262144 on TP=2. Do not raise it. FP8 122B recipes are often cluster_only — do not pass --solo.'},
+  'b-int4': {layout:'B isolated solo TP=1',flags:'--solo -d --tp 1',recipe:'qwen3.5-122b-int4-autoround',served:'qwen3.5-122b',repo:'Intel/Qwen3.5-122B-A10B-int4-AutoRound',dir:'models--Intel--Qwen3.5-122B-A10B-int4-AutoRound',len:'32768',parser:'qwen3_coder',blurb:'Supported max-model-len on one GB10 INT4 is 32768. Recipe default 262144 OOMs. Disable the cluster unit on boot.'},
+  'b-27b': {layout:'B isolated solo TP=1',flags:'--solo -d --tp 1',recipe:'qwen3.8-27b-fp8',served:'qwen3.8-27b',repo:'Qwen/Qwen3.8-27B-FP8',dir:'models--Qwen--Qwen3.8-27B-FP8',len:'65536',parser:'qwen3_coder',blurb:'Supported max-model-len on one GB10 27B FP8 is 65536. Hermes model.max_tokens must stay 8192 under model:.'}
 };
 function val(id){return (document.getElementById(id).value||'').trim();}
 function setv(id,v){document.getElementById(id).value=v;}
@@ -181,7 +177,9 @@ function applyPreset(key){
   sessionStorage.setItem('dgx-preset',key); render();
 }
 function form(){
-  return {layout:val('f-layout'),flags:val('f-flags'),recipe:val('f-recipe'),served:val('f-served'),repo:val('f-repo'),dir:val('f-dir'),len:val('f-len')||'32768',parser:val('f-parser')||'qwen3_coder',user:val('f-user')||'YOUR_USERNAME',hf:val('f-hf')||'YOUR_HF_TOKEN',aDac:val('f-a-dac')||'YOUR_NODE_A_DAC_IP',bDac:val('f-b-dac')||'YOUR_NODE_B_DAC_IP',solo:val('f-flags').indexOf('--solo')!==-1,owui:document.getElementById('o-owui').checked,n8n:document.getElementById('o-n8n').checked,hermes:document.getElementById('o-hermes').checked,ufw:document.getElementById('o-ufw').checked};
+  var key=sessionStorage.getItem('dgx-preset')||'a-fp8';
+  var supported=PRESETS[key].len;
+  return {layout:val('f-layout'),flags:val('f-flags'),recipe:val('f-recipe'),served:val('f-served'),repo:val('f-repo'),dir:val('f-dir'),len:supported,parser:val('f-parser')||'qwen3_coder',user:val('f-user')||'YOUR_USERNAME',hf:val('f-hf')||'YOUR_HF_TOKEN',aDac:val('f-a-dac')||'YOUR_NODE_A_DAC_IP',bDac:val('f-b-dac')||'YOUR_NODE_B_DAC_IP',solo:val('f-flags').indexOf('--solo')!==-1,owui:document.getElementById('o-owui').checked,n8n:document.getElementById('o-n8n').checked,hermes:document.getElementById('o-hermes').checked,ufw:document.getElementById('o-ufw').checked};
 }
 function scriptFor(node){
   var f=form(), isA=node==='a', unit=f.solo?'vllm-solo':'vllm-cluster', L=[];
@@ -215,7 +213,7 @@ function render(){document.getElementById('preview-a').textContent=scriptFor('a'
 function downloadNode(node){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([scriptFor(node)],{type:'text/x-shellscript'}));a.download='setup-node-'+node+'.sh';a.click();document.getElementById('status').textContent='downloaded setup-node-'+node+'.sh';}
 function resetForm(){['f-a-mgmt','f-a-dac','f-b-mgmt','f-b-dac','f-hf','f-user'].forEach(function(id){setv(id,'');});applyPreset(sessionStorage.getItem('dgx-preset')||'a-fp8');}
 document.querySelectorAll('.tab').forEach(function(btn){btn.addEventListener('click',function(){applyPreset(btn.dataset.preset);});});
-['f-recipe','f-served','f-repo','f-dir','f-len','f-parser','f-user','f-hf','f-a-dac','f-b-dac'].forEach(function(id){document.getElementById(id).addEventListener('input',render);});
+['f-recipe','f-served','f-repo','f-dir','f-parser','f-user','f-hf','f-a-dac','f-b-dac'].forEach(function(id){document.getElementById(id).addEventListener('input',render);});
 ['o-owui','o-n8n','o-hermes','o-ufw'].forEach(function(id){document.getElementById(id).addEventListener('change',render);});
 applyPreset(sessionStorage.getItem('dgx-preset')||'a-fp8');
 </script>

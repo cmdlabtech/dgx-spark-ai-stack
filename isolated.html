@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Architecture B — isolated solo · DGX At-Home AI Stack</title>
+  <meta name="description" content="Isolated solo vLLM (TP=1) on each DGX Spark node, documented alongside clustered TP=2."/>
+  <style>
+    :root { --bg:#0b1220; --surface:#121a2b; --text:#e5e7eb; --text2:#9ca3af; --accent:#60a5fa; --border:#1f2937; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    body { margin:0; font-family: Inter, system-ui, sans-serif; background:var(--bg); color:var(--text); line-height:1.55; }
+    main { max-width:880px; margin:0 auto; padding:48px 24px 80px; }
+    a { color:var(--accent); }
+    h1 { font-size:28px; margin:0 0 12px; }
+    h2 { font-size:18px; margin:32px 0 10px; }
+    p, li { color:var(--text2); font-size:15px; }
+    pre, code { font-family:var(--mono); }
+    pre { background:var(--surface); border:1px solid var(--border); padding:14px 16px; overflow:auto; border-radius:8px; font-size:12.5px; color:var(--text); }
+    .note { border:1px solid var(--border); background:var(--surface); padding:12px 14px; border-radius:8px; font-size:13px; color:var(--text2); }
+    table { border-collapse:collapse; width:100%; font-size:13.5px; }
+    th, td { border:1px solid var(--border); padding:8px 10px; text-align:left; }
+    th { color:var(--text); }
+  </style>
+</head>
+<body>
+<main>
+  <p class="note"><a href="./">← Clustered guide (Architecture A)</a> · This page is Architecture B only. Both stay in the repository.</p>
+  <h1>Architecture B — isolated solo</h1>
+  <p>Each DGX Spark runs its own vLLM at TP=1. No Ray. No shared OpenAI listener. Application stacks stay separate. Documentation names: <strong>node-a</strong> (personal apps + Hermes) and <strong>node-b</strong> (workload UI). Addresses in examples are TEST-NET only (<code>192.0.2.0/24</code>, <code>198.51.100.0/30</code>).</p>
+
+  <h2>Layout</h2>
+<pre>
+node-a                              node-b
+Open WebUI :8080                    Open WebUI :8080
+Hermes :9119                        n8n :5678
+ n8n :5678
+        \                                   \
+         vLLM :8000 TP=1                     vLLM :8000 TP=1
+         example 27B-class FP8               example 122B-class INT4
+</pre>
+
+  <h2>Launch</h2>
+<pre>
+cd "$HOME/spark-vllm-docker"
+./run-recipe.sh RECIPE --solo -d --tp 1 -- \
+  --served-model-name SERVED_ID \
+  --max-model-len CONTEXT_CAP
+</pre>
+  <ul>
+    <li>122B-class FP8 recipes marked <code>cluster_only</code> cannot be the solo recipe. Use INT4 AutoRound or a 27B/35B FP8 recipe.</li>
+    <li>Cap context on the first window (32768 on the large INT4 lane; 65536 on a 27B lane if the agent requires ≥64k).</li>
+    <li>Qwen3.5 tool loops: <code>--tool-call-parser qwen3_coder</code>.</li>
+    <li>Open WebUI: <code>--add-host=host.docker.internal:host-gateway</code>, Connections <code>http://host.docker.internal:8000/v1</code>.</li>
+    <li>Port 8000 stays off every overlay network.</li>
+  </ul>
+
+  <h2>Units</h2>
+  <p>See <code>templates/vllm-solo.service</code> and <code>templates/vllm-cluster.service</code>. Disable the cluster unit on boot before leaving a node in solo mode. Both layouts use the container name <code>vllm_node</code> — remove it when switching.</p>
+
+  <h2>Hermes on node-a</h2>
+  <table>
+    <tr><th>Key</th><th>Value</th></tr>
+    <tr><td>base URL</td><td><code>http://localhost:8000/v1</code></td></tr>
+    <tr><td>API key</td><td>dummy local key (vLLM ignores it; some agent builds require a string)</td></tr>
+    <tr><td>model.max_tokens</td><td>8192 under the top-level <code>model:</code> key</td></tr>
+    <tr><td>compression.enabled</td><td>false until first-turn prompts are small</td></tr>
+  </table>
+
+  <h2>Switch A → B</h2>
+  <ol>
+    <li>Stop the cluster from the head. <code>docker rm -f vllm_node</code> on both nodes.</li>
+    <li>Disable the cluster unit on boot.</li>
+    <li>Launch solo on each node. Install the solo unit if you want autostart.</li>
+    <li>Point each Open WebUI at its own <code>:8000</code>.</li>
+  </ol>
+  <p>Details: <a href="https://github.com/cmdlabtech/dgx-spark-ai-stack/blob/main/docs/architectures.md">docs/architectures.md</a>.</p>
+</main>
+</body>
+</html>

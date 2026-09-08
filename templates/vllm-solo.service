@@ -1,12 +1,14 @@
 # Each node that should autostart isolated inference. Architecture B.
 # Install: sudo cp templates/vllm-solo.service /etc/systemd/system/
 #          sudo systemctl daemon-reload && sudo systemctl enable vllm-solo.service
+#          sudo systemctl start --no-block vllm-solo.service
 # Do not start this unit while a healthy vllm_node already serves :8000 unless you intend a bounce.
 # Disable any vllm-cluster.service on this host first.
+# Image tag is vllm-node. Do not pass --tf5.
 #
 # Use only the supported max-model-len for the recipe on one GB10:
 #   INT4 122B-class  -> 32768
-#   27B FP8          -> 65536
+#   35B FP8          -> 65536
 # Do not use the recipe file default (262144). That OOMs solo.
 
 [Unit]
@@ -24,7 +26,9 @@ Environment=TRANSFORMERS_OFFLINE=1
 ExecStartPre=-/usr/bin/docker rm -f vllm_node
 ExecStart=/home/YOUR_USERNAME/spark-vllm-docker/run-recipe.sh RECIPE --solo -d --tp 1 -- \
   --served-model-name SERVED_ID \
-  --max-model-len 32768
+  --max-model-len 32768 \
+  --tool-call-parser qwen3_coder \
+  --gpu-memory-utilization 0.80
 ExecStop=/home/YOUR_USERNAME/spark-vllm-docker/launch-cluster.sh --solo stop
 TimeoutStartSec=0
 TimeoutStopSec=120

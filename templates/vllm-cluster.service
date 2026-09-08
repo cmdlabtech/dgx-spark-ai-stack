@@ -1,7 +1,11 @@
 # Head node only. Architecture A.
 # Install: sudo cp templates/vllm-cluster.service /etc/systemd/system/
-#          sudo systemctl daemon-reload && sudo systemctl enable --now vllm-cluster.service
-# Substitute RECIPE and paths. Do not enable this unit on a node that should stay solo.
+#          sudo systemctl daemon-reload && sudo systemctl enable vllm-cluster.service
+#          sudo systemctl start --no-block vllm-cluster.service
+# Substitute RECIPE, SERVED_ID, and paths. Do not enable this unit on a node that should stay solo.
+# Image tag is vllm-node (eugr/spark-vllm:latest). Do not pass --tf5.
+# Multi-node default is no-Ray. Add --ray to run-recipe.sh only if required.
+# Before start: docker rm -f vllm_node on BOTH nodes (stale worker name skips head create).
 
 [Unit]
 Description=vLLM clustered (TP=2)
@@ -13,8 +17,13 @@ Type=oneshot
 RemainAfterExit=yes
 User=YOUR_USERNAME
 WorkingDirectory=/home/YOUR_USERNAME/spark-vllm-docker
+Environment=HF_HUB_OFFLINE=1
+Environment=TRANSFORMERS_OFFLINE=1
+ExecStartPre=-/usr/bin/docker rm -f vllm_node
 ExecStart=/home/YOUR_USERNAME/spark-vllm-docker/run-recipe.sh RECIPE -d -- \
   --served-model-name SERVED_ID \
+  --max-model-len 262144 \
+  --tool-call-parser qwen3_coder \
   --gpu-memory-utilization 0.80
 ExecStop=/home/YOUR_USERNAME/spark-vllm-docker/launch-cluster.sh stop
 TimeoutStartSec=0

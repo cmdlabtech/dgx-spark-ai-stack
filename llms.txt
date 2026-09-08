@@ -1,0 +1,22 @@
+# NVIDIA DGX: At-Home AI Stack
+
+> Self-hosted inference on one or two Nvidia DGX Spark nodes (Grace CPU, GB10 GPU, Ubuntu 24.04, arm64). Two layouts: clustered TP=2 (one shared model) or isolated solo TP=1 (one process per node). Apps call vLLM's OpenAI-compatible API on port 8000. There is no LiteLLM proxy.
+
+This file is for coding agents (Grok Build, Codex, Claude Code, and similar). A human just unboxed a Spark and pointed you here. **Do not change the machine until you finish the required interview in the playbook.** Documentation addresses (`192.0.2.0/24`, `198.51.100.0/30`) are examples, not this user's network.
+
+## Start here
+
+- [Full agent playbook](https://cmdlabtech.github.io/dgx-spark-ai-stack/llms-full.txt): required questions, current launcher commands, per-layout build steps, validation
+- [Human agent page](https://cmdlabtech.github.io/dgx-spark-ai-stack/llms.html): out-of-box flow and a copy-paste prompt
+- [Pages site](https://cmdlabtech.github.io/dgx-spark-ai-stack/): architecture copy plus a tabbed setup-script generator
+
+## Layouts
+
+- [Architectures](https://cmdlabtech.github.io/dgx-spark-ai-stack/docs/architectures.md): clustered vs isolated solo, Open WebUI URLs, switch procedure
+- [Learnings](https://github.com/cmdlabtech/dgx-spark-ai-stack/blob/main/LEARNINGS.md): restart footguns, tool-call parser, Hermes `model.max_tokens`
+
+## Optional
+
+- [eugr/spark-vllm-docker operational runbook](https://github.com/eugr/spark-vllm-docker/blob/main/docs/AGENT_RUNBOOK.md): inspect, discover, `--setup`, `hf-download.sh`, no-Ray default
+- [eugr/spark-vllm-docker recipes](https://github.com/eugr/spark-vllm-docker/blob/main/recipes/README.md): live recipe names. Confirm with `./run-recipe.sh --list` on the host. Do not invent recipe ids.
+- [Raw playbook (GitHub)](https://raw.githubusercontent.com/cmdlabtech/dgx-spark-ai-stack/main/llms-full.txt): same playbook if GitHub Pages is blocked

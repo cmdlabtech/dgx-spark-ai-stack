@@ -17,8 +17,8 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
-# Hermes runs natively via the `hermes-dashboard` systemd service (see index.html
-# Step 07), not as a container — there is no hermes-webui service here anymore.
+# Hermes runs natively (upstream installer + `hermes setup`), not as a container.
+# See llms-full.txt and the Pages generator. WEBHOOK_URL is a placeholder.
 
 volumes:
   n8n_data:

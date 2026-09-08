@@ -1,0 +1,6 @@
+# GitHub Pages / Jekyll: publish agent files even if Jekyll runs.
+# .nojekyll disables Jekyll entirely; this include is a fallback.
+include:
+  - llms.txt
+  - llms-full.txt
+  - .nojekyll

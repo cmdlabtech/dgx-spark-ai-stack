@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent setup — NVIDIA DGX At-Home AI Stack</title>
+<meta name="description" content="Out-of-box DGX Spark: install a coding agent, feed it llms.txt, answer the interview, and let it build clustered or solo inference.">
+<link rel="alternate" type="text/plain" href="llms.txt" title="llms.txt">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b1220; --surface: #121a2b; --border: #1f2937;
+    --text: #e5e7eb; --text2: #9ca3af; --text3: #6b7280;
+    --accent: #60a5fa; --accent-bg: #172554;
+    --green: #34d399; --amber: #fbbf24; --amber-bg: #451a03;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  .shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  aside { border-right: 1px solid var(--border); padding: 24px 18px; position: sticky; top: 0; height: 100vh; }
+  .wordmark { font-weight: 700; font-size: 14px; line-height: 1.3; }
+  .sub { color: var(--text3); font-size: 11px; margin: 8px 0 20px; }
+  nav a { display: block; color: var(--text2); text-decoration: none; font-size: 13px; padding: 6px 0; }
+  nav a:hover, nav a.active { color: var(--accent); }
+  main { padding: 40px 48px 80px; max-width: 1100px; }
+  h1 { font-size: 32px; letter-spacing: -0.03em; margin-bottom: 12px; }
+  h2 { font-size: 20px; margin: 0 0 10px; }
+  h3 { font-size: 15px; margin: 18px 0 8px; }
+  p, li { color: var(--text2); font-size: 14.5px; line-height: 1.6; }
+  .hero-desc { font-size: 15.5px; max-width: 72ch; }
+  ol.flow, ul { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+  section { margin: 36px 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  code, pre { font-family: var(--mono); }
+  code { font-size: 12.5px; color: var(--accent); }
+  pre { background: #0a0f1a; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; overflow: auto; font-size: 12px; color: var(--text); white-space: pre-wrap; }
+  .pre-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .pre-head span { font-size: 11px; color: var(--text3); letter-spacing: 0.06em; text-transform: uppercase; }
+  button.ws-btn { background: var(--accent-bg); border: 1px solid #1d4ed8; color: var(--text); padding: 8px 12px; border-radius: 6px; cursor: pointer; font: 600 12.5px Inter, sans-serif; }
+  .note { font-size: 13px; color: var(--text2); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+  .warn { border-color: #92400e; background: var(--amber-bg); }
+  footer { color: var(--text3); font-size: 12px; margin-top: 48px; }
+  a { color: var(--accent); }
+  @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } aside { position: relative; height: auto; } .grid2 { grid-template-columns: 1fr; } main { padding: 24px; } }
+</style>
+</head>
+<body>
+<div class="shell">
+<aside>
+  <div class="wordmark">NVIDIA DGX<br>At-Home AI Stack</div>
+  <div class="sub">Agent-first · arm64</div>
+  <nav>
+    <a href="index.html">Setup generator</a>
+    <a href="llms.html" class="active">Agent setup</a>
+    <a href="llms.txt">llms.txt</a>
+    <a href="llms-full.txt">llms-full.txt</a>
+    <a href="docs/architectures.md">Architectures</a>
+  </nav>
+</aside>
+<main>
+  <div class="hero">
+    <h1>Unbox. Install an agent. Feed it this site.</h1>
+    <p class="hero-desc">A new DGX Spark does not need a hand-copied bash novel. Install Grok Build, Codex, or Claude Code, point the agent at <code>llms.txt</code> (or this page), answer the interview, and let it build clustered TP=2 or isolated solo TP=1 from current launcher commands.</p>
+  </div>
+
+  <section id="flow">
+    <h2>Out-of-box flow</h2>
+    <ol class="flow">
+      <li>Unbox the Spark (or both Sparks), cable power, mgmt LAN, and the 200&nbsp;Gb/s DAC if you have two.</li>
+      <li>First install: a coding agent on the Spark or on a laptop that can SSH in — Grok Build, Codex, Claude Code, or similar.</li>
+      <li>Give the agent <a href="llms.txt"><code>llms.txt</code></a> and/or <a href="llms-full.txt"><code>llms-full.txt</code></a>. The Pages generator at <a href="index.html">the root</a> is optional if you would rather download scripts yourself.</li>
+      <li>The agent asks the required questions. Only then does it clone <code>eugr/spark-vllm-docker</code>, pull <code>vllm-node</code>, download weights, and wire Open WebUI / n8n / Hermes to <code>:8000/v1</code>.</li>
+    </ol>
+  </section>
+
+  <section id="prompt">
+    <h2>Paste this into the agent</h2>
+    <div class="pre-head">
+      <span>starter prompt</span>
+      <button class="ws-btn" type="button" id="copy-prompt">Copy</button>
+    </div>
+    <pre id="starter-prompt">Read https://cmdlabtech.github.io/dgx-spark-ai-stack/llms-full.txt (fallback: https://raw.githubusercontent.com/cmdlabtech/dgx-spark-ai-stack/main/llms-full.txt).
+
+I just unboxed Nvidia DGX Spark hardware. Interview me with every required question in that playbook. Do not apt, docker, ufw, or launch vLLM until I have answered. Do not use documentation IPs, LiteLLM, --tf5, or vllm-node-tf5. After I confirm the plan, build the layout.</pre>
+    <p class="note" style="margin-top:12px;">If the agent cannot fetch GitHub Pages, paste <a href="llms-full.txt"><code>llms-full.txt</code></a> into the chat instead of the URL.</p>
+  </section>
+
+  <section id="questions">
+    <h2>What it will ask</h2>
+    <p>The playbook forbids guessing. Expect questions about node count, clustered vs solo, Linux username, mgmt IPs, DAC IPs, Hugging Face token, model preset, apps (Open WebUI, n8n, Hermes), whether to disable the Ubuntu desktop, and whether the agent is running on the Spark or over SSH.</p>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="card">
+        <h3>A — Clustered TP=2</h3>
+        <p>One vLLM across both GPUs. Head on node-a <code>:8000</code>. Worker has no API. Typical recipe: <code>qwen3.5-122b-fp8</code>, window 262144. The head API can see prompts from both UIs.</p>
+      </div>
+      <div class="card">
+        <h3>B — Isolated solo TP=1</h3>
+        <p>Each node owns its GB10. Use this for one Spark, or for two Sparks that must not share a brain. INT4 122B window 32768; 35B FP8 window 65536. Do not pass <code>--solo</code> to a <code>cluster_only</code> recipe.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="files">
+    <h2>Files the agent should read</h2>
+    <ul>
+      <li><a href="llms.txt"><code>/llms.txt</code></a> — index (this project's map)</li>
+      <li><a href="llms-full.txt"><code>/llms-full.txt</code></a> — full playbook (interview + commands)</li>
+      <li><a href="docs/architectures.md"><code>docs/architectures.md</code></a> — layout details and switch procedure</li>
+      <li><a href="index.html">Setup generator</a> — same procedure as downloadable <code>setup-node-a.sh</code> / <code>setup-node-b.sh</code></li>
+    </ul>
+    <p class="note warn" style="margin-top:14px;">The generator and the playbook target <strong>current</strong> <code>eugr/spark-vllm-docker</code>: image tag <code>vllm-node</code>, <code>build-and-copy.sh</code> without <code>--tf5</code>, <code>hf-download.sh</code> for weights, no-Ray as the multi-node default. Old copies that still say <code>vllm-node-tf5</code> or LiteLLM are stale.</p>
+  </section>
+
+  <footer>DGX At-Home AI Stack · agent-first playbook · port 8000 stays off overlays</footer>
+</main>
+</div>
+<script>
+document.getElementById('copy-prompt').addEventListener('click', function () {
+  var text = document.getElementById('starter-prompt').textContent;
+  var btn = this;
+  navigator.clipboard.writeText(text).then(function () {
+    btn.textContent = 'Copied';
+    setTimeout(function () { btn.textContent = 'Copy'; }, 1600);
+  });
+});
+</script>
+</body>
+</html>

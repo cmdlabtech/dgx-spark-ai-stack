@@ -1,0 +1,225 @@
+# NVIDIA DGX: At-Home AI Stack — agent playbook
+
+You are setting up inference and apps on a **brand-new** Nvidia DGX Spark (or two), for a user who just unboxed the hardware. They installed a coding agent first (Grok Build, Codex, Claude Code, or similar) and fed you this file and/or https://cmdlabtech.github.io/dgx-spark-ai-stack/
+
+This playbook is the source of truth. The Pages generator at `/` emits the same procedure as downloadable bash. Do not follow older blog posts, LiteLLM guides, `--tf5` flags, or `vllm-node-tf5` image tags.
+
+## Hard rules
+
+1. **Interview first.** Do not `apt`, `docker`, `ufw`, or launch vLLM until every required question below has an answer. If something is missing, ask. Do not guess IPs, usernames, or tokens.
+2. **Documentation addresses are fake.** `192.0.2.21`, `192.0.2.22`, and `198.51.100.0/30` are RFC 5737 examples. Never configure them on a real box.
+3. **Current launcher (eugr/spark-vllm-docker, 2026-09):**
+   - Default image tag is `vllm-node` (pulled as `eugr/spark-vllm:latest`).
+   - `--tf5` is a deprecated alias that only preserves the old `vllm-node-tf5` tag. **Do not pass `--tf5`.**
+   - Multi-node launches default to the **no-Ray** backend. Pass `--ray` only if the user or the selected recipe requires Ray.
+   - Do not add `--distributed-executor-backend`, `--nnodes`, `--node-rank`, `--master-addr`, `--master-port`, or `--headless` to `vllm serve`. The launcher owns those.
+   - First-time image: `./build-and-copy.sh` (solo) or `./build-and-copy.sh -c --copy-to PEER_DAC` (two nodes).
+   - First-time weights: `./hf-download.sh HF_REPO` (solo) or `./hf-download.sh HF_REPO -c --copy-to PEER_DAC` (two nodes).
+   - Recipe launch: `./run-recipe.sh RECIPE -d -- …` (cluster, from the head only) or `./run-recipe.sh RECIPE --solo -d --tp 1 -- …` (solo, on each node that should serve).
+4. **No LiteLLM.** Apps call `http://127.0.0.1:8000/v1` (or the head DAC IP from the other node). vLLM has no auth. A dummy API key is only for clients that refuse an empty field.
+5. **Port 8000 stays off overlays** (Tailscale, public WAN, mgmt LAN publish). Clustered node-b reaches the head on the DAC only.
+6. **Do not invent recipes.** Run `./run-recipe.sh --list` after clone. `qwen3.8-27b-fp8` is not a recipe. Supported presets in this repo:
+   - Clustered: `qwen3.5-122b-fp8` → `Qwen/Qwen3.5-122B-A10B-FP8` (often `cluster_only: true`; **never** `--solo`). Supported `--max-model-len` **262144**.
+   - Solo 122B: `qwen3.5-122b-int4-autoround` → `Intel/Qwen3.5-122B-A10B-int4-AutoRound`. Supported `--max-model-len` on one GB10: **32768**. Recipe file default 262144 OOMs solo.
+   - Solo 35B: `qwen3.6-35b-a3b-fp8` → `Qwen/Qwen3.6-35B-A3B-FP8`. Supported `--max-model-len` on one GB10: **65536**.
+7. **Tool-call parser override:** pass `--tool-call-parser qwen3_coder` for Qwen3.5-class tool loops (not `qwen3_xml`), even when the recipe YAML says otherwise.
+8. **Preserve existing state** unless the user asked for a wipe. Do not `docker prune`, overwrite a working `.env`, or delete HF caches.
+9. **Never echo tokens** (HF, Tailscale, HA) into chat, logs, or git.
+
+## Required interview
+
+Ask these before any privileged command. One question at a time is fine; do not skip.
+
+1. **How many Sparks?** `1` or `2`. One Spark → isolated solo on that box (Architecture B). Clustered TP=2 needs two.
+2. **If two: layout?**
+   - **A — clustered TP=2:** one vLLM, both GPUs, one listener on node-a `:8000`. Worker has no OpenAI API. Head can see prompts from both UIs.
+   - **B — isolated solo TP=1:** each node runs its own vLLM. Independent models and restarts. Each API sees only its own UI.
+3. **Linux username** on the Spark(s) (the account that will run Docker and the systemd unit).
+4. **Management IPs** (1 GbE RJ45) for each node. Confirm you can SSH as that user before disabling the desktop.
+5. **If two nodes: DAC IPs** on `enp1s0f0np0` (200 Gb/s copper, usually a `/30`). Confirm the cable is seated and `ibdev2netdev` shows port-0 Up.
+6. **Hugging Face token** (`hf_…`). Needed for gated models. Store it in the environment, not in git.
+7. **Model preset** (the three above, or another id from `./run-recipe.sh --list` that fits the layout).
+8. **Apps to install** (each default yes unless they opt out): Open WebUI `:8080`, n8n `:5678`, Hermes Agent on the personal node `:9119`.
+9. **Disable the Ubuntu desktop (GDM)?** Recommended yes on a headless inference box (frees unified memory). Only if SSH already works.
+10. **Where is this agent running?** On the Spark itself, or on a laptop that SSHes in? If laptop, all commands run over SSH as the Linux user, not root.
+11. **Tailscale?** Optional. Skip unless they want a tailnet. If yes, they must create tagged auth keys *before* `tailscale up`. Port 8000 must not be advertised.
+
+Stop and get answers. Then summarize the plan in one short paragraph and wait for a go-ahead if the user is watching.
+
+## Host names
+
+Use **node-a** (personal: Open WebUI, Hermes, n8n, and the vLLM head in layout A) and **node-b** (workload UI; vLLM worker in layout A, or its own solo server in layout B). Do not require the kernel hostname to be `spark-01`. Put documentation names in `/etc/hosts` mapped to **mgmt** IPs, not DAC IPs.
+
+## Procedure after answers
+
+Work as the Linux user. `sudo` for packages, docker group, systemd, ufw.
+
+### 0. Sanity (read-only)
+
+```bash
+uname -m          # expect aarch64
+nvidia-smi        # GB10; memory.used query is [N/A] — read Processes
+command -v docker || true
+ip -br a
+```
+
+Two nodes: also `ibdev2netdev` and `ls /dev/infiniband`.
+
+### 1. Packages and Docker (every node you will use)
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git rsync jq python3-pip openssh-client openssh-server ufw openssl
+command -v docker >/dev/null || curl -fsSL https://get.docker.com | sudo sh
+sudo systemctl enable --now docker ssh
+sudo usermod -aG docker "$USER"
+# re-login or: sg docker -c bash
+```
+
+`/etc/hosts` on each node (mgmt IPs, not DAC):
+
+```
+NODE_A_MGMT_IP  node-a
+NODE_B_MGMT_IP  node-b
+```
+
+If they agreed to headless:
+
+```bash
+sudo systemctl set-default multi-user.target
+sudo systemctl stop gdm 2>/dev/null || true
+sudo systemctl stop gnome-remote-desktop 2>/dev/null || true
+sudo systemctl disable gnome-remote-desktop 2>/dev/null || true
+```
+
+### 2. Two-node SSH and RoCE
+
+From node-a, passwordless SSH to node-b **mgmt and DAC**. Generate `ed25519` if needed; `ssh-copy-id` once.
+
+RoCE: port-0 devices Up (`rocep1s0f0`, `roceP2p1s0f0`). Missing `/dev/infiniband` on a two-node layout is a stop, not a continue.
+
+### 3. Clone the launcher (node that will pull the image)
+
+```bash
+cd "$HOME"
+if [[ -d spark-vllm-docker/.git ]]; then git -C spark-vllm-docker pull --ff-only; else git clone https://github.com/eugr/spark-vllm-docker.git; fi
+cd spark-vllm-docker
+./run-recipe.sh --list
+```
+
+Confirm the chosen recipe exists. For two nodes, write `.env` from answers (do not run interactive `--discover` unless the user wants it). chmod 600. Fields:
+
+```
+CLUSTER_NODES=NODE_A_DAC_IP,NODE_B_DAC_IP
+COPY_HOSTS=NODE_B_DAC_IP
+LOCAL_IP=NODE_A_DAC_IP
+ETH_IF=enp1s0f0np0
+IB_IF=rocep1s0f0,roceP2p1s0f0
+CONTAINER_HF_TOKEN=<token>
+```
+
+Never paste that file into chat.
+
+### 4. Image and weights
+
+**One node (solo):**
+
+```bash
+export HF_TOKEN
+./build-and-copy.sh
+./hf-download.sh HF_REPO
+```
+
+**Two nodes (from node-a, both layouts):**
+
+```bash
+export HF_TOKEN
+./build-and-copy.sh -c --copy-to NODE_B_DAC_IP
+./hf-download.sh HF_REPO -c --copy-to NODE_B_DAC_IP
+```
+
+Wait until `docker image inspect vllm-node:latest` succeeds on each node that will run a container, and the HF cache dir is populated.
+
+### 5. Launch vLLM
+
+Always `docker rm -f vllm_node` on **every** node that might have a leftover container of that name (layout switch and clustered restart both break if the worker still holds the name).
+
+**Layout A — clustered.** Only on node-a. Do not enable a cluster unit on node-b.
+
+```bash
+# after rm on both nodes:
+./run-recipe.sh qwen3.5-122b-fp8 -d -- \
+  --served-model-name qwen3.5-122b \
+  --max-model-len 262144 \
+  --tool-call-parser qwen3_coder \
+  --gpu-memory-utilization 0.80
+```
+
+Install `templates/vllm-cluster.service` (substituted) on the head only. `systemctl start --no-block` — oneshot model load takes minutes. Stop with `./launch-cluster.sh stop` from the head.
+
+**Layout B — solo.** On each node that should serve:
+
+```bash
+./run-recipe.sh RECIPE --solo -d --tp 1 -- \
+  --served-model-name SERVED \
+  --max-model-len SUPPORTED_LEN \
+  --tool-call-parser qwen3_coder \
+  --gpu-memory-utilization 0.80
+```
+
+`SUPPORTED_LEN` is 32768 (INT4 122B) or 65536 (35B FP8), not 262144. Disable `vllm-cluster.service` on boot. Install `templates/vllm-solo.service`. Stop with `./launch-cluster.sh --solo stop`.
+
+Do not run cluster and solo containers named `vllm_node` at the same time.
+
+### 6. Apps
+
+Open WebUI (recreate without deleting the named volume — see `templates/open-webui-recreate.sh`):
+
+- Node that has local vLLM: `OPENAI_API_BASE_URL=http://host.docker.internal:8000/v1` and `--add-host=host.docker.internal:host-gateway`.
+- Layout A node-b: `OPENAI_API_BASE_URL=http://NODE_A_DAC_IP:8000/v1` (not host.docker.internal — that is node-b itself).
+- `OPENAI_API_KEY=not-needed`, `ENABLE_OLLAMA_API=False`, `WEBUI_AUTH=True`.
+
+n8n: `n8nio/n8n:latest`, port 5678, `host.docker.internal:host-gateway`, `WEBHOOK_URL` from the node's mgmt IP or hostname. Do not hardcode a timezone.
+
+Hermes: only on node-a if requested. Upstream installer, then the user runs `hermes setup` interactively (bot token). Provider base `http://127.0.0.1:8000/v1`, dummy key, **`model.max_tokens` under the top-level `model:` key = 8192**, `model.context_length` = vLLM `--max-model-len`, `compression.enabled: false` until first-turn prompts are small.
+
+### 7. Firewall
+
+`default deny incoming`, allow 22. Do **not** `ufw deny 8000` as a global rule if node-b must reach the head on the DAC.
+
+- Layout A head: allow in on `enp1s0f0np0` from node-b DAC to tcp 8000 and 29501 (no-Ray default). Also 6379 if they opted into `--ray`.
+- App ports 8080 / 5678 / 9119 only if those apps are installed.
+- Never allow 8000 on a tailnet interface.
+
+### 8. Validate
+
+```bash
+curl -sf http://127.0.0.1:8000/v1/models
+docker logs --tail 80 vllm_node
+# two-node cluster: NCCL should show NET/IB (RoCE), not NET/Socket
+docker logs vllm_node 2>/dev/null | grep -E "NET/IB|NET/Socket" || true
+```
+
+First completion is slow (CUDA graph warmup). GB10: ignore `memory.used [N/A]`; use `nvidia-smi` Processes.
+
+Open WebUI “OpenAI: Network Problem” is almost always the URL, not a dead server. Probe with `curl` on the host, then `docker exec open-webui` if the image has curl.
+
+## Footguns
+
+- Clustered restart: leftover `vllm_node` on the worker makes `launch-cluster.sh` think the cluster is up and skip creating the head. `systemctl` can still say `active`. Fix: `docker rm -f vllm_node` on **both** nodes, then curl `:8000/v1/models`, not status alone.
+- Speculative decoding / MTP / DFlash: do not enable unless the user asked and the recipe is known-good. MTP on Qwen3.5 in older vLLM returned HTTP 500 on `min_p` / `logit_bias`.
+- `skills.disabled` in Hermes matches skill *names*, not category folders.
+
+## What you will produce
+
+After the interview, on each participating node:
+
+- Docker + (two-node) passwordless SSH over DAC
+- `~/spark-vllm-docker` on current `main`
+- `vllm-node:latest`
+- Model weights in the HF hub cache
+- The correct systemd unit (cluster on head only, or solo per node)
+- Requested apps, pre-pointed at the right `:8000/v1`
+- A short handoff: recipe, layout, endpoint, what the user still has to do (`hermes setup`, first Open WebUI admin account)
+
+Do not commit secrets. Do not publish port 8000.

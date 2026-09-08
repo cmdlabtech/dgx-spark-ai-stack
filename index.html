@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NVIDIA DGX: At-Home AI Stack</title>
-<meta name="description" content="Two DGX Spark nodes. Two layouts: clustered TP=2 or isolated solo TP=1. Same page, same worksheet.">
+<meta name="description" content="One or two DGX Spark nodes. Clustered TP=2 or isolated solo TP=1. Agent-first llms.txt plus a tabbed setup generator.">
+<link rel="alternate" type="text/plain" href="llms.txt" title="llms.txt">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -22,6 +23,7 @@
   .wordmark { font-weight: 700; font-size: 14px; line-height: 1.3; }
   .sub { color: var(--text3); font-size: 11px; margin: 8px 0 20px; }
   nav a { display: block; color: var(--text2); text-decoration: none; font-size: 13px; padding: 6px 0; }
+  nav a:hover { color: var(--accent); }
   main { padding: 40px 48px 80px; max-width: 1100px; }
   h1 { font-size: 32px; letter-spacing: -0.03em; margin-bottom: 12px; }
   h2 { font-size: 20px; margin: 0 0 10px; }
@@ -36,7 +38,10 @@
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
   code, pre { font-family: var(--mono); }
-  pre { background: #0a0f1a; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; overflow: auto; font-size: 12px; color: var(--text); white-space: pre-wrap; }
+  code { font-size: 12.5px; color: var(--accent); }
+  pre { background: #0a0f1a; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; overflow: auto; font-size: 12px; color: var(--text); white-space: pre-wrap; max-height: 420px; }
+  .pre-head { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 8px; }
+  .pre-head span { font-size: 12px; font-weight: 600; }
   .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
   .tab { background: transparent; border: 1px solid var(--border); color: var(--text2); padding: 8px 12px; border-radius: 8px; cursor: pointer; font: 600 12.5px Inter, sans-serif; }
   .tab.active { border-color: var(--accent); color: var(--text); background: var(--accent-bg); }
@@ -52,6 +57,7 @@
   .warn { border-color: #92400e; background: var(--amber-bg); }
   .opt-row { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text2); margin: 4px 0; }
   footer { color: var(--text3); font-size: 12px; margin-top: 48px; }
+  a { color: var(--accent); }
   @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } aside { position: relative; height: auto; } .grid2, .worksheet-grid { grid-template-columns: 1fr; } main { padding: 24px; } }
 </style>
 </head>
@@ -59,47 +65,64 @@
 <div class="shell">
 <aside>
   <div class="wordmark">NVIDIA DGX<br>At-Home AI Stack</div>
-  <div class="sub">Two layouts · one page · arm64</div>
+  <div class="sub">Two layouts · agent-first · arm64</div>
   <nav>
     <a href="#what">What this is</a>
+    <a href="#agent">Agent setup</a>
     <a href="#why">Why two layouts</a>
     <a href="#architectures">Architectures</a>
     <a href="#setup">Setup generator</a>
     <a href="#trust">Trust notes</a>
+    <a href="llms.html">llms.txt subpage</a>
   </nav>
 </aside>
 <main>
   <div class="hero" id="what">
-    <h1>Two Sparks. Two ways to run them.</h1>
-    <p class="hero-desc">This stack is a pair of Nvidia DGX Spark nodes (Grace CPU, GB10 GPU, Ubuntu 24.04, arm64) plus vLLM, Open WebUI, n8n, and Hermes on the personal node. The boxes can share one model, or each box can own its own model. Both layouts are on this page. There is no second URL.</p>
+    <h1>One or two Sparks. Two ways to run them.</h1>
+    <p class="hero-desc">Self-hosted inference on Nvidia DGX Spark (Grace CPU, GB10 GPU, Ubuntu 24.04, arm64) plus Open WebUI, n8n, and Hermes on the personal node. Share one model at TP=2, or give each box its own process at TP=1. New hardware: install a coding agent first and feed it <a href="llms.txt">llms.txt</a>.</p>
     <div class="pills">
       <span class="pill blue">A · clustered TP=2</span>
       <span class="pill blue">B · isolated solo TP=1</span>
-      <span class="pill">Open WebUI × 2</span>
-      <span class="pill">n8n × 2</span>
+      <span class="pill">vllm-node (not tf5)</span>
+      <span class="pill">Open WebUI</span>
+      <span class="pill">n8n</span>
       <span class="pill">Hermes on node-a</span>
       <span class="pill green">port 8000 stays off overlays</span>
     </div>
   </div>
+
+  <section id="agent">
+    <h2>Just unboxed a Spark?</h2>
+    <p>Do not start from a year-old gist. Install Grok Build, Codex, or Claude Code, then point it at the playbook. It will interview you and build the layout from current <code>eugr/spark-vllm-docker</code> commands.</p>
+    <div class="note" style="margin-top:12px;">
+      Read <a href="llms.html">the agent subpage</a>, then feed
+      <a href="llms.txt"><code>llms.txt</code></a> and
+      <a href="llms-full.txt"><code>llms-full.txt</code></a>
+      to the agent. The generator below is the same procedure as downloadable bash if you would rather run scripts yourself.
+    </div>
+  </section>
+
   <section id="why">
     <h2>Why two layouts</h2>
     <p>A 122B-class model at tensor-parallel 2 uses both GPUs as one pool. One listener, one weight set, apps still isolated per node. Use it when you want maximum context and one shared brain.</p>
-    <p style="margin-top:10px;">Isolated solo exists because a shared head can see every prompt and couples uptime. Solo gives each node its own vLLM at TP=1 so models and restarts do not cross the copper link.</p>
+    <p style="margin-top:10px;">Isolated solo exists because a shared head can see every prompt and couples uptime. Solo gives each node its own vLLM at TP=1 so models and restarts do not cross the copper link. A single Spark is always solo.</p>
   </section>
+
   <section id="architectures">
     <h2>Architectures</h2>
     <div class="grid2">
-      <div class="card"><h3>A — Clustered</h3><p>One vLLM, TP=2 over Ray on the DAC. Head on node-a :8000. Worker on node-b has no API. Typical recipe: 122B-class FP8 (often cluster_only). Supported window: 262144.</p></div>
-      <div class="card"><h3>B — Isolated solo</h3><p>Each node runs run-recipe.sh RECIPE --solo -d --tp 1. Cluster unit disabled on boot. Supported windows: INT4 122B-class 32768; dense 27B FP8 65536. Do not raise those values.</p></div>
+      <div class="card"><h3>A — Clustered</h3><p>One vLLM, TP=2 over the DAC. Head on node-a :8000. Worker has no API. Multi-node default is no-Ray (<code>--ray</code> is opt-in). Typical recipe: <code>qwen3.5-122b-fp8</code> (<code>cluster_only</code>). Supported window: 262144.</p></div>
+      <div class="card"><h3>B — Isolated solo</h3><p>Each node runs <code>run-recipe.sh RECIPE --solo -d --tp 1</code>. Cluster unit disabled on boot. Supported windows: INT4 122B-class 32768; 35B FP8 65536. Do not raise those values. Do not <code>--solo</code> a cluster-only recipe.</p></div>
     </div>
   </section>
+
   <section id="setup">
     <h2>Setup generator</h2>
-    <p>Pick the layout and model first. That tab sets the supported <code>max-model-len</code> — it is not editable. Then fill the node table. Downloads bake those values in. Secrets stay in sessionStorage only.</p>
+    <p>Pick the layout and model first. That tab locks the supported <code>max-model-len</code>. Fill the node table. Downloads bake those values in. Secrets stay in <code>sessionStorage</code> only (cleared when the tab closes). Scripts target a <strong>new</strong> box: <code>vllm-node</code>, <code>build-and-copy.sh</code> without <code>--tf5</code>, <code>hf-download.sh</code> for weights.</p>
     <div class="tabs" role="tablist">
       <button type="button" class="tab active" data-preset="a-fp8">A · clustered 122B FP8</button>
       <button type="button" class="tab" data-preset="b-int4">B · solo 122B INT4</button>
-      <button type="button" class="tab" data-preset="b-27b">B · solo 27B FP8</button>
+      <button type="button" class="tab" data-preset="b-35b">B · solo 35B FP8</button>
     </div>
     <p class="note" id="preset-blurb"></p>
     <div class="card" style="margin-top:14px;">
@@ -117,25 +140,27 @@
     </div>
     <div class="card" style="margin-top:14px;">
       <h3>Your nodes</h3>
+      <label class="opt-row" style="margin-bottom:12px;"><input type="checkbox" id="o-single"> Single Spark (ignore node-b; clustered tab will refuse)</label>
       <div class="worksheet-grid">
         <div>
           <strong style="font-size:13px;">node-a · personal</strong>
-          <div class="worksheet-row"><label>mgmt IP</label><input type="text" id="f-a-mgmt" placeholder="192.0.2.21"></div>
-          <div class="worksheet-row"><label>DAC IP</label><input type="text" id="f-a-dac" placeholder="198.51.100.1"></div>
-          <div class="worksheet-row"><label>HF token</label><input type="password" id="f-hf" placeholder="hf_"></div>
-          <div class="worksheet-row"><label>Linux username</label><input type="text" id="f-user" placeholder="ubuntu"></div>
+          <div class="worksheet-row"><label>mgmt IP</label><input type="text" id="f-a-mgmt" placeholder="not 192.0.2.21" autocomplete="off"></div>
+          <div class="worksheet-row"><label>DAC IP</label><input type="text" id="f-a-dac" placeholder="not 198.51.100.1" autocomplete="off"></div>
+          <div class="worksheet-row"><label>HF token</label><input type="password" id="f-hf" placeholder="hf_" autocomplete="off" spellcheck="false"></div>
+          <div class="worksheet-row"><label>Linux username</label><input type="text" id="f-user" placeholder="ubuntu" autocomplete="off"></div>
         </div>
-        <div>
+        <div id="node-b-fields">
           <strong style="font-size:13px;">node-b · workload</strong>
-          <div class="worksheet-row"><label>mgmt IP</label><input type="text" id="f-b-mgmt" placeholder="192.0.2.22"></div>
-          <div class="worksheet-row"><label>DAC IP</label><input type="text" id="f-b-dac" placeholder="198.51.100.2"></div>
+          <div class="worksheet-row"><label>mgmt IP</label><input type="text" id="f-b-mgmt" placeholder="not 192.0.2.22" autocomplete="off"></div>
+          <div class="worksheet-row"><label>DAC IP</label><input type="text" id="f-b-dac" placeholder="not 198.51.100.2" autocomplete="off"></div>
           <label class="opt-row"><input type="checkbox" id="o-owui" checked> Open WebUI :8080</label>
           <label class="opt-row"><input type="checkbox" id="o-n8n" checked> n8n :5678</label>
           <label class="opt-row"><input type="checkbox" id="o-hermes" checked> Hermes on node-a :9119</label>
           <label class="opt-row"><input type="checkbox" id="o-ufw" checked> host firewall</label>
+          <label class="opt-row"><input type="checkbox" id="o-headless" checked> disable Ubuntu desktop</label>
         </div>
       </div>
-      <div class="note warn">max-model-len is the supported window for the selected tab. Raising it OOMs a single GB10. Port 8000 stays off overlays.</div>
+      <div class="note warn">max-model-len is the supported window for the selected tab. Raising it OOMs a single GB10. Port 8000 stays off overlays. Example IPs in placeholders are not yours.</div>
       <div class="actions">
         <button class="ws-btn" type="button" onclick="downloadNode('a')">download setup-node-a.sh</button>
         <button class="ws-btn" type="button" onclick="downloadNode('b')">download setup-node-b.sh</button>
@@ -143,79 +168,563 @@
         <span id="status" style="color:var(--text3);font-size:12px;"></span>
       </div>
     </div>
-    <h3 style="margin-top:22px;">Preview · node-a</h3>
+    <div class="pre-head"><span>Preview · node-a</span><button class="ws-btn" type="button" onclick="copyPreview('a')">copy</button></div>
     <pre id="preview-a"></pre>
-    <h3>Preview · node-b</h3>
+    <div class="pre-head"><span>Preview · node-b</span><button class="ws-btn" type="button" onclick="copyPreview('b')">copy</button></div>
     <pre id="preview-b"></pre>
   </section>
+
   <section id="trust">
     <h2>Trust notes</h2>
     <ul>
       <li>Architecture A: the head API sees prompts from both UIs.</li>
-      <li>Architecture B: each API sees only its own UI.</li>
+      <li>Architecture B (and a single Spark): each API sees only its own UI.</li>
       <li>Knowledge bases and chats do not share a volume across nodes.</li>
-      <li>vLLM has no auth. Keep port 8000 off overlays.</li>
+      <li>vLLM has no auth. Keep port 8000 off overlays. Clustered node-b reaches the head on the DAC only.</li>
     </ul>
   </section>
-  <footer>DGX At-Home AI Stack · both layouts on one page · placeholders only</footer>
+  <footer>DGX At-Home AI Stack · vllm-node · no LiteLLM · placeholders only</footer>
 </main>
 </div>
 <script>
 var PRESETS = {
-  'a-fp8': {layout:'A clustered TP=2',flags:'-d',recipe:'qwen3.5-122b-fp8',served:'qwen3.5-122b',repo:'Qwen/Qwen3.5-122B-A10B-FP8',dir:'models--Qwen--Qwen3.5-122B-A10B-FP8',len:'262144',parser:'qwen3_coder',blurb:'Supported max-model-len is 262144 on TP=2. Do not raise it. FP8 122B recipes are often cluster_only — do not pass --solo.'},
-  'b-int4': {layout:'B isolated solo TP=1',flags:'--solo -d --tp 1',recipe:'qwen3.5-122b-int4-autoround',served:'qwen3.5-122b',repo:'Intel/Qwen3.5-122B-A10B-int4-AutoRound',dir:'models--Intel--Qwen3.5-122B-A10B-int4-AutoRound',len:'32768',parser:'qwen3_coder',blurb:'Supported max-model-len on one GB10 INT4 is 32768. Recipe default 262144 OOMs. Disable the cluster unit on boot.'},
-  'b-27b': {layout:'B isolated solo TP=1',flags:'--solo -d --tp 1',recipe:'qwen3.8-27b-fp8',served:'qwen3.8-27b',repo:'Qwen/Qwen3.8-27B-FP8',dir:'models--Qwen--Qwen3.8-27B-FP8',len:'65536',parser:'qwen3_coder',blurb:'Supported max-model-len on one GB10 27B FP8 is 65536. Hermes model.max_tokens must stay 8192 under model:.'}
+  'a-fp8': {
+    layout: 'A clustered TP=2',
+    flags: '-d',
+    recipe: 'qwen3.5-122b-fp8',
+    served: 'qwen3.5-122b',
+    repo: 'Qwen/Qwen3.5-122B-A10B-FP8',
+    dir: 'models--Qwen--Qwen3.5-122B-A10B-FP8',
+    len: '262144',
+    parser: 'qwen3_coder',
+    solo: false,
+    blurb: 'Supported max-model-len is 262144 on TP=2. Do not raise it. This recipe is cluster_only — do not pass --solo. Image tag is vllm-node (not vllm-node-tf5).'
+  },
+  'b-int4': {
+    layout: 'B isolated solo TP=1',
+    flags: '--solo -d --tp 1',
+    recipe: 'qwen3.5-122b-int4-autoround',
+    served: 'qwen3.5-122b',
+    repo: 'Intel/Qwen3.5-122B-A10B-int4-AutoRound',
+    dir: 'models--Intel--Qwen3.5-122B-A10B-int4-AutoRound',
+    len: '32768',
+    parser: 'qwen3_coder',
+    solo: true,
+    blurb: 'Supported max-model-len on one GB10 INT4 is 32768. Recipe default 262144 OOMs. Disable the cluster unit on boot.'
+  },
+  'b-35b': {
+    layout: 'B isolated solo TP=1',
+    flags: '--solo -d --tp 1',
+    recipe: 'qwen3.6-35b-a3b-fp8',
+    served: 'qwen3.6-35b',
+    repo: 'Qwen/Qwen3.6-35B-A3B-FP8',
+    dir: 'models--Qwen--Qwen3.6-35B-A3B-FP8',
+    len: '65536',
+    parser: 'qwen3_coder',
+    solo: true,
+    blurb: 'Supported max-model-len on one GB10 35B FP8 is 65536. There is no qwen3.8-27b-fp8 recipe. Hermes model.max_tokens must stay 8192 under model:.'
+  }
 };
-function val(id){return (document.getElementById(id).value||'').trim();}
-function setv(id,v){document.getElementById(id).value=v;}
-function applyPreset(key){
-  var p=PRESETS[key];
-  document.querySelectorAll('.tab').forEach(function(b){b.classList.toggle('active',b.dataset.preset===key);});
-  document.getElementById('preset-blurb').textContent=p.blurb;
-  setv('f-layout',p.layout);setv('f-flags',p.flags);setv('f-recipe',p.recipe);setv('f-served',p.served);
-  setv('f-repo',p.repo);setv('f-dir',p.dir);setv('f-len',p.len);setv('f-parser',p.parser);
-  sessionStorage.setItem('dgx-preset',key); render();
+
+function val(id) {
+  var el = document.getElementById(id);
+  return el ? (el.value || '').trim() : '';
 }
-function form(){
-  var key=sessionStorage.getItem('dgx-preset')||'a-fp8';
-  var supported=PRESETS[key].len;
-  return {layout:val('f-layout'),flags:val('f-flags'),recipe:val('f-recipe'),served:val('f-served'),repo:val('f-repo'),dir:val('f-dir'),len:supported,parser:val('f-parser')||'qwen3_coder',user:val('f-user')||'YOUR_USERNAME',hf:val('f-hf')||'YOUR_HF_TOKEN',aDac:val('f-a-dac')||'YOUR_NODE_A_DAC_IP',bDac:val('f-b-dac')||'YOUR_NODE_B_DAC_IP',solo:val('f-flags').indexOf('--solo')!==-1,owui:document.getElementById('o-owui').checked,n8n:document.getElementById('o-n8n').checked,hermes:document.getElementById('o-hermes').checked,ufw:document.getElementById('o-ufw').checked};
+function setv(id, v) {
+  var el = document.getElementById(id);
+  if (el) el.value = v;
 }
-function scriptFor(node){
-  var f=form(), isA=node==='a', unit=f.solo?'vllm-solo':'vllm-cluster', L=[];
-  L.push('#!/usr/bin/env bash');
-  L.push('# DGX stack node-'+node+' — '+f.layout);
-  L.push('set -euo pipefail');
-  L.push('USERNAME="'+f.user+'"; HF_TOKEN="'+f.hf+'"; RECIPE="'+f.recipe+'"; SERVED="'+f.served+'"; REPO="'+f.repo+'"; HF_DIR="'+f.dir+'"; FLAGS="'+f.flags+'"; MAX_LEN="'+f.len+'"; PARSER="'+f.parser+'"; PEER_DAC="'+(isA?f.bDac:f.aDac)+'"');
-  L.push('[[ "$(whoami)" == "$USERNAME" ]] || { echo run as $USERNAME; exit 1; }');
-  L.push('sudo apt-get update && sudo apt-get install -y ca-certificates curl git rsync jq python3-pip');
-  L.push('command -v docker >/dev/null || curl -fsSL https://get.docker.com | sudo sh');
-  L.push('sudo systemctl enable --now docker');
-  L.push('id -nG "$USERNAME" | grep -qw docker || sudo usermod -aG docker "$USERNAME"');
-  L.push('cd "$HOME"; [[ -d spark-vllm-docker ]] || git clone https://github.com/eugr/spark-vllm-docker.git; cd spark-vllm-docker');
-  L.push(f.solo||!isA ? './build-and-copy.sh --tf5 || true' : './build-and-copy.sh --tf5 --copy-to "$PEER_DAC"');
-  L.push('pip3 install --break-system-packages "huggingface_hub[cli]" >/dev/null; export PATH="$HOME/.local/bin:$PATH"');
-  L.push('HF_TOKEN="$HF_TOKEN" hf download "$REPO" --local-dir "$HOME/.cache/huggingface/hub/$HF_DIR/"');
-  if(!f.solo && isA){ L.push('ssh "$USERNAME@$PEER_DAC" "mkdir -p ~/.cache/huggingface/hub/$HF_DIR"; rsync -avP "$HOME/.cache/huggingface/hub/$HF_DIR/" "$PEER_DAC:.cache/huggingface/hub/$HF_DIR/"'); }
-  L.push('docker rm -f vllm_node 2>/dev/null || true');
-  L.push('sudo tee /etc/systemd/system/'+unit+'.service >/dev/null <<EOF\n[Unit]\nDescription=vLLM '+f.layout+'\nAfter=docker.service\nRequires=docker.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\nUser=$USERNAME\nWorkingDirectory=/home/$USERNAME/spark-vllm-docker\nEnvironment=HF_HUB_OFFLINE=1\nExecStartPre=-/usr/bin/docker rm -f vllm_node\nExecStart=/home/$USERNAME/spark-vllm-docker/run-recipe.sh $RECIPE $FLAGS -- --served-model-name $SERVED --max-model-len $MAX_LEN --tool-call-parser $PARSER\nTimeoutStartSec=0\n[Install]\nWantedBy=multi-user.target\nEOF');
-  if(f.solo) L.push('sudo systemctl disable --now vllm-cluster.service 2>/dev/null || true');
-  L.push('sudo systemctl daemon-reload; sudo systemctl enable --now '+unit+'.service || sudo systemctl start --no-block '+unit);
-  if(f.owui){ L.push('docker rm -f open-webui 2>/dev/null || true');
-    L.push('docker run -d --name open-webui --restart unless-stopped -p 8080:8080 --add-host=host.docker.internal:host-gateway -e ENABLE_KB_EXEC=true -v open-webui:/app/backend/data ghcr.io/open-webui/open-webui:main');
-    L.push('echo Set Connections to http://host.docker.internal:8000/v1'); }
-  if(f.hermes && isA) L.push('echo Hermes: http://127.0.0.1:8000/v1 and model.max_tokens=8192');
-  if(f.ufw) L.push('sudo ufw allow 22/tcp; sudo ufw deny 8000; sudo ufw --force enable || true');
-  L.push('echo done node-'+node);
-  return L.join('\n')+'\n';
+function checked(id) {
+  var el = document.getElementById(id);
+  return !!(el && el.checked);
 }
-function render(){document.getElementById('preview-a').textContent=scriptFor('a');document.getElementById('preview-b').textContent=scriptFor('b');}
-function downloadNode(node){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([scriptFor(node)],{type:'text/x-shellscript'}));a.download='setup-node-'+node+'.sh';a.click();document.getElementById('status').textContent='downloaded setup-node-'+node+'.sh';}
-function resetForm(){['f-a-mgmt','f-a-dac','f-b-mgmt','f-b-dac','f-hf','f-user'].forEach(function(id){setv(id,'');});applyPreset(sessionStorage.getItem('dgx-preset')||'a-fp8');}
-document.querySelectorAll('.tab').forEach(function(btn){btn.addEventListener('click',function(){applyPreset(btn.dataset.preset);});});
-['f-recipe','f-served','f-repo','f-dir','f-parser','f-user','f-hf','f-a-dac','f-b-dac'].forEach(function(id){document.getElementById(id).addEventListener('input',render);});
-['o-owui','o-n8n','o-hermes','o-ufw'].forEach(function(id){document.getElementById(id).addEventListener('change',render);});
-applyPreset(sessionStorage.getItem('dgx-preset')||'a-fp8');
+function shq(s) {
+  return String(s == null ? '' : s)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`');
+}
+function isPlaceholder(v, token) {
+  return !v || v === token;
+}
+
+function applyPreset(key) {
+  var p = PRESETS[key];
+  if (!p) return;
+  document.querySelectorAll('.tab').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.preset === key);
+  });
+  document.getElementById('preset-blurb').textContent = p.blurb;
+  setv('f-layout', p.layout);
+  setv('f-flags', p.flags);
+  setv('f-recipe', p.recipe);
+  setv('f-served', p.served);
+  setv('f-repo', p.repo);
+  setv('f-dir', p.dir);
+  setv('f-len', p.len);
+  setv('f-parser', p.parser);
+  sessionStorage.setItem('dgx-preset', key);
+  persist();
+  render();
+}
+
+function form() {
+  var key = sessionStorage.getItem('dgx-preset') || 'a-fp8';
+  var p = PRESETS[key] || PRESETS['a-fp8'];
+  var single = checked('o-single');
+  var solo = p.solo || val('f-flags').indexOf('--solo') !== -1;
+  return {
+    key: key,
+    layout: val('f-layout') || p.layout,
+    flags: val('f-flags') || p.flags,
+    recipe: val('f-recipe') || p.recipe,
+    served: val('f-served') || p.served,
+    repo: val('f-repo') || p.repo,
+    dir: val('f-dir') || p.dir,
+    len: p.len,
+    parser: val('f-parser') || p.parser || 'qwen3_coder',
+    user: val('f-user') || 'YOUR_USERNAME',
+    hf: val('f-hf') || 'YOUR_HF_TOKEN',
+    aMgmt: val('f-a-mgmt') || 'YOUR_NODE_A_MGMT_IP',
+    bMgmt: val('f-b-mgmt') || 'YOUR_NODE_B_MGMT_IP',
+    aDac: val('f-a-dac') || 'YOUR_NODE_A_DAC_IP',
+    bDac: val('f-b-dac') || 'YOUR_NODE_B_DAC_IP',
+    solo: solo,
+    single: single,
+    owui: checked('o-owui'),
+    n8n: checked('o-n8n'),
+    hermes: checked('o-hermes'),
+    ufw: checked('o-ufw'),
+    headless: checked('o-headless')
+  };
+}
+
+function persist() {
+  var ws = {
+    'f-recipe': val('f-recipe'), 'f-served': val('f-served'), 'f-repo': val('f-repo'),
+    'f-dir': val('f-dir'), 'f-parser': val('f-parser'), 'f-user': val('f-user'),
+    'f-a-mgmt': val('f-a-mgmt'), 'f-a-dac': val('f-a-dac'),
+    'f-b-mgmt': val('f-b-mgmt'), 'f-b-dac': val('f-b-dac'),
+    'o-single': checked('o-single'), 'o-owui': checked('o-owui'), 'o-n8n': checked('o-n8n'),
+    'o-hermes': checked('o-hermes'), 'o-ufw': checked('o-ufw'), 'o-headless': checked('o-headless')
+  };
+  try { sessionStorage.setItem('dgx-worksheet', JSON.stringify(ws)); } catch (e) {}
+  try { sessionStorage.setItem('dgx-secrets', JSON.stringify({ hf: val('f-hf') })); } catch (e) {}
+}
+
+function restore() {
+  try {
+    var ws = JSON.parse(sessionStorage.getItem('dgx-worksheet') || '{}');
+    Object.keys(ws).forEach(function (k) {
+      if (k.charAt(0) === 'o') {
+        var el = document.getElementById(k);
+        if (el && typeof ws[k] === 'boolean') el.checked = ws[k];
+      } else if (ws[k]) setv(k, ws[k]);
+    });
+  } catch (e) {}
+  try {
+    var sec = JSON.parse(sessionStorage.getItem('dgx-secrets') || '{}');
+    if (sec.hf) setv('f-hf', sec.hf);
+  } catch (e) {}
+}
+
+function problems(f, node) {
+  var m = [];
+  if (isPlaceholder(f.user, 'YOUR_USERNAME')) m.push('Linux username');
+  if (isPlaceholder(f.hf, 'YOUR_HF_TOKEN')) m.push('HF token');
+  if (f.single && !f.solo) m.push('clustered TP=2 needs two Sparks (uncheck single or pick a solo tab)');
+  if (!f.single) {
+    if (isPlaceholder(f.aDac, 'YOUR_NODE_A_DAC_IP') || isPlaceholder(f.bDac, 'YOUR_NODE_B_DAC_IP')) m.push('both DAC IPs');
+  }
+  if (node === 'b' && f.single) m.push('single Spark — node-b is unused');
+  return m;
+}
+
+function scriptFor(node) {
+  var f = form();
+  var isA = node === 'a';
+  var issues = problems(f, node);
+  if (issues.length && (f.single && !f.solo && isA || node === 'b' && f.single)) {
+    return '#!/usr/bin/env bash\necho "' + shq(issues.join('; ')) + '" >&2\nexit 1\n';
+  }
+
+  var L = [];
+  function p(line) { L.push(line); }
+
+  var peerDac = isA ? f.bDac : f.aDac;
+  var webhook = isA
+    ? (isPlaceholder(f.aMgmt, 'YOUR_NODE_A_MGMT_IP') ? 'node-a' : f.aMgmt)
+    : (isPlaceholder(f.bMgmt, 'YOUR_NODE_B_MGMT_IP') ? 'node-b' : f.bMgmt);
+  var owuiUrl = (!f.solo && !isA)
+    ? 'http://' + f.aDac + ':8000/v1'
+    : 'http://host.docker.internal:8000/v1';
+  var unit = f.solo ? 'vllm-solo' : 'vllm-cluster';
+  var twoNode = !f.single;
+  var runsVllm = f.solo || isA;
+
+  p('#!/usr/bin/env bash');
+  p('# DGX At-Home AI Stack — node-' + node + ' — ' + f.layout);
+  p('# Generated from https://cmdlabtech.github.io/dgx-spark-ai-stack/');
+  p('# Current launcher: vllm-node image, no --tf5, hf-download.sh, no-Ray default.');
+  p('set -euo pipefail');
+  p('');
+  p('USERNAME="' + shq(f.user) + '"');
+  p('HF_TOKEN="' + shq(f.hf) + '"');
+  p('RECIPE="' + shq(f.recipe) + '"');
+  p('SERVED="' + shq(f.served) + '"');
+  p('REPO="' + shq(f.repo) + '"');
+  p('HF_DIR="' + shq(f.dir) + '"');
+  p('FLAGS="' + shq(f.flags) + '"');
+  p('MAX_LEN="' + shq(f.len) + '"');
+  p('PARSER="' + shq(f.parser) + '"');
+  p('A_MGMT="' + shq(f.aMgmt) + '"');
+  p('B_MGMT="' + shq(f.bMgmt) + '"');
+  p('A_DAC="' + shq(f.aDac) + '"');
+  p('B_DAC="' + shq(f.bDac) + '"');
+  p('PEER_DAC="' + shq(peerDac) + '"');
+  p('WEBHOOK_HOST="' + shq(webhook) + '"');
+  p('OWUI_URL="' + shq(owuiUrl) + '"');
+  p('');
+  p('log() { echo; echo "▶ $*"; }');
+  p('die() { echo "error: $*" >&2; exit 1; }');
+  p('');
+  p('[[ "$EUID" -ne 0 ]] || die "do not run as root — run as $USERNAME"');
+  p('[[ "$(whoami)" == "$USERNAME" ]] || die "expected user $USERNAME, got $(whoami)"');
+  p('[[ "$USERNAME" != "YOUR_USERNAME" && -n "$USERNAME" ]] || die "set Linux username in the generator"');
+  p('[[ "$HF_TOKEN" != "YOUR_HF_TOKEN" && -n "$HF_TOKEN" ]] || die "set the Hugging Face token in the generator"');
+  if (twoNode) {
+    p('[[ "$A_DAC" != "YOUR_NODE_A_DAC_IP" && "$B_DAC" != "YOUR_NODE_B_DAC_IP" && -n "$A_DAC" && -n "$B_DAC" ]] || die "set both DAC IPs"');
+  }
+  p('');
+  p('log "packages"');
+  p('sudo apt-get update');
+  p('sudo apt-get install -y ca-certificates curl git rsync jq python3-pip openssh-client openssh-server ufw openssl');
+  p('command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sudo sh');
+  p('sudo systemctl enable --now docker ssh');
+  p('id -nG "$USERNAME" | grep -qw docker || sudo usermod -aG docker "$USERNAME"');
+  p('if ! id -nG | grep -qw docker; then');
+  p('  log "re-exec under docker group"');
+  p('  exec sg docker -c "bash $(readlink -f "$0")"');
+  p('fi');
+  p('');
+  p('if [[ "$A_MGMT" != "YOUR_NODE_A_MGMT_IP" && -n "$A_MGMT" ]]; then');
+  p('  log "/etc/hosts (mgmt IPs)"');
+  p("  sudo sed -i '/[[:space:]]node-a$/d;/[[:space:]]node-b$/d' /etc/hosts");
+  p('  echo "$A_MGMT  node-a" | sudo tee -a /etc/hosts >/dev/null');
+  p('  if [[ "$B_MGMT" != "YOUR_NODE_B_MGMT_IP" && -n "$B_MGMT" ]]; then');
+  p('    echo "$B_MGMT  node-b" | sudo tee -a /etc/hosts >/dev/null');
+  p('  fi');
+  p('fi');
+
+  if (f.headless) {
+    p('');
+    p('log "disable desktop"');
+    p('sudo systemctl set-default multi-user.target');
+    p('sudo systemctl stop gdm 2>/dev/null || true');
+    p('sudo systemctl stop gnome-remote-desktop 2>/dev/null || true');
+    p('sudo systemctl disable gnome-remote-desktop 2>/dev/null || true');
+  }
+
+  if (twoNode) {
+    p('');
+    p('log "RoCE check"');
+    p('command -v ibdev2netdev >/dev/null && ibdev2netdev || echo "  (ibdev2netdev missing — install MOFED/Spark RoCE stack if this is a two-node DAC pair)"');
+    p('ls /dev/infiniband >/dev/null 2>&1 || die "/dev/infiniband missing — fix RoCE before clustered or DAC rsync"');
+  }
+
+  if (twoNode && isA) {
+    p('');
+    p('log "SSH key to node-b"');
+    p('[[ -f "$HOME/.ssh/id_ed25519" ]] || ssh-keygen -t ed25519 -N "" -f "$HOME/.ssh/id_ed25519"');
+    p('probe_ssh() { ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$USERNAME@$1" "exit 0" >/dev/null 2>&1; }');
+    p('deploy_key() {');
+    p('  local host="$1"');
+    p('  if probe_ssh "$host"; then echo "  ssh $host ok"; return 0; fi');
+    p('  echo "  ssh-copy-id $USERNAME@$host"');
+    p('  if [[ -r /dev/tty ]]; then ssh-copy-id -o StrictHostKeyChecking=accept-new "$USERNAME@$host" </dev/tty || true; fi');
+    p('  probe_ssh "$host" || echo "  still no passwordless SSH to $host — DAC copy will fail until this works"');
+    p('}');
+    p('deploy_key "$B_DAC"');
+    p('if [[ "$B_MGMT" != "YOUR_NODE_B_MGMT_IP" && -n "$B_MGMT" ]]; then deploy_key "$B_MGMT"; fi');
+  }
+
+  p('');
+  p('log "spark-vllm-docker"');
+  p('cd "$HOME"');
+  p('if [[ -d spark-vllm-docker/.git ]]; then git -C spark-vllm-docker pull --ff-only || true; else git clone https://github.com/eugr/spark-vllm-docker.git; fi');
+  p('cd spark-vllm-docker');
+
+  if (runsVllm && isA) {
+    if (twoNode) {
+      p('');
+      p('log "cluster .env (not printed)"');
+      p('umask 077');
+      p('cat > "$HOME/spark-vllm-docker/.env" <<EOF');
+      p('CLUSTER_NODES=$A_DAC,$B_DAC');
+      p('COPY_HOSTS=$B_DAC');
+      p('LOCAL_IP=$A_DAC');
+      p('ETH_IF=enp1s0f0np0');
+      p('IB_IF=rocep1s0f0,roceP2p1s0f0');
+      p('CONTAINER_HF_TOKEN=$HF_TOKEN');
+      p('EOF');
+      p('chmod 600 "$HOME/spark-vllm-docker/.env"');
+      p('');
+      p('log "image → vllm-node (not vllm-node-tf5)"');
+      p('./build-and-copy.sh -c --copy-to "$PEER_DAC"');
+      p('log "weights via hf-download.sh"');
+      p('export HF_TOKEN');
+      p('export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"');
+      p('./hf-download.sh "$REPO" -c --copy-to "$PEER_DAC"');
+    } else {
+      p('');
+      p('log "image → vllm-node (not vllm-node-tf5)"');
+      p('./build-and-copy.sh');
+      p('log "weights via hf-download.sh"');
+      p('export HF_TOKEN');
+      p('export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"');
+      p('./hf-download.sh "$REPO"');
+    }
+  } else if (twoNode && !isA) {
+    p('');
+    p('log "wait for vllm-node image from node-a"');
+    p('for i in $(seq 1 120); do');
+    p('  docker image inspect vllm-node:latest >/dev/null 2>&1 && break');
+    p('  [[ $((i % 12)) -eq 0 ]] && echo "  …still waiting ($i/120)"');
+    p('  sleep 5');
+    p('done');
+    p('docker image inspect vllm-node:latest >/dev/null 2>&1 || die "vllm-node image never arrived — start setup-node-a.sh first"');
+    p('');
+    p('log "wait for HF weights"');
+    p('mkdir -p "$HOME/.cache/huggingface/hub"');
+    p('for i in $(seq 1 180); do');
+    p('  if [[ -d "$HOME/.cache/huggingface/hub/$HF_DIR" ]]; then');
+    p('    sz=$(du -sb "$HOME/.cache/huggingface/hub/$HF_DIR" 2>/dev/null | awk \'{print $1}\')');
+    p('    [[ "${sz:-0}" -gt 1000000000 ]] && break');
+    p('  fi');
+    p('  [[ $((i % 6)) -eq 0 ]] && echo "  …still waiting ($i/180)"');
+    p('  sleep 10');
+    p('done');
+  }
+
+  if (runsVllm) {
+    p('');
+    p('log "remove leftover vllm_node (layout-switch / stale worker name)"');
+    p('docker rm -f vllm_node 2>/dev/null || true');
+    if (twoNode && isA && !f.solo) {
+      p('ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$USERNAME@$PEER_DAC" "docker rm -f vllm_node" 2>/dev/null || true');
+    }
+    p('');
+    p('log "systemd ' + unit + '"');
+    p('sudo tee /etc/systemd/system/' + unit + '.service >/dev/null <<UNIT');
+    p('[Unit]');
+    p('Description=vLLM ' + f.layout);
+    p('After=docker.service network-online.target');
+    p('Requires=docker.service');
+    p('');
+    p('[Service]');
+    p('Type=oneshot');
+    p('RemainAfterExit=yes');
+    p('User=$USERNAME');
+    p('WorkingDirectory=/home/$USERNAME/spark-vllm-docker');
+    p('Environment=HF_HUB_OFFLINE=1');
+    p('Environment=TRANSFORMERS_OFFLINE=1');
+    p('ExecStartPre=-/usr/bin/docker rm -f vllm_node');
+    p('ExecStart=/home/$USERNAME/spark-vllm-docker/run-recipe.sh $RECIPE $FLAGS -- --served-model-name $SERVED --max-model-len $MAX_LEN --tool-call-parser $PARSER --gpu-memory-utilization 0.80');
+    p('ExecStop=/home/$USERNAME/spark-vllm-docker/launch-cluster.sh' + (f.solo ? ' --solo stop' : ' stop'));
+    p('TimeoutStartSec=0');
+    p('TimeoutStopSec=180');
+    p('');
+    p('[Install]');
+    p('WantedBy=multi-user.target');
+    p('UNIT');
+    if (f.solo) {
+      p('sudo systemctl disable --now vllm-cluster.service 2>/dev/null || true');
+    } else {
+      p('sudo systemctl disable --now vllm-solo.service 2>/dev/null || true');
+    }
+    p('sudo systemctl daemon-reload');
+    p('sudo systemctl enable ' + unit + '.service');
+    p('sudo systemctl start --no-block ' + unit + '.service');
+  } else {
+    p('');
+    p('log "clustered worker — do not start vLLM here"');
+    p('sudo systemctl disable --now vllm-cluster.service 2>/dev/null || true');
+    p('sudo systemctl disable --now vllm-solo.service 2>/dev/null || true');
+  }
+
+  if (f.owui) {
+    p('');
+    p('log "Open WebUI → $OWUI_URL"');
+    p('docker rm -f open-webui 2>/dev/null || true');
+    p('docker run -d --name open-webui --restart unless-stopped \\');
+    p('  -p 8080:8080 \\');
+    p('  --add-host=host.docker.internal:host-gateway \\');
+    p('  -e OPENAI_API_BASE_URL="$OWUI_URL" \\');
+    p('  -e OPENAI_API_KEY="not-needed" \\');
+    p('  -e ENABLE_OLLAMA_API=False \\');
+    p('  -e WEBUI_AUTH=True \\');
+    p('  -e ENABLE_KB_EXEC=true \\');
+    p('  -v open-webui:/app/backend/data \\');
+    p('  ghcr.io/open-webui/open-webui:main');
+  }
+
+  if (f.n8n) {
+    p('');
+    p('log "n8n"');
+    p('docker rm -f n8n 2>/dev/null || true');
+    p('docker run -d --name n8n --restart unless-stopped \\');
+    p('  -p 5678:5678 \\');
+    p('  --add-host=host.docker.internal:host-gateway \\');
+    p('  -e N8N_HOST=0.0.0.0 \\');
+    p('  -e N8N_PORT=5678 \\');
+    p('  -e N8N_PROTOCOL=http \\');
+    p('  -e WEBHOOK_URL="http://$WEBHOOK_HOST:5678/" \\');
+    p('  -e N8N_SECURE_COOKIE=false \\');
+    p('  -e NODE_ENV=production \\');
+    p('  -v n8n_data:/home/node/.n8n \\');
+    p('  n8nio/n8n:latest');
+  }
+
+  if (f.hermes && isA) {
+    p('');
+    p('log "Hermes Agent (run hermes setup interactively after this script)"');
+    p('sudo apt-get install -y ripgrep ffmpeg');
+    p('curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash || true');
+    p('echo "  Provider: http://127.0.0.1:8000/v1"');
+    p('echo "  Dummy API key required by some builds; vLLM ignores it"');
+    p('echo "  model.max_tokens=8192 must sit under model: (not only a fan-out block)"');
+  }
+
+  if (f.ufw) {
+    p('');
+    p('log "ufw"');
+    p('sudo ufw --force default deny incoming');
+    p('sudo ufw default allow outgoing');
+    p('sudo ufw allow 22/tcp');
+    if (f.owui) p('sudo ufw allow 8080/tcp');
+    if (f.n8n) p('sudo ufw allow 5678/tcp');
+    if (f.hermes && isA) p('sudo ufw allow 9119/tcp');
+    if (!f.solo && isA && twoNode) {
+      p('sudo ufw allow in on enp1s0f0np0 from "$PEER_DAC" to any port 8000 proto tcp');
+      p('sudo ufw allow in on enp1s0f0np0 from "$PEER_DAC" to any port 29501 proto tcp');
+      p('sudo ufw allow in on enp1s0f0np0 from "$PEER_DAC" to any port 6379 proto tcp');
+    }
+    if (!f.solo && !isA && twoNode) {
+      p('sudo ufw allow in on enp1s0f0np0 from "$PEER_DAC"');
+    }
+    p('sudo ufw --force enable');
+  }
+
+  p('');
+  p('log "node-' + node + ' done"');
+  p('cat <<DONE');
+  p('Next:');
+  if (runsVllm) {
+    p('  curl -sf http://127.0.0.1:8000/v1/models');
+    p('  docker logs -f vllm_node');
+  } else {
+    p('  curl -sf http://$A_DAC:8000/v1/models   # after the head finishes loading');
+  }
+  if (f.hermes && isA) p('  hermes setup   # interactive');
+  p('  Open WebUI admin account on :8080 if you installed it');
+  p('  Keep port 8000 off Tailscale and the public WAN');
+  p('DONE');
+  p('');
+  return L.join('\n') + '\n';
+}
+
+function render() {
+  document.getElementById('node-b-fields').style.opacity = checked('o-single') ? '0.45' : '1';
+  document.getElementById('preview-a').textContent = scriptFor('a');
+  document.getElementById('preview-b').textContent = scriptFor('b');
+  var f = form();
+  var miss = problems(f, 'a');
+  var status = document.getElementById('status');
+  if (miss.length) {
+    status.textContent = 'Need: ' + miss.join(', ');
+    status.style.color = 'var(--amber)';
+  } else {
+    status.textContent = f.single ? 'single Spark · solo' : (f.solo ? 'two nodes · isolated solo' : 'two nodes · clustered');
+    status.style.color = 'var(--green)';
+  }
+}
+
+function downloadNode(node) {
+  var f = form();
+  var miss = problems(f, node);
+  if (miss.length) {
+    document.getElementById('status').textContent = 'Need: ' + miss.join(', ');
+    document.getElementById('status').style.color = 'var(--amber)';
+    return;
+  }
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([scriptFor(node)], { type: 'text/x-shellscript' }));
+  a.download = 'setup-node-' + node + '.sh';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }, 0);
+  document.getElementById('status').textContent = 'downloaded setup-node-' + node + '.sh';
+  document.getElementById('status').style.color = 'var(--green)';
+}
+
+function copyPreview(node) {
+  navigator.clipboard.writeText(scriptFor(node)).then(function () {
+    document.getElementById('status').textContent = 'copied node-' + node + ' script';
+    document.getElementById('status').style.color = 'var(--green)';
+  });
+}
+
+function resetForm() {
+  ['f-a-mgmt', 'f-a-dac', 'f-b-mgmt', 'f-b-dac', 'f-hf', 'f-user'].forEach(function (id) { setv(id, ''); });
+  document.getElementById('o-single').checked = false;
+  document.getElementById('o-owui').checked = true;
+  document.getElementById('o-n8n').checked = true;
+  document.getElementById('o-hermes').checked = true;
+  document.getElementById('o-ufw').checked = true;
+  document.getElementById('o-headless').checked = true;
+  try {
+    sessionStorage.removeItem('dgx-worksheet');
+    sessionStorage.removeItem('dgx-secrets');
+  } catch (e) {}
+  applyPreset(sessionStorage.getItem('dgx-preset') || 'a-fp8');
+}
+
+document.querySelectorAll('.tab').forEach(function (btn) {
+  btn.addEventListener('click', function () { applyPreset(btn.dataset.preset); });
+});
+['f-recipe', 'f-served', 'f-repo', 'f-dir', 'f-parser', 'f-user', 'f-hf',
+  'f-a-mgmt', 'f-a-dac', 'f-b-mgmt', 'f-b-dac'].forEach(function (id) {
+  document.getElementById(id).addEventListener('input', function () { persist(); render(); });
+});
+['o-owui', 'o-n8n', 'o-hermes', 'o-ufw', 'o-headless', 'o-single'].forEach(function (id) {
+  document.getElementById(id).addEventListener('change', function () { persist(); render(); });
+});
+
+(function init() {
+  restore();
+  var key = sessionStorage.getItem('dgx-preset') || 'a-fp8';
+  if (!PRESETS[key]) key = 'a-fp8';
+  var p = PRESETS[key];
+  document.querySelectorAll('.tab').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.preset === key);
+  });
+  document.getElementById('preset-blurb').textContent = p.blurb;
+  setv('f-layout', p.layout);
+  setv('f-flags', p.flags);
+  setv('f-len', p.len);
+  if (!val('f-recipe')) {
+    setv('f-recipe', p.recipe);
+    setv('f-served', p.served);
+    setv('f-repo', p.repo);
+    setv('f-dir', p.dir);
+    setv('f-parser', p.parser);
+  }
+  render();
+})();
 </script>
 </body>
 </html>

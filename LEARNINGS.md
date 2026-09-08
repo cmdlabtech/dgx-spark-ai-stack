@@ -1,3 +1,9 @@
+## Agent-first bring-up
+
+- New boxes: feed the agent `llms.txt` + `llms-full.txt`. Interview before any privileged command.
+- Current launcher tag is `vllm-node`. Do not pass `--tf5`. Do not wait for `vllm-node-tf5`.
+- Weights: `hf-download.sh`. Multi-node default is no-Ray.
+
 ## Hermes Agent installer (NousResearch)
 
 - Installer: upstream `install.sh`

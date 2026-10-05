@@ -2,6 +2,10 @@
 
 Self-hosted inference and apps on **one or two Nvidia DGX Spark** nodes (arm64 / GB10 / Ubuntu 24.04).
 
+<p align="center">
+  <a href="https://www.paypal.com/donate/?hosted_button_id=Z5SDZULELYGNS"><img src="https://img.shields.io/badge/Donate-PayPal-00457C?style=flat-square&logo=paypal&logoColor=white" alt="Donate with PayPal"/></a>
+</p>
+
 ## Out of the box
 
 1. Unbox the Spark. Cable mgmt LAN and, if you have two, the 200 Gb/s DAC.
@@ -23,3 +27,10 @@ Documentation names: **node-a** (personal + Hermes) and **node-b** (workload UI)
 Documentation addresses only: `192.0.2.21` / `192.0.2.22` and `198.51.100.0/30` — never configure those on a real box.
 
 Port 8000 must not be published on any overlay. There is no LiteLLM proxy. Templates live in `templates/`.
+---
+
+## Support
+
+Optional donations help keep CMDLAB tools free and maintained:
+
+[Donate with PayPal](https://www.paypal.com/donate/?hosted_button_id=Z5SDZULELYGNS)

@@ -27,6 +27,7 @@ Documentation names: **node-a** (personal + Hermes) and **node-b** (workload UI)
 Documentation addresses only: `192.0.2.21` / `192.0.2.22` and `198.51.100.0/30` — never configure those on a real box.
 
 Port 8000 must not be published on any overlay. There is no LiteLLM proxy. Templates live in `templates/`.
+
 ---
 
 ## Support
